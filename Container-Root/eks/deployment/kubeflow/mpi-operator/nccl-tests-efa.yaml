@@ -1,0 +1,91 @@
+apiVersion: kubeflow.org/v1alpha2
+kind: MPIJob
+metadata:
+  name: nccl-tests-efa
+spec:
+  slotsPerWorker: 8
+  cleanPodPolicy: Running
+  mpiReplicaSpecs:
+    Launcher:
+      replicas: 1
+      template:
+         spec:
+          imagePullPolicy: IfNotPresent
+          restartPolicy: OnFailure
+          containers:
+          - image: public.ecr.aws/w6p6i9i7/aws-efa-nccl-rdma:base-cudnn8-cuda11-ubuntu18.04
+            name: nccl-test-launcher
+            env:
+             - name: LD_LIBRARY_PATH
+               value: /opt/amazon/openmpi/lib:/opt/nccl/build/lib:/opt/amazon/efa/lib:/opt/aws-ofi-nccl/install/lib:/usr/local/nvidia/lib:$LD_LIBRARY_PATH
+             - name: PATH
+               value: $PATH:/opt/amazon/efa/bin
+             - name: XLA_FLAGS
+               value: "--xla_gpu_cuda_data_dir=/usr/local/cuda"
+             - name: TF_XLA_FLAGS
+               value: "--tf_xla_cpu_global_jit"
+            command:
+            - /opt/amazon/openmpi/bin/mpirun
+            - --allow-run-as-root
+            - --tag-output
+            - -np
+            - "16"
+            - -bind-to
+            - none
+            - -map-by
+            - slot
+            - -x
+            - PATH
+            - -x
+            - LD_LIBRARY_PATH
+            - -x
+            - XLA_FLAGS
+            - -x
+            - TF_XLA_FLAGS
+            - -x
+            - NCCL_DEBUG=INFO
+            - -x
+            - NCCL_ALGO=RING
+            - -x
+            - FI_EFA_USE_DEVICE_RDMA=1
+            - -x
+            - RDMAV_FORK_SAFE=1
+            - --mca
+            - pml
+            - ^cm
+            - --oversubscribe
+            - /tmp/nccl-tests/build/all_reduce_perf
+            - -b
+            - "8"
+            - -e
+            - 1G
+            - -f
+            - "2"
+            - -t
+            - "1"
+            - -g
+            - "1"
+            - -c
+            - "1"
+            - -n
+            - "1000"
+
+    Worker:
+      replicas: 2
+      template:
+        spec:
+          imagePullPolicy: IfNotPresent
+          containers:
+          - image: public.ecr.aws/w6p6i9i7/aws-efa-nccl-rdma:base-cudnn8-cuda11-ubuntu18.04
+            name: nccl-worker
+            resources:
+              limits:
+                nvidia.com/gpu: 8
+                hugepages-2Mi: 5120Mi
+                vpc.amazonaws.com/efa: 4
+                memory: 8000Mi
+              requests:
+                nvidia.com/gpu: 8
+                hugepages-2Mi: 5120Mi
+                vpc.amazonaws.com/efa: 4
+                memory: 8000Mi

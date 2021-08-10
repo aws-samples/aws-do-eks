@@ -1,0 +1,58 @@
+apiVersion: kubeflow.org/v1alpha2
+kind: MPIJob
+metadata:
+  name: osu-efa-test
+spec:
+  slotsPerWorker: 96
+  cleanPodPolicy: Running
+  mpiReplicaSpecs:
+    Launcher:
+      replicas: 1
+      template:
+         spec:
+          hostNetwork: true
+          imagePullPolicy: Always
+          restartPolicy: OnFailure
+          containers:
+          - image: ${IMAGE}
+            name: osu-efa-test-launcher
+            env:
+            - name: PATH
+              value: "/opt/amazon/openmpi/bin:/opt/amazon/efa/bin/:$PATH"
+            - name: LD_LIBRARY_PATH
+              value: "/opt/amazon/openmpi/lib64:/opt/amazon/efa/lib64:$LD_LIBRARY_PATH"
+            command:
+            - /opt/amazon/openmpi/bin/mpirun
+            - --allow-run-as-root
+            - -np
+            - "8"
+            - -N
+            - "2"
+            - -x
+            - PATH
+            - -x
+            - LD_LIBRARY_PATH
+            - --map-by
+            - slot
+            - /tmp/osu-micro-benchmarks-5.7.1/mpi/pt2pt/osu_mbw_mr
+            #- /opt/amazon/efa/bin/fi_info
+            #- -p
+            #- efa
+    Worker:
+      replicas: 2
+      template:
+        spec:
+          hostNetwork: true
+          imagePullPolicy: Always
+          containers:
+          - image: ${IMAGE}
+            name: osu-efa-test-worker
+            resources:
+              limits:
+                #nvidia.com/gpu: 8
+                hugepages-2Mi: 5120Mi
+                memory: 353000Mi
+                vpc.amazonaws.com/efa: 1
+              requests:
+                memory: 353000Mi
+                vpc.amazonaws.com/efa: 1

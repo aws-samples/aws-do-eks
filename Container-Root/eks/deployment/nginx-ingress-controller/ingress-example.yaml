@@ -1,0 +1,17 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ingress-cpu-fastapi
+  namespace: torchserve
+spec:
+  rules:
+  - host: "cpu-fastapi.torchserve.svc.cluster.local"
+    http:
+      paths:
+      - pathType: Prefix
+        path: "/"
+        backend:
+          service:
+            name: cpu-fastapi-bert-base-multilingual-cased-c5-2xl
+            port:
+              number: 8080

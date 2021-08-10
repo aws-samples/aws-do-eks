@@ -1,11 +1,86 @@
-## My Project
+# AWS DevOps for EKS (aws-do-eks) - Create and Manage your Amazon EKS clusters using the Do framework
 
-TODO: Fill this README out!
+<center><img src="aws-do-eks.png" width="80%"/> </br>
 
-Be sure to:
+Fig. 1 - EKS cluster sample
+</center>
 
-* Change the title in this README
-* Edit your repository description on GitHub
+
+## Overview
+As described in the [Amazon EKS User Guide](https://docs.aws.amazon.com/eks/latest/userguide/create-cluster.html), creating an EKS cluster can be done using [eksctl](https://eksctl.io/usage/creating-and-managing-clusters/), the [AWS console](https://console.aws.amazon.com/eks/home#/clusters), or the [aws cli](https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-install.html). There are also [other options](https://registry.terraform.io/modules/terraform-aws-modules/eks/aws/latest), however typically each tool has a learning curve and requires some proficiency.  
+The Do framework strives to simplify DevOps and MLOps tasks by automating complex operations into intuitive action scripts. For example, instead of running an eksctl command with several command line arguments to create an EKS cluster, aws-do-eks provides an `eks-create.sh` script which wraps a collection of tools including eksctl and provides the end user with a simplified and intuitive experience. The only prerequisite needed to build and run this project is [Docker](https://docs.docker.com/get-docker/). The main use case of this project is to specify a desired cluster configuration, then create or manage the EKS cluster by executing a script. This process is described in further detail below.
+
+## Configure
+All necessary configuration items are centralized in two configuration files. The [`.env`](.env) file in the project's root contains all project-specific items and is used when building and running the project container. The [`wd/conf/eks.conf`](wd/conf/eks.conf) file contains all EKS specific configuration items and is used when running the action scripts to create, scale, or delete your EKS cluster. Heterogeneous clusters are supported. In `eks.conf` you can specify the list of nodegroups to be added to the cluster and at what scale. AWS Credentials can be configured at the instance level through an instance role or injected into the container that runs aws-do-eks using volume or secrets mounting. To configure credentials, run aws configure. Credentials you configure on the host will be mounted into the aws-do-eks container according to the VOL_MAP setting in `.env`.
+
+## Build
+This project follows the [Depend on Docker](https://github.com/iankoulski/depend-on-docker) template to build a container including all needed tools and utilities for creation and management of your EKS clusters. Please execute the [`./build.sh`](./build.sh) script to create the `aws-do-eks` container image. If desired, the image name or registry address can be modified in the project configuration file [`.env`](.env).
+
+## Run
+The [`./run.sh`](./run.sh) script starts the project container. After the container is started, use the [`./exec.sh`](./exec.sh) script to open a bash shell in the container. All necessary tools to allow creation, management, and operation of EKS are available in this shell. 
+
+## EKS Create
+Execute the [`./eks-create.sh`](Container-Root/eks/eks-create.sh) script to create the configured cluster. This operation will take a while as it involves creation of a VPC, Subnets, Autoscaling groups, the EKS cluster, its nodes and any other necessary resources. Upon successful completion of this process, your shell will be configured for `kubectl` access to the created EKS cluster. 
+
+## EKS Status
+To view the current status of the cluster execute the [`eks-status.sh`](Container-Root/eks/eks-status.sh) script. It will display the cluster information as well as details about any CPU, GPU, Inferentia nodegroups and fargate profiles in the cluster.
+
+## EKS Scale
+To set the sizes of your cluster node groups, update the [`eks.conf`](wd/conf/eks.conf) file, then run [`./eks-scale.sh`](Container-Root/eks/eks-scale.sh).
+
+## EKS Delete
+To decomission your cluster and remove all AWS resources associated with it, execute the [`./eks-delete.sh`](Container-Root/eks/eks-delete.sh) script. This is a destructive operation. If there is anything in your cluster that you need saved, please persist it outside of the cluster VPC before executing this script.
+
+## Other scripts
+
+### Infrastructure
+The [`eks`](Container-Root/eks) folder contains [`vpc`](Container-Root/eks/vpc), [`nodegroup`](Container-Root/eks/nodegroup), and [`fargateprofile`](Container-Root/eks/fargateprofile) subfolders. These subfolders contain module-level scripts that are used by the scripts in the main folder, however they can also be executed independently. To run one of those scripts independently, ensure that the environment variables tha are needed by the scripts are set before executing them. One way to do that is to source the eks.conf file. Running a module script individually will display information about any environment variables that are missing and could be defined with `export ENV_VAR=value`.
+
+### Deployment
+The [`deployment`](Container-Root/eks/deployment) folder contains scripts for deploying system-level capabilities like cluster-autoscaler, aws-load-balancer-controller, horizontal-pod-autoscaler, etc. to the EKS cluster. If you would like cluster-autoscaler deployed automatically when the cluster is created, set CLUSTER_AUTOSCALER_DEPLOY="true" in eks.conf. To deploy the cluster-autoscaler to an EKS cluster that has already been created, change your current directory to deployment/cluster-autoscaler, then execute [`./deploy-cluster-autoscaler.sh`](Container-Root/eks/deployment/cluster-autoscaler/deploy-cluster-autoscaler.sh). Follow a similar pattern for other deployments.
+
+### Operations
+The [`ops`](Container-Root/eks/ops) folder contains scripts for management and operation of workloads on the EKS cluster. The goal of these scripts is to provide shorthand for commonly used `kubectl` command lines. 
+
+### Container
+The project home folder offers a number of additional scripts for management of the aws-do-eks container.
+* [`./login.sh`](./login.sh) - use the currently configured node aws settings to authenticate with the configured registry
+* [`./push.sh`](./push.sh) - push aws-do-eks container image to configured registry
+* [`./pull.sh`](./pull.sh) - pull aws-do-eks container image from a configured existing registry
+* [`./status.sh`](./status.sh) - show current status of aws-do-eks container
+* [`./start.sh`](./status.sh) - start the aws-do-eks container if is currently in "Exited" status
+* [`./stop.sh`](./stop.sh) - stop and remove the aws-do-eks container
+* [`./test.sh`](./test.sh) - run container unit tests
+
+## Troubleshooting
+* eksctl authentication errors - execute "aws configure --profile <profile_name>" and provide access key id and secret access key to configure access.
+```
+Create a new profile, different than default:
+aws configure --profile <profile-name>
+
+Update kubeconfig with profile::
+aws eks update-kubeconfig --region <region> --name <cluster-name> --profile <profile-name>
+
+Check that <profile-name> is in ~/.kube/config
+
+user:
+    exec:
+      apiVersion: client.authentication.k8s.io/v1alpha1
+      args:
+      - --region
+      - <region>
+      - eks
+      - get-token
+      - --cluster-name
+      - <cluster-name>
+      command: aws
+      env:
+      - name: AWS_PROFILE
+        value: <profile-name>
+```
+
+* timeouts from eksctl api - the cloudformation apis used by eksctl are throttled, normally eksctl will retry when a timeout occurs
+* context deadline exceeded - when executing eksctl commands you may see this error message. In this case please retry running the same command after the failure occurs. The cloud formation stack may have completed successfully already, but that information may not be known to eksctl. Running the command again updates the status and checks if all necessary objects have been created. 
 
 ## Security
 
@@ -13,5 +88,15 @@ See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more inform
 
 ## License
 
-This library is licensed under the MIT-0 License. See the LICENSE file.
+This library is licensed under the MIT-0 License. See the [LICENSE](LICENSE) file.
 
+## References
+
+* [Docker](https://docker.com)
+* [Kubernetes](https://kubernetes.io)
+* [Amazon Web Services (AWS)](https://aws.amazon.com/)
+* [Amazon EC2 Instance Types](https://aws.amazon.com/ec2/instance-types/)
+* [Amazon Elastic Kubernetes Service (EKS)](https://aws.amazon.com/eks)
+* [AWS Fargate](https://aws.amazon.com/fargate)
+* [eksctl](https://docs.aws.amazon.com/eks/latest/userguide/eksctl.html)
+* [Depend on Docker Project](https://github.com/iankoulski/depend-on-docker)

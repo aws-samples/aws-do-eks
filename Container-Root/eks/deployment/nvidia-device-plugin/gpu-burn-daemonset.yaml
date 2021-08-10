@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: gpu-burn
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: "gpu-burn"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: "bpu-burn"
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: "bpu-burn"
+      name: "bpu-burn"
+    spec:
+      nodeSelector:
+        beta.kubernetes.io/instance-type: "p4d.24xlarge"
+      containers:
+      - image: "oguzpastirmaci/gpu-burn"
+      # ref: https://github.com/wilicc/gpu-burn
+        imagePullPolicy: IfNotPresent
+        command: ["bash", "-c", "while true; do ./gpu_burn 20; sleep 20; done"]
+        name: "gpu-burn"
+        securityContext:
+          runAsNonRoot: false
+          runAsUser: 0

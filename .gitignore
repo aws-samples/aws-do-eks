@@ -1,0 +1,2 @@
+Container-Root/eks/deployment/cluster-autoscaler/cluster-autoscaler.yaml
+Container-Root/eks/deployment/aws-load-balancer-controller/aws-load-balancer-controller.yaml
