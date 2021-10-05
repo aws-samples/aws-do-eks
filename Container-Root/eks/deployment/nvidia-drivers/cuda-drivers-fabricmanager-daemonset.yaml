@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: cuda-drivers-fabricmanager
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: "cuda-drivers-fabricmanager"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: "cuda-drivers-fabricmanager"
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: "cuda-drivers-fabricmanager"
+      name: "gpu-efa-metrics"
+    spec:
+      hostPID: true
+      hostNetwork: true
+      nodeSelector:
+        beta.kubernetes.io/instance-type: "p4d.24xlarge"
+        #processor: gpu
+      initContainers:
+      - name: "installer"
+        image: "ubuntu:20.04"
+        #command: ["bash", "-c", "while true; do date; sleep 10; done"]
+        command: ["nsenter", "--target", "1", "--mount", "--uts", "--ipc", "--net", "--pid", "--","bash", "-c", "echo IyEvYmluL2Jhc2gKCmVjaG8gIiIKZWNobyAidj09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09diIiCmVjaG8gIkNoZWNraW5nIGZvciBmYWlsZWQgbnZpZGlhIGZhYnJpY21hbmFnZXIgc2VydmljZSAuLi4iCnN5c3RlbWN0bCBzdGF0dXMgbnZpZGlhLWZhYnJpY21hbmFnZXIgfCBncmVwICJudmlkaWEtZmFicmljbWFuYWdlci5zZXJ2aWNlIGZhaWxlZCIKaWYgWyAiJD8iID09ICIxIiBdOyB0aGVuCgllY2hvICJGb3VuZCBmYWlsZWQgbnZpZGlhLWZhYnJpY21hbmFnZXIuc2VydmljZS4gVXBkYXRpbmcgLi4uIgoJeXVtIHJlbW92ZSAteSBudmlkaWEtZmFicmljbWFuYWdlci00NzAgbnZpZGlhLWRyaXZlci00NzAKCXl1bSBpbnN0YWxsIC15IGN1ZGEtZHJpdmVycy1mYWJyaWNtYW5hZ2VyLTQ3MAoJc3lzdGVtY3RsIGRhZW1vbi1yZWxvYWQKCXN5c3RlbWN0bCByZXN0YXJ0IG52aWRpYS1mYWJyaWNtYW5hZ2VyCglzeXN0ZW1jdGwgc3RhdHVzIG52aWRpYS1mYWJyaWNtYW5hZ2VyIAplbHNlCgllY2hvICJudmlkaWEtZmFicmljbWFuYWdlci5zZXJ2aWNlIGlzIGhlbHRoeS4gU2tpcHBpbmcgdXBkYXRlLiIKZmkKZWNobyAiIgoK | base64 -d > /tmp/cuda-drivers-fabricmanager-470-setup.sh; chmod +x /tmp/cuda-drivers-fabricmanager-470-setup.sh; /tmp/cuda-drivers-fabricmanager-470-setup.sh"]
+        securityContext:
+          privileged: true
+          runAsNonRoot: false
+          runAsUser: 0
+      containers:
+      - name: "heartbeat"
+        image: "ubuntu:20.04"
+        command: ["bash", "-c", "while true; do echo Hardware Accelerator Monitor pod is alive on $(date); sleep 60; done"]
+

@@ -1,0 +1,61 @@
+apiVersion: elastic.pytorch.org/v1alpha1
+kind: ElasticJob
+metadata:
+  name: imagenet
+  #namespace: elastic-job
+spec:
+  # Use "etcd-service:2379" if you already applied etcd.yaml
+  rdzvEndpoint: etcd-service:2379
+  minReplicas: 1
+  maxReplicas: 128
+  replicaSpecs:
+    Worker:
+      replicas: 2
+      restartPolicy: ExitCode
+      template:
+        apiVersion: v1
+        kind: Pod
+        spec:
+          nodeSelector:
+            #beta.kubernetes.io/instance-type: p3dn.24xlarge
+            beta.kubernetes.io/instance-type: p4d.24xlarge
+            #beta.kubernetes.io/instance-type: g4dn.metal
+          containers:
+            - name: elasticjob-worker
+              image: xxxxxxxxxxxxx.dkr.ecr.us-west-2.amazonaws.com/imagenet-efa:master-20211001
+              imagePullPolicy: Always
+              env:
+                - name: NCCL_DEBUG
+                  value: INFO
+                - name: NCCL_ALGO
+                  value: Ring
+                - name: FI_PROVIDER
+                  value: efa
+                - name: FI_EFA_USE_DEVICE_RDMA
+                  value: "1"
+                - name: RDMAV_FORK_SAFE
+                  value: "1"
+              command: ["python3", "-m", "torch.distributed.run"] 
+              args:
+                - "--nproc_per_node=8"
+                - "/workspace/elastic/examples/imagenet/main.py"
+                - "--arch=resnet18"
+                - "--epochs=20"
+                - "--batch-size=32"
+                # number of data loader workers (NOT trainers)
+                # zero means load the data on the same process as the trainer
+                # this is set so that the container does not OOM since
+                # pytorch data loaders use shm
+                - "--workers=0"
+                - "/workspace/data/tiny-imagenet-200"
+              resources:
+                limits:
+                  nvidia.com/gpu: 8
+                  hugepages-2Mi: 5120Mi
+                  vpc.amazonaws.com/efa: 4
+                  memory: 80000Mi
+                requests:
+                  nvidia.com/gpu: 8
+                  hugepages-2Mi: 5120Mi
+                  vpc.amazonaws.com/efa: 4
+                  memory: 80000Mi

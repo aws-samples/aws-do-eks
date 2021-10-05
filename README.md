@@ -12,6 +12,7 @@ The Do framework strives to simplify DevOps and MLOps tasks by automating comple
 
 ## Configure
 All necessary configuration items are centralized in two configuration files. The [`.env`](.env) file in the project's root contains all project-specific items and is used when building and running the project container. The [`wd/conf/eks.conf`](wd/conf/eks.conf) file contains all EKS specific configuration items and is used when running the action scripts to create, scale, or delete your EKS cluster. Heterogeneous clusters are supported. In `eks.conf` you can specify the list of nodegroups to be added to the cluster and at what scale. AWS Credentials can be configured at the instance level through an instance role or injected into the container that runs aws-do-eks using volume or secrets mounting. To configure credentials, run aws configure. Credentials you configure on the host will be mounted into the aws-do-eks container according to the VOL_MAP setting in `.env`.
+Alternatively to [`eks.conf`](wd/conf/eks.conf) you may use a cluster manifest file [`wd/conf/eks.yaml`](wd/conf/eks.yaml). To use the manifest file instead of `eks.conf`, set the [`CONFIG` variable in eks.conf](/wd/conf/eks.conf#L16) to `yaml` instead of `conf`. The advantage of using a manifest file for defining the cluster is that it supports advanced options, which are not available through `eksctl`. For example, enabling of EFA networking is only supported via the manifest file. All supported options in the manifest are documented in the [`eks.yaml` schema](https://eksctl.io/usage/schema/).
 
 ## Build
 This project follows the [Depend on Docker](https://github.com/iankoulski/depend-on-docker) template to build a container including all needed tools and utilities for creation and management of your EKS clusters. Please execute the [`./build.sh`](./build.sh) script to create the `aws-do-eks` container image. If desired, the image name or registry address can be modified in the project configuration file [`.env`](.env).
@@ -30,6 +31,28 @@ To set the sizes of your cluster node groups, update the [`eks.conf`](wd/conf/ek
 
 ## EKS Delete
 To decomission your cluster and remove all AWS resources associated with it, execute the [`./eks-delete.sh`](Container-Root/eks/eks-delete.sh) script. This is a destructive operation. If there is anything in your cluster that you need saved, please persist it outside of the cluster VPC before executing this script.
+
+## Shell customiazations
+When you open a shell into a running `aws-do-eks` container via `./exec.sh`, you will be able to execute `kubectl`, `aws`, and `eksctl` commands. There are other tools and shell customizations that are installed in the container for convenience.
+
+### Tools and customizations
+* [kubectx](https://github.com/ahmetb/kubectx) - show or set current Kubernetes context
+* [kubens](https://github.com/ahmetb/kubectx) - show or set current namespace
+* [kubetail](https://github.com/johanhaleby/kubetail/master/kubetail) - tail the logs of pods that have a name matching a specified pattern
+* [kubectl-node-shell](https://github.com/kvaps/kubectl-node-shell) - open an interactive shell into a kubernetes node using a privileged mode (Do not use in production)
+* [kubeps1](https://github.com/jonmosco/kube-ps1) - customize shell prompt with cluster info 
+
+### Aliases
+```
+ll='ls -alh --color=auto'
+k=kubectl
+kc=kubectx
+kn=kubens
+kt=kubetail
+ks=kube-shell
+kon=kubeon
+koff=kubeoff
+```
 
 ## Other scripts
 
@@ -99,4 +122,5 @@ This library is licensed under the MIT-0 License. See the [LICENSE](LICENSE) fil
 * [Amazon Elastic Kubernetes Service (EKS)](https://aws.amazon.com/eks)
 * [AWS Fargate](https://aws.amazon.com/fargate)
 * [eksctl](https://docs.aws.amazon.com/eks/latest/userguide/eksctl.html)
+* [eksctl yaml schema](https://eksctl.io/usage/schema/)
 * [Depend on Docker Project](https://github.com/iankoulski/depend-on-docker)
