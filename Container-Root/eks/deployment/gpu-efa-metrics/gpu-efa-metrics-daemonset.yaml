@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: gpu-efa-metrics
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: "gpu-efa-metrics"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: "gpu-efa-metrics"
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: "gpu-efa-metrics"
+      name: "gpu-efa-metrics"
+    spec:
+      hostPID: true
+      hostNetwork: true
+      nodeSelector:
+        #beta.kubernetes.io/instance-type: "p4d.24xlarge"
+        processor: gpu
+      initContainers:
+      - name: "installer"
+        image: "ubuntu:20.04"
+        #command: ["bash", "-c", "while true; do date; sleep 10; done"]
+        command: ["nsenter", "--target", "1", "--mount", "--uts", "--ipc", "--net", "--pid", "--","bash", "-c", "echo IyEvYmluL2Jhc2gKCmVjaG8gIiIKZWNobyAidj09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PXYiCgpvc19yZWxlYXNlPSQoY2F0IC9ldGMvb3MtcmVsZWFzZSkKZWNobyAkb3NfcmVsZWFzZSB8IGdyZXAgIkFtYXpvbiBMaW51eCIgPiAvZGV2L251bGwKaWYgWyAiJD8iID09ICIwIiBdOyB0aGVuCgkjIEFtYXpvbiBMaW51eAoJZWNobyAiSW5zdGFsbGluZyBhY2NlbGVyYXRvciBtZXRyaWNzIGNsb3Vkd2F0Y2ggZXhwb3J0ZXIgc2VydmljZSBvbiBBbWF6b24gTGludXggLi4uIgoJL3Vzci9iaW4vcGlwMyBpbnN0YWxsIGJvdG8zCglta2RpciAtcCAvb3B0L2F3cwoJeXVtIGluc3RhbGwgYW1hem9uLWNsb3Vkd2F0Y2gtYWdlbnQgZ2l0IC15CiAgICAgICAgaWYgWyAtZCAvdG1wL2F3cy1lZmEtbmNjbC1iYXNlYW1pIF07IHRoZW4KICAgICAgICAJcm0gLXJmIC90bXAvYXdzLWVmYS1uY2NsLWJhc2VhbWkKCWZpCglnaXQgY2xvbmUgaHR0cHM6Ly9naXRodWIuY29tL2F3cy1zYW1wbGVzL2F3cy1lZmEtbmNjbC1iYXNlYW1pLXBpcGVsaW5lLmdpdCAvdG1wL2F3cy1lZmEtbmNjbC1iYXNlYW1pCiAgICAgICAgbWtkaXIgLXAgL29wdC9hd3MvY2xvdWR3YXRjaAoJY3AgLXJmIC90bXAvYXdzLWVmYS1uY2NsLWJhc2VhbWkvbnZpZGlhLWVmYS1hbWlfYmFzZS9jbG91ZHdhdGNoIC9vcHQvYXdzLwoJbXYgL29wdC9hd3MvY2xvdWR3YXRjaC9hd3MtaHctbW9uaXRvci5zZXJ2aWNlIC9saWIvc3lzdGVtZC9zeXN0ZW0KCWVjaG8gLWUgJyMhL2Jpbi9zaFxuJyB8IHN1ZG8gdGVlIC9vcHQvYXdzL2Nsb3Vkd2F0Y2gvYXdzLWNsb3Vkd2F0Y2gtd3JhcHBlci5zaAoJZWNobyAtZSAnL3Vzci9iaW4vcHl0aG9uMyAvb3B0L2F3cy9jbG91ZHdhdGNoL252aWRpYS9hd3MtaHdhY2NlbC1lcnJvci1wYXJzZXIucHkgJicgfCBzdWRvIHRlZSAtYSAvb3B0L2F3cy9jbG91ZHdhdGNoL2F3cy1jbG91ZHdhdGNoLXdyYXBwZXIuc2gKCWVjaG8gLWUgJy91c3IvYmluL3B5dGhvbjMgL29wdC9hd3MvY2xvdWR3YXRjaC9udmlkaWEvYWNjZWwtdG8tY3cucHkgL29wdC9hd3MvY2xvdWR3YXRjaC9udmlkaWEvbnZpZGlhLWV4cG9ydGVyID4+IC9kZXYvbnVsbCAyPiYxICZcbicgfCBzdWRvIHRlZSAtYSAvb3B0L2F3cy9jbG91ZHdhdGNoL2F3cy1jbG91ZHdhdGNoLXdyYXBwZXIuc2gKCWVjaG8gLWUgJy91c3IvYmluL3B5dGhvbjMgL29wdC9hd3MvY2xvdWR3YXRjaC9lZmEvZWZhLXRvLWN3LnB5IC9vcHQvYXdzL2Nsb3Vkd2F0Y2gvZWZhL2VmYS1leHBvcnRlciA+PiAvZGV2L251bGwgMj4mMSAmXG4nIHwgc3VkbyB0ZWUgLWEgL29wdC9hd3MvY2xvdWR3YXRjaC9hd3MtY2xvdWR3YXRjaC13cmFwcGVyLnNoCgljaG1vZCAreCAvb3B0L2F3cy9jbG91ZHdhdGNoL2F3cy1jbG91ZHdhdGNoLXdyYXBwZXIuc2gKCWNwIC9vcHQvYXdzL2Nsb3Vkd2F0Y2gvbnZpZGlhL2N3YS1jb25maWcuanNvbiAvb3B0L2F3cy9hbWF6b24tY2xvdWR3YXRjaC1hZ2VudC9iaW4vY29uZmlnLmpzb24KCS9vcHQvYXdzL2FtYXpvbi1jbG91ZHdhdGNoLWFnZW50L2Jpbi9hbWF6b24tY2xvdWR3YXRjaC1hZ2VudC1jdGwgLWEgZmV0Y2gtY29uZmlnIC1tIGVjMiAtYyBmaWxlOi9vcHQvYXdzL2FtYXpvbi1jbG91ZHdhdGNoLWFnZW50L2Jpbi9jb25maWcuanNvbiAtcwoJc3lzdGVtY3RsIGVuYWJsZSBhd3MtaHctbW9uaXRvci5zZXJ2aWNlCglzeXN0ZW1jdGwgcmVzdGFydCBhbWF6b24tY2xvdWR3YXRjaC1hZ2VudC5zZXJ2aWNlCglzeXN0ZW1jdGwgcmVzdGFydCBhd3MtaHctbW9uaXRvci5zZXJ2aWNlCglzeXN0ZW1jdGwgc3RhdHVzIGF3cy1ody1tb25pdG9yLnNlcnZpY2UKZWxzZQoJZWNobyAiQWNjZWxlcmF0b3IgbWV0cmljcyBub3Qgc3VwcG9ydGVkIG9uIHRoaXMgb3BlcmF0aW5nIHN5c3RlbToiCgllY2hvICRvc19yZWxlYXNlCmZpCgplY2hvICIiCgo= | base64 -d > /tmp/gpu-efa-metrics-setup-al2-su.sh; chmod +x /tmp/gpu-efa-metrics-setup-al2-su.sh; /tmp/gpu-efa-metrics-setup-al2-su.sh"]
+        securityContext:
+          privileged: true
+          runAsNonRoot: false
+          runAsUser: 0
+      containers:
+      - name: "heartbeat"
+        image: "ubuntu:20.04"
+        command: ["bash", "-c", "while true; do echo Hardware Accelerator Monitor pod is alive on $(date); sleep 60; done"]
+

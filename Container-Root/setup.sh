@@ -12,7 +12,7 @@ if [ -d /etc/apt ]; then
 fi
 
 # Install basic tools
-apt update && apt install -y curl jq vim less unzip git
+apt update && apt install -y curl jq vim nano less unzip git
 
 # Install aws cli
 ./eks/ops/setup/install-aws-cli.sh
@@ -31,3 +31,7 @@ apt update && apt install -y curl jq vim less unzip git
 
 # Install kubetail
 ./eks/ops/setup/install-kubetail.sh
+
+# Install kubeshell
+./eks/ops/setup/install-kubeshell.sh
+
