@@ -42,8 +42,8 @@ spec:
       replicas: 2
       template:
         spec:
-          nodeSelector:
-            beta.kubernetes.io/instance-type: "hpc5a.48xlarge"
+          #nodeSelector:
+          #  beta.kubernetes.io/instance-type: "p3dn.24xlarge"
           volumes:
             - name: efa-vol
               hostPath:
