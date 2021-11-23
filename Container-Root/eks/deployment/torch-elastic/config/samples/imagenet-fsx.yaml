@@ -1,0 +1,59 @@
+apiVersion: elastic.pytorch.org/v1alpha1
+kind: ElasticJob
+metadata:
+  name: imagenet
+  #namespace: elastic-job
+spec:
+  rdzvEndpoint: etcd-service:2379
+  minReplicas: 1
+  maxReplicas: 128
+  replicaSpecs:
+    Worker:
+      replicas: 1
+      restartPolicy: ExitCode
+      template:
+        apiVersion: v1
+        kind: Pod
+        spec:
+          nodeSelector:
+            beta.kubernetes.io/instance-type: p3.8xlarge # g4dn.12xlarge # p3dn.24xlarge
+          containers:
+            - name: elasticjob-worker
+              image: torchelastic/examples:0.2.0
+              imagePullPolicy: Always
+              env:
+                - name: NCCL_DEBUG
+                  value: INFO
+              #  - name: FI_PROVIDER
+              #    value: sockets
+              args:
+                - "--nproc_per_node=4"
+                - "/workspace/examples/imagenet/main.py"
+                - "--arch=resnet50"
+                - "--epochs=1"
+                - "--batch-size=64"
+                # number of data loader workers (NOT trainers)
+                # zero means load the data on the same process as the trainer
+                # this is set so that the container does not OOM since
+                # pytorch data loaders use shm
+                - "--workers=8"
+                - "--checkpoint-file=/fsx-shared/checkpoint.pth.tar"
+                # - "/shared/tiny-imagenet-200"
+                - "/fsx-shared/ILSVRC/Data/CLS-LOC/"
+              resources:
+                limits:
+                  nvidia.com/gpu: 4
+              volumeMounts:
+                - name: fsx-pvc
+                  mountPath: /fsx-shared
+                # The following enables the worker pods to use increased shared memory 
+                # which is required when specifying more than 0 data loader workers
+                - name: dshm
+                  mountPath: /dev/shm
+          volumes:
+            - name: fsx-pvc
+              persistentVolumeClaim:
+                claimName: fsx-claim
+            - name: dshm
+              emptyDir:     
+                medium: Memory

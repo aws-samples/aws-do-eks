@@ -1,3 +1,4 @@
 Container-Root/eks/deployment/cluster-autoscaler/cluster-autoscaler.yaml
 Container-Root/eks/deployment/aws-load-balancer-controller/aws-load-balancer-controller.yaml
 Container-Root/eks/deployment/kube-ops-view/kube-ops-view
+.DS_Store
