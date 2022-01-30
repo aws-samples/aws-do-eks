@@ -37,24 +37,24 @@ spec:
                 # this is set so that the container does not OOM since
                 # pytorch data loaders use shm
                 - "--workers=8"
-                - "--checkpoint-file=/fsx-shared/checkpoint.pth.tar"
+                - "--checkpoint-file=/efs-shared/checkpoint.pth.tar"
                 # - "/shared/tiny-imagenet-200"
                 # This is the directory structure for ImageNet dataset
-                - "/fsx-shared/ILSVRC/Data/CLS-LOC/"
+                - "/efs-shared/ILSVRC/Data/CLS-LOC/"
               resources:
                 limits:
                   nvidia.com/gpu: 4
               volumeMounts:
-                - name: fsx-pvc
-                  mountPath: /fsx-shared
+                - name: efs-pvc
+                  mountPath: /efs-shared
                 # The following enables the worker pods to use increased shared memory 
                 # which is required when specifying more than 0 data loader workers
                 - name: dshm
                   mountPath: /dev/shm
           volumes:
-            - name: fsx-pvc
+            - name: efs-pvc
               persistentVolumeClaim:
-                claimName: fsx-claim
+                claimName: efs-claim
             - name: dshm
               emptyDir:     
                 medium: Memory
