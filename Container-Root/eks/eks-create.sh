@@ -51,9 +51,9 @@ if [ "$CONFIG" == "conf" ]; then
 	# Create Fargate Profiles
 	echo ""
 	echo "Creating Fargate Profiles in cluster ${CLUSTER_NAME} ..."
-	for index in ${!SERVERLESS_FARGET_PROFILE_NAMES}
+	for index in ${!SERVERLESS_FARGATE_PROFILE_NAMES}
 	do
-		export fargateprofile_name=${SERVERLESS_TARGET_PROFILE_NAME[$index]}
+		export fargateprofile_name=${SERVERLESS_FARGATE_PROFILE_NAMES[$index]}
 		fargateprofile/eks-fargateprofile-create.sh
 	done
 
