@@ -1,7 +1,7 @@
 #!/bin/bash
 
 echo ""
-echo "Deploying AWS Loab Balancer Controller to $CLUSTER_NAME ..."
+echo "Deploying AWS Load Balancer Controller to $CLUSTER_NAME ..."
 
 source ../../eks.conf
 
@@ -19,6 +19,8 @@ sleep 30
 cat ./v2_1_3_template.yaml | sed -e "s/your-cluster-name/$CLUSTER_NAME/g" > aws-load-balancer-controller.yaml
 
 kubectl apply -f ./aws-load-balancer-controller.yaml
+
+kubectl apply -f ./ingress-class-alb.yaml
 
 echo ""
 echo "Done deploying AWS Load Balancer Controller"
