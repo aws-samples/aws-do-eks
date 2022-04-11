@@ -10,10 +10,10 @@ data:
 apiVersion: v1
 kind: Pod
 metadata:
-  name: model-save-pod
+  name: efs-model-save-pod
 spec:
   containers:
-  - name: model-save-pod
+  - name: efs-model-save-pod
     image: xxxxxxxxxxxx.dkr.ecr.us-west-2.amazonaws.com/eks-s3-copy
     envFrom:
     - configMapRef:

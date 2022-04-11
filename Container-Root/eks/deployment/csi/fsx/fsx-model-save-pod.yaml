@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: model-save-map
+data:
+  S3_BUCKET: s3://YOUR_S3_BUCKET_WITH_DATA
+  MOUNT_PATH: /fsx-shared
+
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: fsx-model-save-pod
+spec:
+  containers:
+  - name: model-save-pod
+    image: xxxxxxxxxxxx.dkr.ecr.us-west-2.amazonaws.com/eks-s3-copy
+    envFrom:
+    - configMapRef:
+        name: model-save-map
+    command: ["/bin/bash"]
+    args: ["-c", "/model-save.sh $(S3_BUCKET) $(MOUNT_PATH)"]
+    volumeMounts:
+    - name: fsx-pvc
+      mountPath: /fsx-shared
+  volumes:
+  - name: fsx-pvc
+    persistentVolumeClaim:
+      claimName: fsx-claim
+  restartPolicy: Never

@@ -1,6 +1,8 @@
 #!/bin/bash
-# first argument - name of s3 bucket
-# second argument - mount path
+# first argument - name of s3 bucket where the model should be saved
+# example: s3://YOUR_S3_BUCKET_WITH_DATA/MODELS/
+# second argument - shared mount path where the model & checkpoint files are residing
+# example: /efs-shared/
 
 echo "S3 bucket for downloading the data - ${1}"
 echo "Mount path - ${2}"
