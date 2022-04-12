@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: model-save-map
+  name: efs-model-save-map
 data:
   S3_BUCKET: s3://YOUR_S3_BUCKET_WITH_IMAGENET_DATA
   MOUNT_PATH: /efs-shared
@@ -17,7 +17,7 @@ spec:
     image: xxxxxxxxxxxx.dkr.ecr.us-west-2.amazonaws.com/eks-s3-copy
     envFrom:
     - configMapRef:
-        name: model-save-map
+        name: efs-model-save-map
     command: ["/bin/bash"]
     args: ["-c", "/model-save.sh $(S3_BUCKET) $(MOUNT_PATH)"]
     volumeMounts:
