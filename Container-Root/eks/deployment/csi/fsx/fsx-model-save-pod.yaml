@@ -13,7 +13,7 @@ metadata:
   name: fsx-model-save-pod
 spec:
   containers:
-  - name: model-save-pod
+  - name: fsx-model-save-pod
     image: xxxxxxxxxxxx.dkr.ecr.us-west-2.amazonaws.com/eks-s3-copy
     envFrom:
     - configMapRef:
