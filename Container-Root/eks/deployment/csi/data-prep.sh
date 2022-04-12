@@ -1,6 +1,6 @@
 #!/bin/bash
 # This script assumes two arguments 
-# This script is used by efs-data-prep-pod.yaml
+# This script is used by xxx-data-prep-pod.yaml
 
 # first argument - name of s3 bucket
 # example: s3://YOUR_S3_BUCKET_WITH_DATA

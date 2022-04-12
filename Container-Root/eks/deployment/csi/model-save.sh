@@ -4,7 +4,7 @@
 # second argument - shared mount path where the model & checkpoint files are residing
 # example: /efs-shared/
 
-echo "S3 bucket for downloading the data - ${1}"
+echo "S3 bucket - ${1}"
 echo "Mount path - ${2}"
 
 DIR="model-"$(date '+%Y-%m-%d_%H:%M:%S')
