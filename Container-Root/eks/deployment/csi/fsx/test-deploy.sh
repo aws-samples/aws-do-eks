@@ -12,10 +12,10 @@
 #kubectl apply -f ./test-fsx-pv-static.yaml
 #kubectl apply -f ./test-fsx-pvc-static.yaml
 
-kubectl apply -f ./test-fsx-pvc-dynamic.yaml
+kubectl apply -f ./fsx-pvc-dynamic.yaml
 
 kubectl describe pvc fsx-claim
 
-kubectl apply -f ./test-fsx-pod.yaml
+kubectl apply -f ./fsx-share-test.yaml
 
 #kubectl exec -it test-fsx-pod -- bash
