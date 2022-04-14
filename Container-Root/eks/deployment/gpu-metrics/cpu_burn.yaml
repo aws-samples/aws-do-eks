@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: cpu-burn
+spec:
+  restartPolicy: OnFailure
+  containers:
+  - name: cpu-burn-test
+    image: progrium/stress
+    command: ["/bin/sh"]
+    args: ["-c", "/usr/bin/stress --cpu 16 --io 1 --vm 2 --vm-bytes 128M --timeout 120s"]
