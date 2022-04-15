@@ -3,7 +3,7 @@ kind: ConfigMap
 metadata:
   name: efs-data-prep-map
 data:
-  S3_BUCKET: s3://YOUR_S3_BUCKET_WITH_IMAGENET_DATA
+  S3_BUCKET: s3://YOUR_S3_BUCKET_WITH_DATA
   MOUNT_PATH: /efs-shared
 
 ---
@@ -14,7 +14,7 @@ metadata:
 spec:
   containers:
   - name: efs-data-prep-pod
-    image: xxxxxxxxxxxx.dkr.ecr.us-west-2.amazonaws.com/eks-s3-copy
+    image: <DOCKER_REGISTRY>eks-s3-copy
     envFrom:
     - configMapRef:
         name: efs-data-prep-map
