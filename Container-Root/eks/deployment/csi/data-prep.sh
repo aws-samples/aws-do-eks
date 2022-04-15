@@ -13,7 +13,7 @@ echo "S3 bucket for downloading the data - ${1}"
 echo "Mount path - ${2}"
 
 echo "copying ......."
-aws s3 cp ${1} ${2} --recursive
+aws s3 sync ${1} ${2} --quiet
 
 echo "done ......"
 echo $(ls $2)
