@@ -3,7 +3,7 @@ kind: ConfigMap
 metadata:
   name: fsx-model-save-map
 data:
-  S3_BUCKET: s3://YOUR_S3_BUCKET_WITH_DATA
+  S3_BUCKET: s3://YOUR_S3_BUCKET_FOR_MODEL
   MOUNT_PATH: /fsx-shared
 
 ---
@@ -14,7 +14,7 @@ metadata:
 spec:
   containers:
   - name: fsx-model-save-pod
-    image: xxxxxxxxxxxx.dkr.ecr.us-west-2.amazonaws.com/eks-s3-copy
+    image: <DOCKER_REGISTRY>eks-s3-copy
     envFrom:
     - configMapRef:
         name: fsx-model-save-map
