@@ -11,7 +11,7 @@ spec:
   mountOptions:
     - flock
   persistentVolumeReclaimPolicy: Retain
-  k g: fsx-sc
+  storageClassName: fsx-sc
   csi:
     driver: fsx.csi.aws.com
     volumeHandle: FSx_VOLUME_ID # from AWS FSx console: File system ID
