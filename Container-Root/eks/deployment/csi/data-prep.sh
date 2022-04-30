@@ -11,6 +11,8 @@
 echo "S3 bucket for downloading the data - ${1}"
 echo "Mount path - ${2}"
 
+mkdir -p ${2}
+
 echo "copying ......."
 aws s3 sync ${1} ${2} --quiet
 

@@ -11,13 +11,21 @@ The FSx for Luster filesystem can only exists in a single AZ and all the nodes u
 
     <center><img src="fsx_conf_instance_profile_name.png" width="80%"/></center>
 
-- Create FSx and persistent volume:
+- Create FSx and persistent volume (Dynamic):
 
     To create the persistent volume we just need to apply this:
 
     `kubectl apply -f fsx-pvc-dynamic.yaml`
 
-    This will fist create the FSx filesystem which we can verify from the AWS console. Then, it will mount that file system as the persistent volume. If an FSx filesystem already exists, the we need to use the static versions of this yaml.
+    This will dynamically provision the FSx filesystem first, which we can verify from the AWS console. Then, it will mount that file system as the persistent volume. If an FSx filesystem already exists, the we need to use the static versions of this yaml.
+
+- Create FSx and persistent volume (Static):
+
+    If the FSx filesystem already exists, the we can use the following yaml to create persistent volume. Before applying this yaml, we need to collect some information about the existing filesystem from AWS FSx console and modify the yaml file accordingly.
+
+    `kubectl apply -f fsx-pvc-static.yaml`
+
+    Note that the existing FSx filesystem must have the same SubnetID as provided in `fsx.conf` because the `deploy.sh` script creates the `storageclass` using that SubnetID, and the same `storageclass` is used in this yaml file.
 
 - Create test pod
 
