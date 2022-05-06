@@ -9,9 +9,9 @@ spec:
     command: ["/bin/sh"]
     args: ["-c", "while true; do echo  \"hello from EFS\" - $(date -u) >> /efs-shared/test.txt; sleep 120; done"]
     volumeMounts:
-    - name: efs-pvc
+    - name: efs-pv
       mountPath: /efs-shared
   volumes:
-  - name: efs-pvc
+  - name: efs-pv
     persistentVolumeClaim:
-      claimName: efs-claim
+      claimName: efs-pvc

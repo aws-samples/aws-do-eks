@@ -21,10 +21,10 @@ spec:
     command: ["/bin/bash"]
     args: ["-c", "/model-save.sh $(S3_BUCKET) $(MOUNT_PATH)"]
     volumeMounts:
-    - name: fsx-pvc
+    - name: fsx-pv
       mountPath: /fsx-shared
   volumes:
-  - name: fsx-pvc
+  - name: fsx-pv
     persistentVolumeClaim:
-      claimName: fsx-claim
+      claimName: fsx-pvc
   restartPolicy: Never

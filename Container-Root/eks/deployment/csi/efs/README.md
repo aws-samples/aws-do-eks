@@ -18,7 +18,7 @@ Following are the steps to create and mount an EFS file system:
 
     This script will setup the CSI driver. Next we create the persistent volume by:
 
-    `kubectl apply - f efs-pvs.yaml`
+    `kubectl apply - f efs-pvc.yaml`
     
     Note that the `deploy.sh` script fetches the EFS file system id using aws cli. If you have multiple volumes then you need to provide the specific EFS volume id in the `deploy.sh` script (line 18) or directly in the `efs-pvc.yaml` file (line 24). Otherwise you'll get errors while creating the persistent volume.
 

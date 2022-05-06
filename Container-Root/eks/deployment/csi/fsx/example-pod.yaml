@@ -9,9 +9,9 @@ spec:
     command: ["/bin/sh"]
     args: ["-c", "while true; do echo \"hello from FSx\" >> /data/out.txt; sleep 5; done"]
     volumeMounts:
-    - name: persistent-storage
+    - name: fsx-pv
       mountPath: /data
   volumes:
-  - name: persistent-storage
+  - name: fsx-pv
     persistentVolumeClaim:
-      claimName: fsx-claim
+      claimName: fsx-pvc
