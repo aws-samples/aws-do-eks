@@ -9,9 +9,9 @@ spec:
     command: ["/bin/bash"]
     args: ["-c", "while true; do echo  \"hello from FSx\" - $(date -u) >> /fsx-shared/test.txt; sleep 120; done"]
     volumeMounts:
-    - name: fsx-pvc
+    - name: fsx-pv
       mountPath: /fsx-shared
   volumes:
-  - name: fsx-pvc
+  - name: fsx-pv
     persistentVolumeClaim:
-      claimName: fsx-claim
+      claimName: fsx-pvc
