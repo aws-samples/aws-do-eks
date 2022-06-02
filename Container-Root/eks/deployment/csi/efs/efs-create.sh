@@ -3,7 +3,8 @@
 # This script follows the following eks workshop
 # https://www.eksworkshop.com/beginner/190_efs/launching-efs/
 
-CLUSTER_NAME=do-eks
+# Assume the cluster name is the first cluster in the list
+CLUSTER_NAME=$(aws eks list-clusters --query clusters --output json | jq -r .[0])
 VPC_ID=$(aws eks describe-cluster --name $CLUSTER_NAME --query "cluster.resourcesVpcConfig.vpcId" --output text)
 CIDR_BLOCK=$(aws ec2 describe-vpcs --vpc-ids $VPC_ID --query "Vpcs[].CidrBlock" --output text)
 
@@ -40,7 +41,7 @@ do
 done
 sleep 30
 
-echo "Mount points ..."
+echo "Mount points state ..."
 aws efs describe-mount-targets --file-system-id $FILE_SYSTEM_ID | jq --raw-output '.MountTargets[].LifeCycleState'
 
 echo 'Done ...'

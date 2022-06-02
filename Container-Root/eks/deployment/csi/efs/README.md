@@ -12,21 +12,18 @@ Following are the steps to create and mount an EFS file system:
 
 - Create persistent volume
 
-    Before creating persistent volume, we need to deploy EFS CSI driver. Then we can create the persistent volume. Following script does this process:
+    Before creating persistent volume, we need to deploy EFS CSI driver. Then we can create the persistent volume. Following script does this processi. It also executes ./efs-create.sh if no EFS filesystems exist:
 
     `./deploy.sh`
 
-    This script will setup the CSI driver. Next we create the persistent volume by:
+    This script will setup the CSI driver. Next we create the persistent volume efs-pv.
 
-    `kubectl apply - f efs-pvc.yaml`
-    
-    Note that the `deploy.sh` script fetches the EFS file system id using aws cli. If you have multiple volumes then you need to provide the specific EFS volume id in the `deploy.sh` script (line 18) or directly in the `efs-pvc.yaml` file (line 24). Otherwise you'll get errors while creating the persistent volume.
+    Note that the `deploy.sh` script fetches the EFS file system id using aws cli. If you have multiple volumes then it will use the first one in the list. If you need to use a different than the first volume, you will need to modify the deploy.sh script.
+    (line 18) and specify the desired lindex in the list replacing [0] with [<index>].
 
 - Create a test pod and mount persistent volume
 
-    Optionally, we can also create a test pod and mount the EFS volume to that pod. This is done by applying
-
-    `kubectl apply -f efs-share-test.yaml`
+    Optionally, we can also create a test pod and mount the EFS volume to that pod. This is done by executing `./efs-test-deploy.sh`. The test is successful if the pod enters the Running state. To remove the test pod and release the volume, execute `./efs-test-delete.sh`.
 
 - Copy training data to EFS volume
 
@@ -46,5 +43,6 @@ Following are the steps to create and mount an EFS file system:
     We need to provide the s3 bucket in this yaml file where the model needs to saved.
 
 - Clean up
-
-    The `delete.sh` script will delete the test pod and the persistent volume. This will also clean up the CSI driver. But this will not delete the EFS volume.
+    The `./efs-test-delete.sh` script deletes the test pod and pvc, and releases the persistent volume so it can be bound to other claims.
+    The `./delete.sh` remove the EFS CSI driver from the cluster, but it will not delete the EFS volume.
+    If you wish to delete the EFS volume, execute `./efs-delete.sh`.
