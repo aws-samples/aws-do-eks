@@ -19,13 +19,14 @@ spec:
             beta.kubernetes.io/instance-type: p3.8xlarge # g4dn.12xlarge # p3dn.24xlarge
           containers:
             - name: elasticjob-worker
-              image: xxxxxxxxxxxx.dkr.ecr.ap-northeast-2.amazonaws.com/pytorch-efa:latest
+              image: xxxxxxxxxxxx.dkr.ecr.us-east-1.amazonaws.com/pytorch-efa:latest
               imagePullPolicy: Always
               env:
                 - name: NCCL_DEBUG
                   value: INFO
               #  - name: FI_PROVIDER
               #    value: sockets
+              command: ["torchrun"]
               args:
                 - "--nproc_per_node=4"
                 - "/workspace/elastic/examples/imagenet/main.py"

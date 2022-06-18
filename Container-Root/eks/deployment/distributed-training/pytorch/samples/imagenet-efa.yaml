@@ -22,7 +22,7 @@ spec:
             #beta.kubernetes.io/instance-type: g4dn.metal
           containers:
             - name: elasticjob-worker
-              image: xxxxxxxxxxxx.dkr.ecr.ap-northeast-2.amazonaws.com/pytorch-efa:latest
+              image: xxxxxxxxxxxx.dkr.ecr.us-east-1.amazonaws.com/pytorch-efa:latest
               imagePullPolicy: Always
               env:
                 - name: NCCL_DEBUG
