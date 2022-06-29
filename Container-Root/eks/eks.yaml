@@ -27,7 +27,7 @@ managedNodeGroups:
     availabilityZones: ["us-east-1b"]
     efaEnabled: true
     minSize: 0
-    desiredCapacity: 0
+    desiredCapacity: 1
     maxSize: 10
     volumeSize: 900
     iam:
@@ -35,6 +35,7 @@ managedNodeGroups:
         imageBuilder: true
         autoScaler: true
         ebs: true
+        efs: true
         fsx: true
         cloudWatch: true
   - name: p3dn-24xlarge-efa
@@ -52,6 +53,7 @@ managedNodeGroups:
         imageBuilder: true
         autoScaler: true
         ebs: true
+        efs: true
         fsx: true
         cloudWatch: true
   - name: g4dn-metal-efa
@@ -61,6 +63,40 @@ managedNodeGroups:
     availabilityZones: ["us-east-1b"]
     efaEnabled: true
     minSize: 0
-    desiredCapacity: 2
+    desiredCapacity: 0
     maxSize: 10
     volumeSize: 900
+  - name: p3-8xlarge
+    instanceType: p3.8xlarge
+    instancePrefix: p3-8xl
+    privateNetworking: true
+    availabilityZones: ["us-east-1b"]
+    minSize: 0
+    desiredCapacity: 1
+    maxSize: 10
+    volumeSize: 900
+    iam:
+      withAddonPolicies:
+        imageBuilder: true
+        autoScaler: true
+        ebs: true
+        efs: true
+        fsx: true
+        cloudWatch: true
+  - name: p3-16xlarge
+    instanceType: p3.16xlarge
+    instancePrefix: p3-16xl
+    privateNetworking: true
+    availabilityZones: ["us-east-1b"]
+    minSize: 0
+    desiredCapacity: 0
+    maxSize: 10
+    volumeSize: 900
+    iam:
+      withAddonPolicies:
+        imageBuilder: true
+        autoScaler: true
+        ebs: true
+        efs: true
+        fsx: true
+        cloudWatch: true
