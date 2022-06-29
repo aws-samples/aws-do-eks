@@ -50,7 +50,7 @@ spec:
             - pml
             - ^cm
             - --oversubscribe
-            - /tmp/nccl-tests/build/all_reduce_perf
+            - /opt/nccl-tests/build/all_reduce_perf
             - -b
             - "8"
             - -e
