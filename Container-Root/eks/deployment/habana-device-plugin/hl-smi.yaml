@@ -1,0 +1,32 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+    name: job-hl
+spec:
+  template:
+    metadata:
+        labels:
+            app: job-hl
+    spec:
+        containers:
+        - name: job-hl
+          image: vault.habana.ai/gaudi-docker/1.5.0/ubuntu20.04/habanalabs/tensorflow-installer-tf-cpu-2.9.1
+          command: ["hl-smi"]
+          workingDir: /home
+          resources:
+            limits:
+              habana.ai/gaudi: 8
+              hugepages-2Mi: "21000Mi"
+              memory: 720Gi
+              vpc.amazonaws.com/efa: 4
+            requests:
+              habana.ai/gaudi: 8
+              hugepages-2Mi: "21000Mi"
+              memory: 700Gi
+              vpc.amazonaws.com/efa: 4
+          securityContext:
+            capabilities:
+              add: ["SYS_RAWIO"]
+        hostNetwork: true
+        restartPolicy: Never
+  backoffLimit: 0
