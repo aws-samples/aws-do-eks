@@ -1,0 +1,65 @@
+apiVersion: kubeflow.org/v2beta1
+# Deploy Kubeflow MPI Operator as described here:
+# https://github.com/kubeflow/mpi-operator
+# Replace ${REGISTRY} in this manifest before applying
+kind: MPIJob
+metadata:
+  name: mnist-distributed
+spec:
+  slotsPerWorker: 8
+  runPolicy:
+    cleanPodPolicy: Running
+  mpiReplicaSpecs:
+    Launcher:
+      replicas: 1
+      restartPolicy: Never
+      template:
+        spec:
+          imagePullSecrets:
+            - name: private-registry
+          terminationGracePeriodSeconds: 0
+          containers:
+            - image: ${REGISTRY}/habana-tensorflow-efa
+              imagePullPolicy: Always
+              name: mnist-launcher
+              command:
+                - bash
+                - -c
+                - mpirun --allow-run-as-root --bind-to core -np 16 --map-by ppr:4:socket:PE=6 --merge-stderr-to-stdout
+                  --prefix /opt/amazon/openmpi
+                  -x PYTHONPATH=/Model-References:/usr/lib/habanalabs
+                  -x HCL_CONFIG_PATH=/etc/hcl/worker_config.json
+                  -x LD_LIBRARY_PATH=/opt/amazon/openmpi/lib:/opt/amazon/efa/lib/:/root/hccl_ofi_wrapper:${LD_LIBRARY_PATH}
+                  -x HCCL_OVER_TCP=0
+                  -x HCCL_OVER_OFI=1
+                  -x FI_PROVIDER=efa
+                  python3 /Model-References/TensorFlow/examples/hello_world/example_hvd.py
+              resources:
+                requests:
+                  cpu: "100m"
+    Worker:
+      replicas: 2
+      template:
+        spec:
+          imagePullSecrets:
+            - name: private-registry
+          terminationGracePeriodSeconds: 0
+          containers:
+            - image: ${REGISTRY}/habana-tensorflow-efa
+              name: mnist-worker
+              securityContext:
+                capabilities:
+                  add:
+                    - SYS_RAWIO
+                    - SYS_PTRACE
+              resources:
+                requests:
+                  habana.ai/gaudi: 8
+                  hugepages-2Mi: "21000Mi"
+                  vpc.amazonaws.com/efa: 4
+                  cpu: "90"
+                limits:
+                  habana.ai/gaudi: 8
+                  hugepages-2Mi: "21000Mi"
+                  vpc.amazonaws.com/efa: 4
+                  cpu: "90"
