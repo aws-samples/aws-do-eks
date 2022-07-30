@@ -1,0 +1,43 @@
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app: tensorboard
+  name: tensorboard
+spec:
+  ports:
+  - port: 80
+    targetPort: 6006
+  selector:
+    app: tensorboard
+  type: LoadBalancer
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: tensorboard
+  name: tensorboard
+spec:
+  selector:
+    matchLabels:
+      app: tensorboard
+  template:
+    metadata:
+      labels:
+        app: tensorboard
+    spec:  
+      containers:
+      - name: tensorboard
+        command: ["/bin/sh", "-c"]
+        args: ["tensorboard --logdir /efs-shared/tensorboard"]
+        image: tensorflow/tensorflow
+        ports:
+        - containerPort: 6006
+        volumeMounts:
+                - mountPath: /efs-shared
+                  name: efs-pv
+      volumes:
+      - name: efs-pv
+        persistentVolumeClaim:
+          claimName: efs-pvc

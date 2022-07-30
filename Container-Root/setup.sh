@@ -38,3 +38,6 @@ apt-get update && apt-get install -y curl jq vim nano less unzip git
 # Install helm
 ./eks/ops/setup/install-helm.sh
 
+# Install docker
+./eks/ops/setup/install-docker.sh
+

@@ -19,7 +19,7 @@ spec:
             - name: private-registry
           terminationGracePeriodSeconds: 0
           containers:
-            - image: ${REGISTRY}/habana-tensorflow-efa
+            - image: ${REGISTRY}habana-tensorflow-efa
               imagePullPolicy: Always
               name: mnist-launcher
               command:
@@ -45,7 +45,7 @@ spec:
             - name: private-registry
           terminationGracePeriodSeconds: 0
           containers:
-            - image: ${REGISTRY}/habana-tensorflow-efa
+            - image: ${REGISTRY}habana-tensorflow-efa
               name: mnist-worker
               securityContext:
                 capabilities:

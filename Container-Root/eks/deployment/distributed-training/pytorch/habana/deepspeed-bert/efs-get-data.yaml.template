@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: efs-data-prep-pod
+spec:
+  containers:
+  - name: efs-data-prep-pod
+    image: ${REGISTRY}habana-pytorch-efa
+    command: ["/bin/bash"]
+    args: ["-c", "cp -r /Model-References/PyTorch/nlp/pretraining/deepspeed-bert/data /efs-shared/data && cd /efs-shared/data && PYTHON=python3 ./create_datasets_from_start.sh wiki_books"]
+    volumeMounts:
+    - name: efs-pv
+      mountPath: /efs-shared
+  volumes:
+  - name: efs-pv
+    persistentVolumeClaim:
+      claimName: efs-pvc
+  restartPolicy: Never
