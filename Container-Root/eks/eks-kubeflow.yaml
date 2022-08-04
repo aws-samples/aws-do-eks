@@ -1,0 +1,14 @@
+---
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+metadata:
+  name: eks-kubeflow
+  region: us-west-2
+  version: "1.21"
+managedNodeGroups:
+- name: nodegroup
+  desiredCapacity: 4
+  iam:
+    withAddonPolicies:
+      albIngress: true
+
