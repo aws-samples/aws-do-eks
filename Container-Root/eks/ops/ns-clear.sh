@@ -4,7 +4,7 @@
 
 mapfile -t namespaces < <( kubectl get namespace | grep Terminating | awk '{print $1}' )
 
-if [ "$[namespaces[@]}" == "" ]; then
+if [ "${#namespaces[@]}" == "0" ]; then
 	echo "No Terminating namespaces found"
 else
 	echo "Clearing namespaces that are in Terminating state ..."
