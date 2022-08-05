@@ -5,10 +5,11 @@ metadata:
   name: eks-kubeflow
   region: us-west-2
   version: "1.21"
+iam:
+  withOIDC: true
 managedNodeGroups:
 - name: nodegroup
-  desiredCapacity: 4
+  desiredCapacity: 6
   iam:
     withAddonPolicies:
-      albIngress: true
-
+      efs: true
