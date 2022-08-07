@@ -58,6 +58,7 @@
 							"sudo su ec2-user bash -c 'source /home/ec2-user/.bashrc; cd /home/ec2-user/aws-do-eks/Container-Root/eks/deployment/csi/efs; ./deploy.sh | tee -a /tmp/bootstrap.log' \n",
 							"sudo su ec2-user bash -c 'source /home/ec2-user/.bashrc; cd /home/ec2-user/aws-do-eks/Container-Root/eks/vpc; CLUSTER_NAME=eks-kubeflow REGION=us-west-2 ./vpc-endpoint-create.sh | tee -a /tmp/bootstrap.log' \n",
 							"sudo su ec2-user bash -c 'source /home/ec2-user/.bashrc; cd /home/ec2-user/aws-do-eks/Container-Root/eks/iam; CLUSTER_NAME=eks-kubeflow AWS_DEFAULT_REGION=us-west-2 ./node-role-expand.sh | tee -a /tmp/bootstrap.log' \n",
+							"sudo su ec2-user bash -c 'source /home/ec2-user/.bashrc; cd /home/ec2-user/aws-do-eks/Container-Root/eks/iam; AWS_DEFAULT_REGION=us-west-2 ./sm-role-create.sh | tee -a /tmp/bootstrap.log' \n",
 							"date | tee -a /tmp/bootstrap.log \n",
 							"echo 'Done executing userdata script.' | tee -a /tmp/bootstrap.log \n"
 						]]
