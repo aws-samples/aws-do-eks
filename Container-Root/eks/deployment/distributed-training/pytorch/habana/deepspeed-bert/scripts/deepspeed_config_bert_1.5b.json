@@ -1,0 +1,16 @@
+{
+  "steps_per_print": 10,
+  "train_batch_size": 12288,
+  "train_micro_batch_size_per_gpu": 16,
+  "tensorboard": {
+    "enabled": true,
+    "output_path": "/efs-shared",
+    "job_name": "tensorboard"
+  },
+  "bf16":  { "enabled": true },
+  "gradient_clipping": 1.0,
+  "zero_optimization":  { "stage": 1 },
+  "zero_allow_untested_optimizer": true
+}
+
+

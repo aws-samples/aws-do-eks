@@ -22,16 +22,16 @@ managedNodeGroups:
   - name: dl1
     instanceType: dl1.24xlarge
     instancePrefix: dl1
-    ami: ami-0e30d8dea91e2d389
+    ami: ami-048c47c617cbd904f
     availabilityZones: ["us-east-1a"]
     volumeSize: 500
     minSize: 0
-    desiredCapacity: 2
+    desiredCapacity: 0
     maxSize: 4
     privateNetworking: true
     efaEnabled: true
     ssh:
-      publicKeyName: DL1_Key
+      publicKeyName: renatoNVirginiaKey
     labels: 
       processor: gaudi
     tags:
@@ -51,17 +51,17 @@ managedNodeGroups:
       #!/bin/bash
       /etc/eks/bootstrap.sh do-eks
 
-  - name: g4dn
-    instanceType: g4dn.12xlarge
-    instancePrefix: g4dn
+  - name: c5
+    instanceType: c5.4xlarge
+    instancePrefix: c5
     privateNetworking: true
-    availabilityZones: ["us-east-1b"]
+    availabilityZones: ["us-east-1a"]
     efaEnabled: false
     minSize: 0
-    desiredCapacity: 0
+    desiredCapacity: 1
     maxSize: 10
     volumeSize: 900
-    labels: { processor: gpu }
+    labels: { processor: cpu }
     iam:
       withAddonPolicies:
         autoScaler: true

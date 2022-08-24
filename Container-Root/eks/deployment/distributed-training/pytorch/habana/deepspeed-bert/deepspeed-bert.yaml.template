@@ -1,0 +1,70 @@
+apiVersion: kubeflow.org/v1alpha2
+# Deploy Kubeflow MPI Operator as described here:
+# https://github.com/kubeflow/mpi-operator
+# Replace ${REGISTRY} in this manifest before applying
+kind: MPIJob
+metadata:
+  name: deepspeed-bert
+spec:
+  slotsPerWorker: 8
+  runPolicy:
+    cleanPodPolicy: Running
+  mpiReplicaSpecs:
+    Launcher:
+      replicas: 1
+      restartPolicy: Never
+      template:
+        spec:
+          imagePullSecrets:
+            - name: private-registry
+          terminationGracePeriodSeconds: 0
+          containers:
+            - image: ${REGISTRY}habana-pytorch-efa
+              imagePullPolicy: Always
+              name: deepspeed-bert-launcher
+              command:
+                - bash
+                - /Model-References/PyTorch/nlp/pretraining/deepspeed-bert/scripts/launch_train.sh
+              resources:
+                requests:
+                  cpu: "100m"
+              volumeMounts:
+                - mountPath: /efs-shared
+                  name: efs-pv
+          volumes:
+          - name: efs-pv
+            persistentVolumeClaim:
+              claimName: efs-pvc
+    Worker:
+      replicas: 2
+      template:
+        spec:
+          imagePullSecrets:
+            - name: private-registry
+          terminationGracePeriodSeconds: 0
+          containers:
+            - image: ${REGISTRY}habana-pytorch-efa
+              name: deepspeed-bert-worker
+              securityContext:
+                capabilities:
+                  add:
+                    - SYS_RAWIO
+                    - SYS_PTRACE
+              resources:
+                requests:
+                  habana.ai/gaudi: 8
+                  hugepages-2Mi: "21000Mi"
+                  vpc.amazonaws.com/efa: 4
+                  cpu: "90"
+                limits:
+                  habana.ai/gaudi: 8
+                  hugepages-2Mi: "21000Mi"
+                  vpc.amazonaws.com/efa: 4
+                  cpu: "90"
+              volumeMounts:
+                - mountPath: /efs-shared
+                  name: efs-pv
+          volumes:
+          - name: efs-pv
+            persistentVolumeClaim:
+              claimName: efs-pvc

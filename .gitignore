@@ -2,3 +2,6 @@ Container-Root/eks/deployment/cluster-autoscaler/cluster-autoscaler.yaml
 Container-Root/eks/deployment/aws-load-balancer-controller/aws-load-balancer-controller.yaml
 Container-Root/eks/deployment/kube-ops-view/kube-ops-view
 .DS_Store
+Container-Root/eks/deployment/distributed-training/pytorch/habana/deepspeed-bert/efs-get-data.yaml
+Container-Root/eks/deployment/distributed-training/pytorch/habana/deepspeed-bert/deepspeed-bert.yaml
+Container-Root/eks/deployment/distributed-training/tensorflow/habana/mpijob-mnist.yaml

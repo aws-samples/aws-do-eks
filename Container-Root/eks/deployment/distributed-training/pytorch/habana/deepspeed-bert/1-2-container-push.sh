@@ -8,7 +8,7 @@
 if [ -f /aws-do-eks/.env ]; then
     pushd /aws-do-eks
 else
-    pushd ../../../../../../
+    pushd ../../../../../../../
 fi
 source .env
 popd
@@ -24,6 +24,6 @@ echo "Logging in to $REGISTRY ..."
 aws ecr get-login-password | docker login --username AWS --password-stdin $REGISTRY
 
 # Push image to registry
-echo "Pushing image habana-tensorflow-efa to $REGISTRY ..."
-docker push ${REGISTRY}habana-tensorflow-efa
+echo "Pushing image habana-pytorch-efa to $REGISTRY ..."
+docker push ${REGISTRY}habana-pytorch-efa
 
