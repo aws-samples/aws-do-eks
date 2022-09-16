@@ -12,7 +12,7 @@ if [ -d /etc/apt ]; then
 fi
 
 # Install basic tools
-apt-get update && apt-get install -y curl jq vim nano less unzip git
+apt-get update && apt-get install -y curl jq vim nano less unzip git gettext-base
 
 # Install aws cli
 ./eks/ops/setup/install-aws-cli.sh

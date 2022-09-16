@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: do-gromacs
+  namespace: gromacs
+  labels:
+    app: gromacs
+    role: driver
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: gromacs
+  template:
+    metadata:
+      labels:
+        app: gromacs
+        role: driver
+    spec:
+      #nodeSelector:
+      #  beta.kubernetes.io/instance-type: "c5n.18xlarge"
+      serviceAccount: gromacs
+      serviceAccountName: gromacs
+      containers:
+      - name: gromacs
+        image: "516928513568.dkr.ecr.us-east-1.amazonaws.com/do-gromacs:v20220910"
+        imagePullPolicy: Always
+        command: ["/bin/bash"]
+        args: ["-c", "while true; do date; sleep 5; done"]
+        env:
+        - name: REGISTRY
+          value: "516928513568.dkr.ecr.us-east-1.amazonaws.com/"
+        - name: IMAGE
+          value: "do-gromacs"
+        - name: TAG
+          value: ":v20220910"
+        - name: TO
+          value: "kubernetes"
+        - name: AWS_DEFAULT_REGION
+          value: "us-east-1"
+        - name: K8S_PVC_NAME
+          value: "fsx-pvc"
+        volumeMounts:
+        - name: data
+          mountPath: /data
+      volumes:
+      - name: data
+        persistentVolumeClaim:
+          claimName: fsx-pvc
+        #resources:
+        #  limits:
+        #    cpu: 4
+        #    memory: 4Gi
+        #    vpc.amazonaws.com/efa: 1
+        #  requests:
+        #    cpu: "1"
+        #    memory: 1Gi
+        #    vpc.amazonaws.com/efa: 1 

@@ -1,0 +1,65 @@
+apiVersion: kubeflow.org/v2beta1
+kind: MPIJob
+metadata:
+  name: test-osu-latency-sockets
+spec:
+  slotsPerWorker: 1
+  runPolicy:
+    cleanPodPolicy: Running
+  mpiReplicaSpecs:
+    Launcher:
+      replicas: 1
+      template:
+         spec:
+          restartPolicy: OnFailure
+          initContainers:
+          - image: "${REGISTRY}${IMAGE}${TAG}"
+            name: init
+            command: ["sh", "-c", "sleep 5"]
+          volumes:
+          - name: cache-volume
+            emptyDir:
+              medium: Memory
+              sizeLimit: 128Mi
+          containers:
+          - image: "${REGISTRY}${IMAGE}${TAG}"
+            imagePullPolicy: Always
+            name: test-osu-latency-sockets-launcher
+            volumeMounts:
+            - name: cache-volume
+              mountPath: /dev/shm
+            command:
+            - /opt/view/bin/mpirun
+            - --allow-run-as-root
+            - -x
+            - FI_LOG_LEVEL=info
+            - -x
+            - FI_PROVIDER=sockets
+            - /opt/view/libexec/osu-micro-benchmarks/mpi/pt2pt/osu_latency
+    Worker:
+      replicas: 2
+      template:
+        spec:
+          volumes:
+          - name: cache-volume
+            emptyDir:
+              medium: Memory
+              sizeLimit: 128Mi
+          containers:
+          - image: "${REGISTRY}${IMAGE}${TAG}"
+            imagePullPolicy: Always
+            name: test-osu-latency-sockets-worker
+            volumeMounts:
+            - name: cache-volume
+              mountPath: /dev/shm
+            resources:
+              limits:
+                nvidia.com/gpu: 0
+                hugepages-2Mi: 5120Mi
+                vpc.amazonaws.com/efa: 0
+                memory: 8000Mi
+              requests:
+                nvidia.com/gpu: 0
+                hugepages-2Mi: 5120Mi
+                vpc.amazonaws.com/efa: 0
+                memory: 8000Mi
