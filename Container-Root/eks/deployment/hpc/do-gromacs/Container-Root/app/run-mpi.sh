@@ -44,7 +44,8 @@ I_MINIM=${I_MINIM:="/inputs/minim.mdp"}
 I_NPT=${I_NPT:="/inputs/npt.mdp"}
 I_NVT=${I_NVT:="/inputs/nvt.mdp"}
 
-DATA_DIR=${DATA_DIR:="/data"}
+export DATA_DIR=${DATA_DIR:="/data"}
+echo "DATA_DIR=$DATA_DIR"
 MDRUN_ARGS=${MDRUN_ARGS:=""}
 
 # process placement
@@ -80,6 +81,40 @@ MPI_OPTS+=(-x OMP_NUM_THREADS)
 # hack to make sure openmpi doesn't complain if this isn't exported
 export LD_LIBRARY_PATH=$LD_LIBRARY_PATH
 
+# helper functions
+# complete_or_timeout - wait the specified pod to enter status Completed
+# time out if waiting longer than the specified number of seconds
+# The function requires two parameters
+#    pod_name_prefix - a string that uniquely identifies the job pod name
+#    timeout in seconds to not exceed while waiting for the pod to enter Completed state
+function complete_or_timeout() {
+  set +o errexit
+  set +o pipefail
+  pod_name_prefix=$1
+  timeout_seconds=$2
+  echo "Waiting for job $1 to complete up to $2 seconds ..."
+  start_time=$(date +%s)
+  status=$(kubectl get pods | grep $pod_name_prefix | awk -e '{print $3}')
+  echo "Current status: $status"
+  while [ "$status" != "Completed" ]; do
+    now=$(date +%s)
+    elapsed=$(( $now - $start_time ))
+    if [ $elapsed -ge $timeout_seconds ]; then
+      echo ""
+      echo "$timeout_seconds seconds timeout reached waiting for $pod_name_prefix to complete"
+      export JOB_RESULT="FAILED"
+      break
+    fi
+    echo "Waiting $pod_name_prefix to complete ( $elapsed seconds elapsed )  ..."
+    sleep 5
+    status=$(kubectl get pods | grep $pod_name_prefix | awk -e '{print $3}')
+    echo "Current status: $status"
+  done
+  export JOB_RESULT="SUCCEEDED"
+  set -o errexit
+  set -o pipefail
+}
+
 # steps
 
 # 1. prepare data
@@ -103,36 +138,80 @@ function prepare_data() {
 # outputs: em.gro, em.edr, potential.xvg
 function energy_min() {
   echo "Energy minimization"
-  $GMX grompp -f "$I_MINIM" -c solv_ions.gro -p topol.top -o em.tpr
-  $MPIRUN "${MPI_OPTS[@]}" "$GMX" mdrun $MDRUN_ARGS -ntomp "$OMP_NUM_THREADS" -v -deffnm em
-  echo 10 0 | $GMX energy -f em.edr -o potential.xvg
+  $GMX grompp -f "$I_MINIM" -c ${DATA_DIR}/solv_ions.gro -p ${DATA_DIR}/topol.top -o ${DATA_DIR}/em.tpr
+  if [ "$TO" == "kubernetes" ]; then
+    cat /app/manifests/mpi-energy-min.yaml-template | envsubst > /app/manifests/mpi-energy-min.yaml
+    kubectl delete mpijob --all
+    kubectl apply -f /app/manifests/mpi-energy-min.yaml
+    complete_or_timeout mpi-energy-min-launcher 100
+    if [ "$JOB_RESULT" == "FAILED" ]; then
+      echo "Energy minimization failed. Terminating workflow ..."
+      exit 1
+    fi
+  else
+    $MPIRUN "${MPI_OPTS[@]}" "$GMX" mdrun $MDRUN_ARGS -ntomp "$OMP_NUM_THREADS" -v -deffnm em
+  fi
+  echo 10 0 | $GMX energy -f ${DATA_DIR}/em.edr -o ${DATA_DIR}/potential.xvg
 }
 # 3. Eq. phase 1
 # inputs: I_NVT, em.gro, topol.top
 # outputs: nvt.gro, nvt.edr, temperature.xvg
 function eq_phase1() {
   echo "Performing equilibration: Phase 1"
-  $GMX grompp -f "$I_NVT" -c em.gro -r em.gro -p topol.top -o nvt.tpr
-  $MPIRUN "${MPI_OPTS[@]}" "$GMX" mdrun $MDRUN_ARGS -ntomp "$OMP_NUM_THREADS" -deffnm nvt
-  echo 16 0 | $GMX energy -f nvt.edr -o temperature.xvg
+  $GMX grompp -f "$I_NVT" -c ${DATA_DIR}/em.gro -r ${DATA_DIR}/em.gro -p ${DATA_DIR}/topol.top -o ${DATA_DIR}/nvt.tpr
+  if [ "$TO" == "kubernetes" ]; then
+    cat /app/manifests/mpi-eq-phase1.yaml-template | envsubst > /app/manifests/mpi-eq-phase1.yaml
+    kubectl delete mpijob --all
+    kubectl apply -f /app/manifests/mpi-eq-phase1.yaml
+    complete_or_timeout mpi-eq-phase1-launcher 800
+    if [ "$JOB_RESULT" == "FAILED" ]; then
+      echo "Equilibration Phase 1 failed. Terminating workflow ..."
+      exit 1
+    fi
+  else
+    $MPIRUN "${MPI_OPTS[@]}" "$GMX" mdrun $MDRUN_ARGS -ntomp "$OMP_NUM_THREADS" -deffnm nvt
+  fi
+  echo 16 0 | $GMX energy -f ${DATA_DIR}/nvt.edr -o ${DATA_DIR}/temperature.xvg
 }
 # 4. Eq. phase 2
 # inputs: I_NPT, nvt.gro, topol.top
 # outputs: npt.gro, npt.edr, npt.cpt, pessure.xvg, density.xvg
 function eq_phase2() {
   echo "Performing equilibration: Phase 2"
-  $GMX grompp -f "$I_NPT" -c nvt.gro -r nvt.gro -t nvt.cpt -p topol.top -o npt.tpr
-  $MPIRUN "${MPI_OPTS[@]}" "$GMX" mdrun $MDRUN_ARGS -ntomp "$OMP_NUM_THREADS" -deffnm npt
-  echo 18 0 | $GMX energy -f npt.edr -o pressure.xvg
-  echo 24 0 | $GMX energy -f npt.edr -o density.xvg
+  $GMX grompp -f "$I_NPT" -c ${DATA_DIR}/nvt.gro -r ${DATA_DIR}/nvt.gro -t ${DATA_DIR}/nvt.cpt -p ${DATA_DIR}/topol.top -o ${DATA_DIR}/npt.tpr
+if [ "$TO" == "kubernetes" ]; then
+    cat /app/manifests/mpi-eq-phase2.yaml-template | envsubst > /app/manifests/mpi-eq-phase2.yaml
+    kubectl delete mpijob --all
+    kubectl apply -f /app/manifests/mpi-eq-phase2.yaml
+    complete_or_timeout mpi-eq-phase2-launcher 800
+    if [ "$JOB_RESULT" == "FAILED" ]; then
+      echo "Equilibration Phase 2 failed. Terminating workflow ..."
+      exit 1
+    fi
+  else
+    $MPIRUN "${MPI_OPTS[@]}" "$GMX" mdrun $MDRUN_ARGS -ntomp "$OMP_NUM_THREADS" -deffnm ${DATA_DIR}/npt -s ${DATA_DIR}/npt.tpr
+  fi
+  echo 18 0 | $GMX energy -f ${DATA_DIR}/npt.edr -o ${DATA_DIR}/pressure.xvg
+  echo 24 0 | $GMX energy -f ${DATA_DIR}/npt.edr -o ${DATA_DIR}/density.xvg
 }
 # 5. production MD
 # inputs: I_MD, npt.gro, npt.cpt, topol.top
 # outputs: md_0_1.*
 function prod_md() {
   echo "Running production MD"
-  $GMX grompp -f "$I_MD" -c npt.gro -t npt.cpt -p topol.top -o md_0_1.tpr
-  $MPIRUN "${MPI_OPTS[@]}" "$GMX" mdrun $MDRUN_ARGS -ntomp "$OMP_NUM_THREADS" -deffnm md_0_1
+  $GMX grompp -f "$I_MD" -c ${DATA_DIR}/npt.gro -t ${DATA_DIR}/npt.cpt -p ${DATA_DIR}/topol.top -o ${DATA_DIR}/md_0_1.tpr
+if [ "$TO" == "kubernetes" ]; then
+    cat /app/manifests/mpi-prod-md.yaml-template | envsubst > /app/manifests/mpi-prod-md.yaml
+    kubectl delete mpijob --all
+    kubectl apply -f /app/manifests/mpi-prod-md.yaml
+    complete_or_timeout mpi-prod-md-launcher 10000
+    if [ "$JOB_RESULT" == "FAILED" ]; then
+      echo "Production MD failed. Terminating workflow ..."
+      exit 1
+    fi
+  else
+    $MPIRUN "${MPI_OPTS[@]}" "$GMX" mdrun $MDRUN_ARGS -ntomp "$OMP_NUM_THREADS" -deffnm ${DATA_DIR}/md_0_1
+  fi
   # if we had GPUs
   # $MPIRUN $MPI_OPTS $GMX mdrun -deffnm md_0_1 -nb gpu
 }
@@ -141,10 +220,10 @@ function prod_md() {
 # outputs: rmsd.xvg, rmsd_xtal.xvg, gyrate.xvg
 function post_analysis() {
   echo "Running post-analysis"
-  echo 1 0 | $GMX trjconv -s md_0_1.tpr -f md_0_1.xtc -o md_0_1_noPBC.xtc -pbc mol -center
-  echo 4 4 | $GMX rms -s md_0_1.tpr -f md_0_1_noPBC.xtc -o rmsd.xvg -tu ns
-  echo 4 4 | $GMX rms -s em.tpr -f md_0_1_noPBC.xtc -o rmsd_xtal.xvg -tu ns
-  echo 1 | $GMX gyrate -s md_0_1.tpr -f md_0_1_noPBC.xtc -o gyrate.xvg
+  echo 1 0 | $GMX trjconv -s ${DATA_DIR}/md_0_1.tpr -f ${DATA_DIR}/md_0_1.xtc -o ${DATA_DIR}/md_0_1_noPBC.xtc -pbc mol -center
+  echo 4 4 | $GMX rms -s ${DATA_DIR}/md_0_1.tpr -f ${DATA_DIR}/md_0_1_noPBC.xtc -o ${DATA_DIR}/rmsd.xvg -tu ns
+  echo 4 4 | $GMX rms -s ${DATA_DIR}/em.tpr -f ${DATA_DIR}/md_0_1_noPBC.xtc -o ${DATA_DIR}/rmsd_xtal.xvg -tu ns
+  echo 1 | $GMX gyrate -s ${DATA_DIR}/md_0_1.tpr -f ${DATA_DIR}/md_0_1_noPBC.xtc -o ${DATA_DIR}/gyrate.xvg
 }
 
 ###

@@ -8,7 +8,9 @@ fi
 
 # Customize shell
 echo "alias ll='ls -alh --color=auto'" >> ~/.bashrc
+echo "alias k=kubectl" >> ~/.bashrc
 echo "export PATH=$PATH:/opt/view/bin:/bin:/usr/bin:/usr/local/bin" >> /etc/bashrc
+echo "export PATH=$PATH:/opt/view/bin" >> ~/.bashrc
 echo "export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib64/openmpi/lib" >> ~/.bashrc
 ln -s /app/inputs/ /inputs
 
@@ -23,6 +25,7 @@ yum -y install \
       openmpi-devel.x86_64 \
       which \
       gettext \
+      htop \
 &&  yum clean all \
 &&  rm -rf /var/cache/yum
 
