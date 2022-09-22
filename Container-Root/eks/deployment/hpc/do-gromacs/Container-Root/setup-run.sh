@@ -26,6 +26,7 @@ yum -y install \
       which \
       gettext \
       htop \
+      tar \
 &&  yum clean all \
 &&  rm -rf /var/cache/yum
 

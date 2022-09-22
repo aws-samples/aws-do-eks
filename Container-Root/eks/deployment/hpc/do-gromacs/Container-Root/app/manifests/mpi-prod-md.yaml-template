@@ -20,7 +20,7 @@ spec:
           - name: cache-volume
             emptyDir:
               medium: Memory
-              sizeLimit: 128Mi
+              sizeLimit: 1024Mi
           - name: data
             persistentVolumeClaim:
               claimName: ${K8S_PVC_NAME}
@@ -47,9 +47,9 @@ spec:
             - FI_PROVIDER=efa
             - --oversubscribe
             - -np
-            - "2"
+            - "72"
             - -npernode
-            - "$OMP_NUM_THREADS"
+            - "36"
             - --bind-to
             - "core"
             - -x
@@ -72,7 +72,7 @@ spec:
           - name: cache-volume
             emptyDir:
               medium: Memory
-              sizeLimit: 128Mi
+              sizeLimit: 1024Mi
           - name: data
             persistentVolumeClaim:
               claimName: ${K8S_PVC_NAME}

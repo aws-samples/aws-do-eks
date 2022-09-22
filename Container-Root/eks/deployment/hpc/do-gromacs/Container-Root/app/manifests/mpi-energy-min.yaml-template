@@ -20,7 +20,7 @@ spec:
           - name: cache-volume
             emptyDir:
               medium: Memory
-              sizeLimit: 128Mi
+              sizeLimit: 1024Mi
           - name: data
             persistentVolumeClaim:
               claimName: ${K8S_PVC_NAME}
@@ -48,15 +48,11 @@ spec:
             - -x
             - FI_PROVIDER=efa
             - -np
-            - "2"
+            - "72"
             - -npernode
-            - "1"
+            - "36"
             - --bind-to
             - "core"
-            - -x
-            - PATH
-            - -x
-            - LD_LIBRARY_PATH
             - -x
             - OMPI_MCA_verbose
             - -x
@@ -77,7 +73,7 @@ spec:
           - name: cache-volume
             emptyDir:
               medium: Memory
-              sizeLimit: 128Mi
+              sizeLimit: 1024Mi
           - name: data
             persistentVolumeClaim:
               claimName: ${K8S_PVC_NAME}
@@ -95,9 +91,9 @@ spec:
                 nvidia.com/gpu: 0
                 hugepages-2Mi: 5120Mi
                 vpc.amazonaws.com/efa: 1
-                memory: 10000Mi
+                memory: 8000Mi
               requests:
                 nvidia.com/gpu: 0
                 hugepages-2Mi: 5120Mi
                 vpc.amazonaws.com/efa: 1
-                memory: 10000Mi
+                memory: 8000Mi
