@@ -14,6 +14,7 @@ managedNodeGroups:
     attachPolicyARNs:
       - arn:aws:iam::aws:policy/AmazonS3FullAccess
       - arn:aws:iam::aws:policy/IAMReadOnlyAccess
+      - arn:aws:iam::aws:policy/AmazonSageMakerReadOnly
       - arn:aws:iam::aws:policy/AmazonSageMakerFullAccess
     withAddonPolicies:
       efs: true
