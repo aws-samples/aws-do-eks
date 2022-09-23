@@ -43,6 +43,7 @@ spec:
             command:
             - /opt/view/bin/mpirun
             - --allow-run-as-root
+            - --oversubscribe
             - -x
             - FI_LOG_LEVEL=info
             - -x
