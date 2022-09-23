@@ -1,4 +1,4 @@
-# do-gromacs - A Gromacs container built and manaed with the Do framwork
+# do-gromacs - A Gromacs container built with the Do framework
 This project buils a container with an embedded [Gromacs](https://gromacs.org) moleucular dynamics pipeline which runs both locally or on Kubertnetes.
 
 ## Prerequisites
@@ -29,6 +29,11 @@ Execute ```./run-mpi.sh all``` to run the multi-step Gromacs pipeline inside the
 
 ## Review results
 Results are stored in the ```/data``` directory, accessible from inside the ```do-gromacs``` container. The result files can be shipped to a desktop station that runs [Visual Molecular Dynamics (VMD)](https://www.ks.uiuc.edu/Research/vmd/) for graphical interpretation.
+
+<div align=center>
+<img src="img/results.png" width="50%" />
+</div>
+<br/>
 
 ## Stop
 To shut-down the ```do-gromacs``` container, just execute the ```./stop.sh``` script.
