@@ -2,7 +2,7 @@ apiVersion: eksctl.io/v1alpha5
 kind: ClusterConfig
 
 metadata:
-  name: do-eks
+  name: eks-hpc
   version: "1.21"
   region: us-east-1
 
