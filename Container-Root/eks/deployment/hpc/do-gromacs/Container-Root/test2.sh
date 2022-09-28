@@ -14,7 +14,7 @@ if [ "$TO" == "kubernetes" ]; then
   kubectl apply -f /app/manifests/test-osu-latency-sockets.yaml
 
   # Wait until mpi test job is completed or it times out
-  TIMEOUT=100
+  TIMEOUT=360
   start_time=$(date +%s)
   status=$(kubectl get pods | grep test-osu-latency-sockets-launcher | awk -e '{print $3}')
   while [ ! "$status" == "Completed" ]; do
@@ -41,7 +41,7 @@ if [ "$TO" == "kubernetes" ]; then
       TEST_RESULT="FAILED"
     fi
     echo "Test log with standard networking:"
-    cat /tmp/test-ous-latency-launcher-sockets.log
+    cat /tmp/test-osu-latency-launcher-sockets.log
   fi
 
   # Display test result

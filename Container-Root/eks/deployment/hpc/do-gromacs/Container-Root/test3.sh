@@ -41,7 +41,7 @@ if [ "$TO" == "kubernetes" ]; then
       TEST_RESULT="FAILED"
     fi
     echo "Test log with EFA networking:"
-    cat /tmp/test-ous-latency-launcher-efa.log
+    cat /tmp/test-osu-latency-launcher-efa.log
   fi
 
   # Display test result
