@@ -10,7 +10,7 @@
 # you can also use static provisioning using the manifests in this folder or following instructions from here:
 # https://github.com/kubernetes-sigs/aws-fsx-csi-driver/blob/master/examples/kubernetes/static_provisioning/README.md
 
-. fsx.conf
+source fsx.conf
 
 # FSx Policy
 echo ""
