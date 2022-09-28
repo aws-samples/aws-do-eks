@@ -5,3 +5,4 @@ Container-Root/eks/deployment/kube-ops-view/kube-ops-view
 Container-Root/eks/deployment/distributed-training/pytorch/habana/deepspeed-bert/efs-get-data.yaml
 Container-Root/eks/deployment/distributed-training/pytorch/habana/deepspeed-bert/deepspeed-bert.yaml
 Container-Root/eks/deployment/distributed-training/tensorflow/habana/mpijob-mnist.yaml
+Container-Root/eks/deployment/csi/fsx/fsx-storage-class.yaml
