@@ -21,7 +21,7 @@ managedNodeGroups:
     availabilityZones: ["us-east-1a"]
     efaEnabled: true
     minSize: 0
-    desiredCapacity: 0
+    desiredCapacity: 2
     maxSize: 10
     volumeSize: 900
     iam:
