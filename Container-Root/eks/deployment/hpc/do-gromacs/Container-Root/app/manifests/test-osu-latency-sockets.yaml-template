@@ -35,6 +35,10 @@ spec:
             - FI_LOG_LEVEL=info
             - -x
             - FI_PROVIDER=sockets
+            - -np
+            - "2"
+            - -npernode
+            - "1"
             - /opt/view/libexec/osu-micro-benchmarks/mpi/pt2pt/osu_latency
     Worker:
       replicas: 2
