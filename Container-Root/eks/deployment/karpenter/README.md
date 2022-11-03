@@ -29,7 +29,10 @@ Scripts to automate deployment of Karpenter in this project have been created fo
 
 ## How to use Kaprenter with EFA
 
-As of version 0.16.3 Karpenter has no support for Elastic Fabric Adapter (EFA) resources. 
+[Certain Amazon EC2 instance types](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/efa.html#efa-instance-types) 
+are enabled with a high-performance network adapter known as [Elastic Fabric Adapter (EFA)](https://aws.amazon.com/hpc/efa/)
+
+As of version 0.16.3 Karpenter is not able to automatically provision instances when EFA resources are requested. 
 To enable autoscaling of EFA-enabled instances using Karpenter we can configure a provisioner 
 with a custom launch template which enables EFA. When the provisioner is limited 
 only to the desired EFA-enabled instance type, Karpenter will automatically create 
@@ -250,5 +253,11 @@ Compatibility information of AWS OFI NCCL with libfabric and NCCL versions is av
 * Scheduling: [https://karpenter.sh/v0.10.1/tasks/scheduling/](https://karpenter.sh/v0.10.1/tasks/scheduling/)
 
 * Kaprenter Best Practices: [https://aws.github.io/aws-eks-best-practices/karpenter/](https://aws.github.io/aws-eks-best-practices/karpenter/)
+
+* Elastic Fabric Adapter: [https://aws.amazon.com/hpc/efa/](https://aws.amazon.com/hpc/efa/)
+
+* EFA - Supported instance types: [https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/efa.html#efa-instance-types](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/efa.html#efa-instance-types) 
+
+
 
 
