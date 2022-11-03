@@ -3,7 +3,7 @@ kind: MPIJob
 metadata:
   name: nccl-tests-efa
 spec:
-  slotsPerWorker: 8
+  slotsPerWorker: 1
   cleanPodPolicy: Running
   mpiReplicaSpecs:
     Launcher:
@@ -29,7 +29,7 @@ spec:
             - --allow-run-as-root
             - --tag-output
             - -np
-            - "16"
+            - "2"
             - -bind-to
             - none
             - -map-by
@@ -50,13 +50,13 @@ spec:
             - FI_EFA_USE_DEVICE_RDMA=1
             - -x
             - RDMAV_FORK_SAFE=1
-            - --mca
-            - pml
-            - ^cm
+            #- --mca
+            #- pml
+            #- ^cm
             - --oversubscribe
             - /tmp/nccl-tests/build/all_reduce_perf
             - -b
-            - "8"
+            - "1"
             - -e
             - 1G
             - -f
@@ -80,12 +80,14 @@ spec:
             name: nccl-worker
             resources:
               limits:
-                nvidia.com/gpu: 8
-                hugepages-2Mi: 5120Mi
-                vpc.amazonaws.com/efa: 4
-                memory: 8000Mi
+                nvidia.com/gpu: 1
+#                hugepages-2Mi: 1Gi
+                ephemeral-storage: "8Gi"
+#                vpc.amazonaws.com/efa: 1
+                memory: 2Gi
               requests:
-                nvidia.com/gpu: 8
-                hugepages-2Mi: 5120Mi
-                vpc.amazonaws.com/efa: 4
-                memory: 8000Mi
+                nvidia.com/gpu: 1
+#                hugepages-2Mi: 1Gi
+                ephemeral-storage: "8Gi"
+#                vpc.amazonaws.com/efa: 1
+                memory: 2Gi

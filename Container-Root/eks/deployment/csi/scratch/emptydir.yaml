@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: emptydir-pod
+spec:
+  containers:
+  - image: ubuntu:18.04
+    name: emptydir-container
+    command: ["bash", "-c", "while true; do date; sleep 5; done"]
+    volumeMounts:
+    - mountPath: /scratch
+      name: scratch-volume
+  volumes:
+  - name: scratch-volume
+    emptyDir: {}
+    #emptyDir:
+      #medium: Memory
+      #sizeLimit: 1Gi

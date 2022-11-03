@@ -1,0 +1,42 @@
+apiVersion: karpenter.sh/v1alpha5
+kind: Provisioner
+metadata:
+  name: default
+spec:
+  requirements:
+    - key: karpenter.sh/capacity-type
+      operator: In
+      values: ["spot", "on-demand"]
+    - key: node.kubernetes.io/instance-type
+      operator: In
+      values:
+      - g4dn.8xlarge
+ #     - g5.48xlarge
+ #     - p3dn.24xlarge
+    - key: "topology.kubernetes.io/zone"
+      operator: In
+      values: ["us-west-2b"]
+  limits:
+    resources:
+      cpu: 1000
+  providerRef:
+    name: default
+#    subnetSelector:
+#      karpenter.sh/discovery: eks-karpenter
+#      karpenter.sh/network: efa
+#    securityGroupSelector:
+#      karpenter.sh/discovery: eks-karpenter
+  ttlSecondsAfterEmpty: 30
+---
+apiVersion: karpenter.k8s.aws/v1alpha1
+kind: AWSNodeTemplate
+metadata:
+  name: default
+spec:
+  subnetSelector:
+    karpenter.sh/discovery: eks-karpenter
+#    karpetner.sh/network: efa
+#  securityGroupSelector: 
+#    karpenter.sh/discovery: eks-karpenter
+#    karpenter.sh/network: efa
+  launchTemplate: eksctl-eks-karpenter-nodegroup-g4dn-8xl
