@@ -13,78 +13,106 @@ Scripts to automate deployment of Karpenter in this project have been created fo
 
 1. Build and run aws-do-eks project, exec into aws-do-eks container.
 2. Edit eks-karpenter.yaml as needed
-3. Edit `eks.conf`
-  3.1. set CONFIG=yaml
-  3.2. set EKS_YAML=./eks-karpenter.yaml
+3. Edit `eks.conf`  
+  3.1. set CONFIG=yaml  
+  3.2. set EKS_YAML=./eks-karpenter.yaml  
 4. Create cluster by executing `./eks-create.sh`
-5. Refer to scripts in the /eks/deployment/karpenter directory
-  5.1. Execute `./deploy.sh` to configure the necessary roles and deploy the controller
-  5.2. Optionally execute `./monitoring-deploy.sh` to enable prometheus/grafana monitoring of Karpenter metrics
-  5.3. Execute `./provisioner-deploy.sh` to configure Karpenter for the cluster.
-6. Test Karpenter
-  6.1. Execute `./test-scale-out.sh` 
-  6.2. Use `./logs.sh` script to monitor karpenter operations
-  6.3. Use `./scale.sh <num_pods>` to change the test scale
-  6.4. Execute `./test-scale-in.sh` to stop testing.
+5. Refer to scripts in the /eks/deployment/karpenter directory  
+  5.1. Execute `./deploy.sh` to configure the necessary roles and deploy the controller  
+  5.2. Optionally execute `./monitoring-deploy.sh` to enable prometheus/grafana monitoring of Karpenter metrics  
+  5.3. Execute `./provisioner-deploy.sh` to configure Karpenter for the cluster  
+6. Test Karpenter  
+  6.1. Execute `./test-scale-out.sh`   
+  6.2. Use `./logs.sh` script to monitor karpenter operations  
+  6.3. Use `./scale.sh <num_pods>` to change the test scale  
+  6.4. Execute `./test-scale-in.sh` to stop testing  
 
 ## How to use Kaprenter with EFA
 
-As of version 0.16.3 Karpenter has no support for Elastic Fabric Adapter (EFA) resources. To enable autoscaling of EFA-enabled instances using Karpenter we can configure a provisioner with a custom launch template which enables EFA. When the provisioner is limited only to the desired EFA-enabled instance type, Karpenter will automatically create instances with EFA adapters to satisfy known resource requests like GPU. Finally, by configuring a traditional cluster with Karpenter, one could manually set autoscaling groups to desired minimal instance counts, and rely on Karpenter to add nodes to the cluster only when excess capacity is needed.
+As of version 0.16.3 Karpenter has no support for Elastic Fabric Adapter (EFA) resources. 
+To enable autoscaling of EFA-enabled instances using Karpenter we can configure a provisioner 
+with a custom launch template which enables EFA. When the provisioner is limited 
+only to the desired EFA-enabled instance type, Karpenter will automatically create 
+instances with EFA adapters to satisfy known resource requests like GPU. 
+In order to use the EFA device in a pod, the path `/dev/infiniband` needs to be mounted as a `hostPath` volume. 
+This requires the pod to run in privileged mode. To remove this requirement, 
+Karpenter needs to be modified to recognize instance types, which have support for EFA. 
+
+An advantage of configuring a traditional cluster with Karpenter is that it enables manuall
+and automatic scaling at the same time. We can manually set autoscaling groups to desired 
+minimal instance counts, and rely on Karpenter to add nodes to the cluster 
+only when excess capacity is needed.
 
 An example of a custom launch template is provided in file [./launch-template-efa-example.json](./launch-template-efa-example.json). An example provisioner configuration is provided in file [./provisioner-efa.yaml](./provisioner-efa.yaml).
 
-A recommended process in setting up Karpenter with EFA is described below:
+A recommended process for setting up Karpenter with EFA is described below:
 1. Build and run the aws-do-eks project, exec into aws-do-eks container.
-2. Edit eks-karpenter.yaml
-	2.1. Configure a system node group where Karpenter pods would run
-	2.2. Add node groups with desired instances that have EFA capabilities.
-3. Edit `eks.conf`
-	3.1. set CONFIG=yaml
-	3.2. set EKS_YAML=./eks-karpenter.yaml
-4. Create cluster by executing `./eks-create.sh` within the `aws-do-eks` container
-5. Refer to scripts in the /eks/deployment/karpenter directory
-	5.1. Execute `./migrate-auth.sh` and copy the authorization group to your clipboard.
+2. Edit eks-karpenter.yaml  
+	2.1. Configure a system node group where Karpenter pods would run  
+	2.2. Add node groups with desired instances that have EFA capabilities  
+3. Edit `eks.conf`  
+	3.1. set CONFIG=yaml  
+	3.2. set EKS_YAML=./eks-karpenter.yaml  
+4. Create cluster by executing `./eks-create.sh` within the `aws-do-eks` container  
+5. Refer to scripts in the /eks/deployment/karpenter directory  
+	5.1. Execute `./migrate-auth.sh` and copy the authorization group to your clipboard  
+
 ```yaml
 Example:
 - groups:
   - system:bootstrappers
   - system:nodes
   rolearn: arn:aws:iam::${AWS_ACCOUNT_ID}:role/KarpenterInstanceNodeRole
-  username: system:node:{{EC2PrivateDNSName}}"
-```
-
-	5.2. Execute `./migrate.sh` to migrate the cluster from autoscaler and deploy Karpenter. When asked to edit the aws-auth configmap, paste the content you copied from your clipboard.
-	5.3. Modify the launch templates of your node groups
-	The modified launch template must include the following fields that are required by Karpenter: AMI, KeyPairName, NetworkSettings->Advanced Network Configuration->Elastic Fabric Adapter->Enable, IAM instance profile: KarpenterInstanceProfile, Storage->DiskSize: 200GB. Set the default version to be the new template revision. Check that UserData in the template has the Kubelet bootstrap scripts and if EFA is not already in the AMI, the EFA driver install script.
-	5.4. Edit and apply file `./provisioner-efa.yaml`
-	Set instance types, launch template name as needed. If you need to use multiple launch templates, then you would need to configure multiple provisioners.
-	`kubectl apply -f ./provisioner-efa.yaml`
-6. Test Karpenter
-	6.1. Execute `./test-scale-out.sh`, you should see EFA-enabled instances get added to the cluster.
-	6.2. Execute `./test-scale-in.sh`, the new instances shoudl be removed from the cluster and terminated.
-7. Test EFA
-	7.1. Deploy Kubeflow MPI Operator
-	`cd /eks/deployment/kubeflow/mpi-operator; ./deploy.sh`
-	7.2. Build `cuda-efa-nccl-tests` container and push it to ECR
-	```
+  username: system:node:{{EC2PrivateDNSName}}
+  ```
+  
+  5.2. Execute `./migrate.sh` to migrate the cluster from autoscaler and deploy Karpenter  
+  When asked to edit the aws-auth configmap, paste the content you copied from your clipboard.  
+	5.3. Modify the launch templates of your node groups  
+	The modified launch template must include the following fields that are required by Karpenter:  
+	AMI, KeyPairName, NetworkSettings->Advanced Network Configuration->Elastic Fabric Adapter->Enable, IAM instance profile: KarpenterInstanceProfile, Storage->DiskSize: 200GB. Set the default version to be the new template revision. Check that UserData in the template has the Kubelet bootstrap scripts and if EFA is not already in the AMI, the EFA driver install script.    
+	5.4. Edit and apply file `./provisioner-efa.yaml`  
+	Set instance types, launch template name as needed. If you need to use multiple launch templates, then you would need to configure multiple provisioners.  
+	
+	```bash
+	kubectl apply -f ./provisioner-efa.yaml
+	```  
+	
+6. Test Karpenter  
+	6.1. Execute `./test-scale-out.sh`, you should see EFA-enabled instances get added to the cluster  
+	6.2. Execute `./test-scale-in.sh`, the new instances shoudl be removed from the cluster and terminated  
+7. Test EFA  
+	7.1. Deploy Kubeflow MPI Operator  
+	
+	```bash
+  cd /eks/deployment/kubeflow/mpi-operator; ./deploy.sh
+  ```  
+	7.2. Build `cuda-efa-nccl-tests` container and push it to ECR  
+	
+	```bash
 	cd /eks/deployment/efa-device-plugin/cuda-efa-nccl-tests
 	./build.sh
 	./push.sh
 	```
-	7.3. Edit /eks/deployment/efa-device-plugin/test-nccl.yaml and test-nccl-efa.yaml
-		7.3.1. replace image with the image you built and pushed to ECR
-		7.3.2. comment out unsupported resource requests and limits
+  
+	7.3. Edit /eks/deployment/efa-device-plugin/test-nccl.yaml and test-nccl-efa.yaml  
+		7.3.1. Replace image with the image you built and pushed to ECR  
+		7.3.2. Comment out unsupported resource requests and limits  
+  
 		```yaml
 		#huigepages-2Mi: 5120Mi
                 #vpc.amazonaws.com/efa: 1
-		```
-		iii. set desired number of GPU request and limits
+		```  
+  
+		7.3.3. Set desired number of GPU request and limits
+  
 		```yaml
 		nvidia.com/gpu: 1
-		```
-	7.4. Execute tests
-		
-		7.4.1. Execute test with EFA disabled
+		```  
+  
+	7.4. Execute tests  
+	
+		7.4.1. Execute test with EFA disabled  
 
 		```bash
 		cd /eks/deployment/efa-device-plugin
@@ -93,14 +121,13 @@ Example:
 		```
 		
 		The worker pods will be in status `Pending` and the launcher pod will be in status `CrashLoopBackOff` until Karpenter adds new nodes to the cluster and the nodes become `Ready`, then the worker and launcher pods will enter the `Running` state.
-		
 		When the launcher pod is in `Running` or `Completed` state extract the pod logs to review the test results.
 	
 		```bash
 		kubectl logs -f $(kubectl get pods | grep launcher | cut -d ' ' -f 1)
 		```
 
-Sample output:
+Sample output:  
 
 ```log
 ...
@@ -145,22 +172,22 @@ Sample output:
 
 ```
 		
-			7.4.2. Execute test with EFA enabled
+			7.4.2. Execute test with EFA enabled  
 
-			This test assumes that the EFA device plugin has been deployed to the cluster. If not, execute `cd /eks/deployment/efa-device-plugin; ./deploy.sh`.
+			This test assumes that the EFA device plugin has been deployed to the cluster.  
+			If not, execute `cd /eks/deployment/efa-device-plugin; ./deploy.sh`.
 
-                	```bash
-                	cd /eks/deployment/efa-device-plugin
-                	kubectl delete mpijob --all
-			kubectl apply -f ./test-nccl-efa-mount.yaml
-                	```
-                        The worker pods will be in status `Pending` and the launcher pod will be in status `CrashLoopBackOff` until Karpenter adds new nodes to the cluster and the nodes become `Ready`, then the worker and launcher pods will enter the `Running` state.
-
-                        When the launcher pod is in `Running` or `Completed` state extract the pod logs to review the test results.
-        
-	                ```bash
-        	        kubectl logs -f $(kubectl get pods | grep launcher | cut -d ' ' -f 1)
-               	 	```
+      ```bash
+      cd /eks/deployment/efa-device-plugin
+      kubectl delete mpijob --all
+      kubectl apply -f ./test-nccl-efa-mount.yaml
+      ```
+			The worker pods will be in status `Pending` and the launcher pod will be in status `CrashLoopBackOff` until Karpenter adds new nodes to the cluster and the nodes become `Ready`, then the worker and launcher pods will enter the `Running` state.
+			When the launcher pod is in `Running` or `Completed` state extract the pod logs to review the test results.  
+			
+			```bash
+			kubectl logs -f $(kubectl get pods | grep launcher | cut -d ' ' -f 1)
+			```
 
 Sample output:
 
