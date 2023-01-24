@@ -1,4 +1,6 @@
-# AWS DevOps for EKS (aws-do-eks) - Create and Manage your Amazon EKS clusters using the Do framework
+<img alt="aws-do-cli" src="./aws-do-eks-1024.png" width="25%" align="right" />
+
+# AWS do EKS (aws-do-eks) <br/> Create and Manage your Amazon EKS clusters using the Do framework
 
 <center><img src="aws-do-eks.png" width="80%"/> </br>
 
