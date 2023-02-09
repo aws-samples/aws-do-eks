@@ -1,7 +1,7 @@
 {
 	"AWSTemplateFormatVersion": "2010-09-09",
 
-	"Description": "AWS CloudFormation Sample Template for a Management Instance",
+	"Description": "SO9156 Distributed model training with Kubeflow on AWS and Amazon SageMaker",
 
 	"Mappings": {
 		"AWSRegion2AMI": {
