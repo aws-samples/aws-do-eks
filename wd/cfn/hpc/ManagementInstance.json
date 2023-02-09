@@ -6,7 +6,7 @@
 	"Mappings": {
 		"AWSRegion2AMI": {
 			"us-east-1": {
-				"ami": "ami-00f44084952227ef0"
+				"ami": "ami-083d7df7fe331eedb"
 			},
 			"us-east-2": {
 				"ami": "ami-0a714e270d06489a9"
@@ -30,7 +30,7 @@
 						"Ref": "AWS::Region"
 					}, "ami"]
 				},
-				"InstanceType": "m5.xlarge",
+				"InstanceType": "m5dn.xlarge",
 				"IamInstanceProfile": {
 					"Ref": "RootInstanceProfile"
 				},
@@ -45,7 +45,7 @@
 							"chmod 666 /tmp/bootstrap.log; chown ec2-user:ec2-user /tmp/bootstrap.log \n",
 							"date | tee -a /tmp/bootstrap.log \n",
 							"yum install -y aws-cfn-bootstrap git | tee -a /tmp/bootstrap.log \n",
-							"cd /home/ec2-user; git clone https://github.com/aws-samples/aws-do-eks.git | tee -a /tmp/bootstrap.log; cd aws-do-eks; git checkout deepspeed | tee -a /tmp/bootstrap.log; chown -R ec2-user:ec2-user /home/ec2-user/aws-do-eks \n",
+							"cd /home/ec2-user; git clone https://github.com/aws-samples/aws-do-eks.git | tee -a /tmp/bootstrap.log; cd aws-do-eks; chown -R ec2-user:ec2-user /home/ec2-user/aws-do-eks \n",
 							"bash -c /home/ec2-user/aws-do-eks/Container-Root/eks/ops/setup/install-aws-cli.sh | tee -a /tmp/bootstrap.log \n",
 							"bash -c /home/ec2-user/aws-do-eks/Container-Root/eks/ops/setup/install-eksctl.sh | tee -a /tmp/bootstrap.log \n",
 							"bash -c /home/ec2-user/aws-do-eks/Container-Root/eks/ops/setup/install-kubectl.sh | tee -a /tmp/bootstrap.log \n",
@@ -53,13 +53,12 @@
 							"bash -c /home/ec2-user/aws-do-eks/Container-Root/eks/ops/setup/install-kubeps1.sh | tee -a /tmp/bootstrap.log \n",
 							"sudo su ec2-user bash -c '/home/ec2-user/aws-do-eks/Container-Root/eks/ops/setup/install-kubeps1.sh | tee -a /tmp/bootstrap.log' \n",
 							"sudo su ec2-user bash -c '/home/ec2-user/aws-do-eks/Container-Root/eks/ops/setup/install-cloud9.sh | tee -a /tmp/bootstrap.log' \n",
-							"sudo su ec2-user bash -c '/usr/local/bin/eksctl create cluster -f /home/ec2-user/aws-do-eks/Container-Root/eks/eks-kubeflow.yaml | tee -a /tmp/bootstrap.log' \n",
-							"sudo su ec2-user bash -c 'source /home/ec2-user/.bashrc; sleep 2; aws eks update-kubeconfig --name eks-kubeflow | tee -a /tmp/bootstrap.log' \n",
-							"sudo su ec2-user bash -c 'source /home/ec2-user/.bashrc; cd /home/ec2-user/aws-do-eks/Container-Root/eks/nodegroup; CLUSTER_NAME=eks-kubeflow CLUSTER_REGION=us-west-2 nodegroup_name=nodegroup nodegroup_min=6 nodegroup_size=6 nodegroup_max=12 ./eks-nodegroup-scale.sh | tee -a /tmp/bootstrap.log' \n",
-							"sudo su ec2-user bash -c 'source /home/ec2-user/.bashrc; cd /home/ec2-user/aws-do-eks/Container-Root/eks/deployment/csi/efs; ./deploy.sh | tee -a /tmp/bootstrap.log' \n",
-							"sudo su ec2-user bash -c 'source /home/ec2-user/.bashrc; cd /home/ec2-user/aws-do-eks/Container-Root/eks/vpc; CLUSTER_NAME=eks-kubeflow REGION=us-west-2 ./vpc-endpoint-create.sh | tee -a /tmp/bootstrap.log' \n",
-							"sudo su ec2-user bash -c 'source /home/ec2-user/.bashrc; cd /home/ec2-user/aws-do-eks/Container-Root/eks/iam; CLUSTER_NAME=eks-kubeflow AWS_DEFAULT_REGION=us-west-2 ./node-role-expand.sh | tee -a /tmp/bootstrap.log' \n",
-							"sudo su ec2-user bash -c 'source /home/ec2-user/.bashrc; cd /home/ec2-user/aws-do-eks/Container-Root/eks/iam; AWS_DEFAULT_REGION=us-west-2 ./sm-role-create.sh | tee -a /tmp/bootstrap.log' \n",
+							"sudo su ec2-user bash -c '/usr/local/bin/eksctl create cluster -f /home/ec2-user/aws-do-eks/Container-Root/eks/eks-hpc.yaml | tee -a /tmp/bootstrap.log' \n",
+							"sudo su ec2-user bash -c 'source /home/ec2-user/.bashrc; sleep 2; aws eks update-kubeconfig --name eks-hpc | tee -a /tmp/bootstrap.log' \n",
+							"sudo su ec2-user bash -c 'source /home/ec2-user/.bashrc; sed -i /home/ec2-user/aws-do-eks/Container-Root/eks/eks.conf -e \\'s/export CLUSTER_NAME=do-eks/export CLUSTER_NAME=eks-hpc/g\\' ; echo eks.conf updated | tee -a /tmp/bootstrap.log' \n",
+							"sudo su ec2-user bash -c 'source /home/ec2-user/.bashrc; kubectl get nodes | tee -a /tmp/bootstrap.log' \n",
+							"sudo su ec2-user bash -c 'source /home/ec2-user/.bashrc; cd /home/ec2-user/aws-do-eks/Container-Root/eks/nodegroup; CLUSTER_NAME=eks-hpc CLUSTER_REGION=us-east-1 nodegroup_name=c5n-18xl nodegroup_min=0 nodegroup_size=0 nodegroup_max=3 ./eks-nodegroup-scale.sh | tee -a /tmp/bootstrap.log' \n",
+							"sudo su ec2-user bash -c 'source /home/ec2-user/.bashrc; cd /home/ec2-user/aws-do-eks/Container-Root/eks/iam; CLUSTER_NAME=eks-hpc AWS_DEFAULT_REGION=us-east-1 ./node-role-expand.sh | tee -a /tmp/bootstrap.log' \n",
 							"date | tee -a /tmp/bootstrap.log \n",
 							"echo 'Done executing userdata script.' | tee -a /tmp/bootstrap.log \n"
 						]]

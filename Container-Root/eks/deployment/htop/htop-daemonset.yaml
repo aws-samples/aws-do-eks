@@ -1,0 +1,18 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: htop
+spec:
+  selector:
+    matchLabels:
+      name: htop
+  template:
+    metadata:
+      labels:
+        name: htop
+    spec:
+      containers:
+        - name: htop
+          image: terencewestphal/htop:latest
+          command: ["/bin/sh"]
+          args: ["-c", "while true; do date; sleep 10; done"]
