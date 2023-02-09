@@ -1,0 +1,104 @@
+{
+    "LaunchTemplateData": {
+        "UserData": "TUlNRS1WZXJzaW9uOiAxLjAKQ29udGVudC1UeXBlOiBtdWx0aXBhcnQvbWl4ZWQ7IGJvdW5kYXJ5PWU2YzI0NDViYWU2MTk2Mjg0MmEzYjI0NzdmYjk4Zjk0M2ZkNGVmZTMxNjQ0YzdlNjNiMzdhNTZmZTU0NQoKLS1lNmMyNDQ1YmFlNjE5NjI4NDJhM2IyNDc3ZmI5OGY5NDNmZDRlZmUzMTY0NGM3ZTYzYjM3YTU2ZmU1NDUKQ29udGVudC1UeXBlOiB0ZXh0L2Nsb3VkLWJvb3Rob29rCkNvbnRlbnQtVHlwZTogY2hhcnNldD0idXMtYXNjaWkiCgpjbG91ZC1pbml0LXBlciBvbmNlIHl1bV93Z2V0IHl1bSBpbnN0YWxsIC15IHdnZXQKY2xvdWQtaW5pdC1wZXIgb25jZSB3Z2V0X2VmYSB3Z2V0IC1xIC0tdGltZW91dD0yMCBodHRwczovL3MzLXVzLXdlc3QtMi5hbWF6b25hd3MuY29tL2F3cy1lZmEtaW5zdGFsbGVyL2F3cy1lZmEtaW5zdGFsbGVyLWxhdGVzdC50YXIuZ3ogLU8gL3RtcC9hd3MtZWZhLWluc3RhbGxlci1sYXRlc3QudGFyLmd6CgpjbG91ZC1pbml0LXBlciBvbmNlIHRhcl9lZmEgdGFyIC14ZiAvdG1wL2F3cy1lZmEtaW5zdGFsbGVyLWxhdGVzdC50YXIuZ3ogLUMgL3RtcApwdXNoZCAvdG1wL2F3cy1lZmEtaW5zdGFsbGVyCmNsb3VkLWluaXQtcGVyIG9uY2UgaW5zdGFsbF9lZmEgLi9lZmFfaW5zdGFsbGVyLnNoIC15IC1nCnBvcCAvdG1wL2F3cy1lZmEtaW5zdGFsbGVyCgpjbG91ZC1pbml0LXBlciBvbmNlIGVmYV9pbmZvIC9vcHQvYW1hem9uL2VmYS9iaW4vZmlfaW5mbyAtcCBlZmEKCi0tZTZjMjQ0NWJhZTYxOTYyODQyYTNiMjQ3N2ZiOThmOTQzZmQ0ZWZlMzE2NDRjN2U2M2IzN2E1NmZlNTQ1CkNvbnRlbnQtVHlwZTogdGV4dC94LXNoZWxsc2NyaXB0OyBjaGFyc2V0PSJ1cy1hc2NpaSIKIyEvYmluL2Jhc2gKc2V0IC1leApCNjRfQ0xVU1RFUl9DQT1MUzB0TFMxQ1JVZEpUaUJEUlZKVVNVWkpRMEZVUlMwdExTMHRDazFKU1VNdmFrTkRRV1ZoWjBGM1NVSkJaMGxDUVVSQlRrSm5hM0ZvYTJsSE9YY3dRa0ZSYzBaQlJFRldUVkpOZDBWUldVUldVVkZFUlhkd2NtUlhTbXdLWTIwMWJHUkhWbnBOUWpSWVJGUkplVTFVUVhsT1JFVXpUbFJWZVU1V2IxaEVWRTE1VFZSQmVVMVVSVE5PVkZWNVRsWnZkMFpVUlZSTlFrVkhRVEZWUlFwQmVFMUxZVE5XYVZwWVNuVmFXRkpzWTNwRFEwRlRTWGRFVVZsS1MyOWFTV2gyWTA1QlVVVkNRbEZCUkdkblJWQkJSRU5EUVZGdlEyZG5SVUpCVFhsSUNtdFVjM3BsZWxoR1pHaDJPV1pGUW1abVprTmxNSFV4U2xod1JUSjJMemRPVlZacWQwUmllblJFVlV0a1RVdEJSbWRuZVRoamRHNWxUMVptY1hOcFowTUtlR1JGY1hrM2FtTnpTM2x0VVdkV1pFVnBjRWRIVkhKSlMwSXdXVnA2V2s1QmJYZHNja0Y0ZW14ME9VUmlaV3hKZHpCWUsxcDVhRmhZUlZkQlZqbDNPUXB4VmxBeVNtOTRNbGRvZG5aMVIyaDRURVZxS3pkUVMxWTVMemR2UldRMFpqbEhhMlZ0Ym1wTVZsTmtSWE12VUZCcldHbHBOak12WlROamNrNDJNVUZTQ20xVlNXUlFjRWhQVFdGelRXb3dZbUl3V1ZsMVVrRkZZa1pwY1dJelNqVkJVV3RwV0VGNmMwWTFRM3B6VG05Wkx6QlhlRWRTYW01VGQxTTBlbmQyYUhZS1UwWmphbTB2UTJsNVdXeG5PVk1yZGtWQmFrdHBWRkpIVGtWT1VpODNhRTB3WlZobFlXOUNSa2R2WmpOMmNqZFNRamxSYWt4aWExTjJlV3BqTkROcVVBcE1OME4yWlVGc1NVcFFka0ppTm5KWU5FeHpRMEYzUlVGQllVNWFUVVpqZDBSbldVUldVakJRUVZGSUwwSkJVVVJCWjB0clRVRTRSMEV4VldSRmQwVkNDaTkzVVVaTlFVMUNRV1k0ZDBoUldVUldVakJQUWtKWlJVWkZaaXQzZUdsWmNsaEVPRUZQTkdsMlpUSkxaWGN2YURkRVNuWk5RbFZIUVRGVlpFVlJVVThLVFVGNVEwTnRkREZaYlZaNVltMVdNRnBZVFhkRVVWbEtTMjlhU1doMlkwNUJVVVZNUWxGQlJHZG5SVUpCUnpCa1VGa3ZSM1ZhUkV4VmRWSnNSMW8xUXdwdGRWQlNXVEkwTUNzdk1uZFVOSEJyY0M5WGNGUXpkMmxKZDBSM2NtZzNTbU5uWTNoMlQzbGxNeTlCZWs5dk5FSXdhWGMwWTJsT2VtZFdVRXM0UlRkbENsZFFjUzgwT1hWV1dEbHRhMWhTV0hGS2RUUXZOblJLZDNrMFdtNVJRbEpGTWtOSVZ6QkVOekZrZUVScVVWVjJkMnhDVDFCTE5VZDZTM1phVEhoeU1EZ0tOa0pzWTBOaFpUZEZXbEpRU2xrNWR6VllNR2xtU1dJeGNtNUpTWGx5WW5wdGQzWk1jVzl0VkdaV2VYRnJVMkpNV21ObWNXMUxOVGxTU1U5WmFXWjNSUXBvWlc1VmFucFpTRE5EUTJFNVVEVlVjM3BOVmtSMGExTkJaR2haU0N0NVlsVjFUbU0wVkZKbFFqSk1ZemswTld4SVJIY3dkV3BYZUdOYWRGaE1heTlsQ21wNVZETkVjbWhwTlZkTlNUWllLM3BzT0d0bVlsWkJOWEphV21KbGVrcGlVazl5VWtka01WZFJUWEpNVTBZMVpWVnpUamhwUm1GR2VYaFBNemt6ZVZrS1prbzBQUW90TFMwdExVVk9SQ0JEUlZKVVNVWkpRMEZVUlMwdExTMHRDZz09CkFQSV9TRVJWRVJfVVJMPWh0dHBzOi8vREM4RDRGMDg1MjdFMjY4MUUyRjU0QTdGM0I1QzM4NjEuc2sxLnVzLXdlc3QtMi5la3MuYW1hem9uYXdzLmNvbQpLOFNfQ0xVU1RFUl9ETlNfSVA9MTAuMTAwLjAuMTAKL2V0Yy9la3MvYm9vdHN0cmFwLnNoIGVrcy1rYXJwZW50ZXIgLS1rdWJlbGV0LWV4dHJhLWFyZ3MgJy0tbm9kZS1sYWJlbHM9ZWtzLmFtYXpvbmF3cy5jb20vc291cmNlTGF1bmNoVGVtcGxhdGVWZXJzaW9uPTMsYWxwaGEuZWtzY3RsLmlvL25vZGVncm91cC1uYW1lPWc0ZG4tOHhsLGFscGhhLmVrc2N0bC5pby9jbHVzdGVyLW5hbWU9ZWtzLWthcnBlbnRlcixla3MuYW1hem9uYXdzLmNvbS9ub2RlZ3JvdXAtaW1hZ2U9YW1pLTA4MGQxYzdkNjM5OTc2YmE0LGVrcy5hbWF6b25hd3MuY29tL2NhcGFjaXR5VHlwZT1PTl9ERU1BTkQsZWtzLmFtYXpvbmF3cy5jb20vbm9kZWdyb3VwPWc0ZG4tOHhsLGVrcy5hbWF6b25hd3MuY29tL3NvdXJjZUxhdW5jaFRlbXBsYXRlSWQ9bHQtMGE2ZDU0M2ExNDhjOWY5NTcgLS1tYXgtcG9kcz01OCcgLS1iNjQtY2x1c3Rlci1jYSAkQjY0X0NMVVNURVJfQ0EgLS1hcGlzZXJ2ZXItZW5kcG9pbnQgJEFQSV9TRVJWRVJfVVJMIC0tZG5zLWNsdXN0ZXItaXAgJEs4U19DTFVTVEVSX0ROU19JUCAtLXVzZS1tYXgtcG9kcyBmYWxzZQoKCi0tZTZjMjQ0NWJhZTYxOTYyODQyYTNiMjQ3N2ZiOThmOTQzZmQ0ZWZlMzE2NDRjN2U2M2IzN2E1NmZlNTQ1LS0K", 
+        "DisableApiTermination": false, 
+        "Monitoring": {
+            "Enabled": false
+        }, 
+        "CpuOptions": {
+            "CoreCount": 16, 
+            "ThreadsPerCore": 2
+        }, 
+        "TagSpecifications": [
+            {
+                "ResourceType": "instance", 
+                "Tags": [
+                    {
+                        "Value": "eks-karpenter", 
+                        "Key": "karpenter.sh/discovery"
+                    }, 
+                    {
+                        "Value": "default", 
+                        "Key": "karpenter.sh/provisioner-name"
+                    }, 
+                    {
+                        "Value": "owned", 
+                        "Key": "kubernetes.io/cluster/eks-karpenter"
+                    }, 
+                    {
+                        "Value": "karpenter.sh/provisioner-name/default", 
+                        "Key": "Name"
+                    }
+                ]
+            }
+        ], 
+        "CapacityReservationSpecification": {
+            "CapacityReservationPreference": "open"
+        }, 
+        "InstanceInitiatedShutdownBehavior": "stop", 
+        "ImageId": "ami-080d1c7d639976ba4", 
+        "KeyName": "ssh-access", 
+        "EnclaveOptions": {
+            "Enabled": false
+        }, 
+        "BlockDeviceMappings": [
+            {
+                "DeviceName": "/dev/xvda", 
+                "Ebs": {
+                    "VolumeSize": 200, 
+                    "Encrypted": false, 
+                    "VolumeType": "gp3", 
+                    "DeleteOnTermination": true, 
+                    "Throughput": 125, 
+                    "SnapshotId": "snap-0f2c42873a03bea83"
+                }
+            }
+        ], 
+        "HibernationOptions": {
+            "Configured": false
+        }, 
+        "EbsOptimized": false, 
+        "Placement": {
+            "Tenancy": "default", 
+            "GroupName": "eksctl-eks-karpenter-nodegroup-g4dn-8xl-NodeGroupPlacementGroup-LN9AYMNHVZDR", 
+            "AvailabilityZone": "us-west-2b"
+        }, 
+        "IamInstanceProfile": {
+            "Arn": "arn:aws:iam::<ACCOUNT_ID>:instance-profile/KarpenterInstanceProfile"
+        }, 
+        "MetadataOptions": {
+            "HttpEndpoint": "enabled", 
+            "HttpTokens": "optional", 
+            "HttpPutResponseHopLimit": 2
+        }, 
+        "InstanceType": "g4dn.8xlarge", 
+        "NetworkInterfaces": [
+            {
+                "NetworkCardIndex": 0, 
+                "DeviceIndex": 1, 
+                "Description": "aws-K8S-i-00b0c138ab29cec42", 
+                "SubnetId": "subnet-00ac76ea4e7f7b67f", 
+                "DeleteOnTermination": true, 
+                "InterfaceType": "interface", 
+                "Groups": [
+                    "sg-01ee51d80aabe010a", 
+                    "sg-0ae0756cadfeb339d"
+                ], 
+                "Ipv6Addresses": []
+            }, 
+            {
+                "NetworkCardIndex": 0, 
+                "DeviceIndex": 0, 
+                "Description": "", 
+                "SubnetId": "subnet-00ac76ea4e7f7b67f", 
+                "DeleteOnTermination": true, 
+                "InterfaceType": "efa", 
+                "Groups": [
+                    "sg-01ee51d80aabe010a", 
+                    "sg-0ae0756cadfeb339d"
+                ], 
+                "Ipv6Addresses": []
+            }
+        ]
+    }
+}

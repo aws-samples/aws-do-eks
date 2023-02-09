@@ -11,5 +11,12 @@ managedNodeGroups:
 - name: nodegroup
   desiredCapacity: 6
   iam:
+    attachPolicyARNs:
+      - arn:aws:iam::aws:policy/AmazonEKSWorkerNodePolicy
+      - arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly
+      - arn:aws:iam::aws:policy/AmazonS3FullAccess
+      - arn:aws:iam::aws:policy/IAMReadOnlyAccess
+      - arn:aws:iam::aws:policy/AmazonSageMakerReadOnly
+      - arn:aws:iam::aws:policy/AmazonSageMakerFullAccess
     withAddonPolicies:
       efs: true

@@ -1,0 +1,63 @@
+apiVersion: kubeflow.org/v2beta1
+kind: MPIJob
+metadata:
+  name: gpu-profile
+spec:
+  slotsPerWorker: 8
+  runPolicy:
+    cleanPodPolicy: Running
+  mpiReplicaSpecs:
+    Launcher:
+      replicas: 1
+      template:
+         spec:
+          restartPolicy: Never
+          initContainers:
+          - image: ${REGISTRY}/gpu-profile:latest
+            name: init
+            command: ["sh", "-c", "sleep 5"]
+          containers:
+          - image: ${REGISTRY}/gpu-profile:latest
+            imagePullPolicy: Always
+            name: test-run-launcher
+            env:
+             - name: XLA_FLAGS
+               value: "--xla_gpu_cuda_data_dir=/usr/local/cuda"
+             - name: TF_XLA_FLAGS
+               value: "--tf_xla_cpu_global_jit"
+            command: ["bash", "-c", "cd /; mpirun -x LD_LIBRARY_PATH=/opt/nccl/build/lib:/opt/amazon/efa/lib:/opt/aws-ofi-nccl/install/lib:/opt/conda/lib/python3.8/site-packages/torch/lib:/opt/conda/lib/python3.8/site-packages/torch_tensorrt/lib:/usr/local/cuda/compat/lib:/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/shared/lib:/opt/hpcx/ompi/lib -x PATH=/shared/bin:$PATH -x NCCL_SHM_DISABLE=0 -x NCCL_MIN_NCHANNELS=8 -x NCCL_DEBUG=INFO -x FI_EFA_FORK_SAFE=1 -x RDMAV_FORM_SAFE=1 -x NCCL_PROTO=simple -x FI_LOG_LEVEL=warn -x FI_EFA_USE_DEVICE_RDMA=0 --allow-run-as-root -np 16 /profile.sh"]
+            #command: ["bash", "-c", "cd /; mpirun -x LD_LIBRARY_PATH=/opt/nccl/build/lib:/opt/amazon/efa/lib:/opt/aws-ofi-nccl/install/lib:/opt/conda/lib/python3.8/site-packages/torch/lib:/opt/conda/lib/python3.8/site-packages/torch_tensorrt/lib:/usr/local/cuda/compat/lib:/usr/local/nvidia/lib:/usr/local/nvidia/lib64:/shared/lib:/opt/hpcx/ompi/lib -x PATH=/shared/bin:$PATH -x LD_PRELOAD=/opt/nccl/build/lib/libnccl.so:/opt/aws-ofi-nccl/install/lib/libnccl-net.so -x NCCL_SHM_DISABLE=0 -x NCCL_MIN_NCHANNELS=8 -x NCCL_DEBUG=INFO -x FI_EFA_FORK_SAFE=1 -x RDMAV_FORM_SAFE=1 -x NCCL_PROTO=simple -x FI_LOG_LEVEL=warn -x FI_EFA_USE_DEVICE_RDMA=0 --allow-run-as-root -np 16 /profile.sh"]
+    Worker:
+      replicas: 2
+      template:
+        spec:
+          restartPolicy: Never
+          volumes:
+          - name: dshm
+            emptyDir:
+              medium: Memory
+          - name: wd
+            hostPath:
+              path: /tmp
+          #nodeSelector:
+            #beta.kubernetes.io/instance-type: p4de.24xlarge
+          containers:
+          - image: ${REGISTRY}/gpu-profile
+            imagePullPolicy: Always
+            name: test-run-worker
+            volumeMounts:
+            - name: dshm
+              mountPath: /dev/shm
+            - name: wd
+              mountPath: /wd
+            resources:
+              limits:
+                nvidia.com/gpu: 8
+                hugepages-2Mi: 5120Mi
+                vpc.amazonaws.com/efa: 4
+                memory: 400Gi
+              requests:
+                nvidia.com/gpu: 8
+                hugepages-2Mi: 5120Mi
+                vpc.amazonaws.com/efa: 4
+                memory: 400Gi
