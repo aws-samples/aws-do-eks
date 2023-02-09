@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: ${K8S_PVC_NAME}
+  namespace: ${K8S_NAMESPACE}
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: fsx-sc
+  resources:
+    requests:
+      storage: ${K8S_PVC_SIZE}

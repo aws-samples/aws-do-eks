@@ -5,6 +5,7 @@ ARG https_proxy
 ARG no_proxy
 
 ENV DEBIAN_FRONTEND=noninteractive
+ENV AWS_PAGER=""
 
 ADD Container-Root /
 
