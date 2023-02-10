@@ -13,6 +13,7 @@ alias kc='kubectx'
 alias kn='kubens'
 alias kt='kubetail'
 alias ks='kubectl node-shell'
+alias nv='eks-node-viewer'
 
 if [ -f ~/.kubeon ]; then
         source ~/kube-ps1.sh

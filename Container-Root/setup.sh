@@ -12,7 +12,7 @@ if [ -d /etc/apt ]; then
 fi
 
 # Install basic tools
-apt-get update && apt-get install -y curl jq vim nano less unzip git gettext-base groff sudo
+apt-get update && apt-get install -y curl jq vim nano less unzip git gettext-base groff sudo htop
 
 # Install aws cli
 ./eks/ops/setup/install-aws-cli.sh
@@ -26,9 +26,6 @@ apt-get update && apt-get install -y curl jq vim nano less unzip git gettext-bas
 # Install kubectx
 ./eks/ops/setup/install-kubectx.sh
 
-# Install and configure kubeps1
-./eks/ops/setup/install-kubeps1.sh
-
 # Install kubetail
 ./eks/ops/setup/install-kubetail.sh
 
@@ -40,4 +37,13 @@ apt-get update && apt-get install -y curl jq vim nano less unzip git gettext-bas
 
 # Install docker
 ./eks/ops/setup/install-docker.sh
+
+# Install golang
+./eks/ops/setup/install-go.sh
+
+# Install monitui
+./eks/ops/setup/install-monitui.sh
+
+# Install kubeps1 and configure bashrc aliases 
+./eks/ops/setup/install-kubeps1.sh
 
