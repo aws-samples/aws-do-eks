@@ -17,7 +17,7 @@ spec:
         kind: Pod
         spec:
           nodeSelector:
-            beta.kubernetes.io/instance-type: p3dn.24xlarge
+            beta.kubernetes.io/instance-type: g4dn.metal
           containers:
             - name: elasticjob-worker
               image: torchelastic/examples:0.2.0

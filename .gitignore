@@ -7,3 +7,4 @@ Container-Root/eks/deployment/distributed-training/pytorch/habana/deepspeed-bert
 Container-Root/eks/deployment/distributed-training/tensorflow/habana/mpijob-mnist.yaml
 Container-Root/eks/deployment/csi/fsx/fsx-storage-class.yaml
 Container-Root/eks/deployment/hpc/do-gromacs/to/kubernetes/app
+Container-Root/eks/deployment/distributed-training/pytorch/pytorchjob/mnist/mnist-*.yaml
