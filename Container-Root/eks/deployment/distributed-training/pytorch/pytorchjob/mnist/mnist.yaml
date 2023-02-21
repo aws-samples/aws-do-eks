@@ -18,16 +18,25 @@ spec:
                 - "/opt/pytorch-mnist/mnist.py"
                 - "--epochs=10"
     Worker:
-      replicas: 1
+      replicas: 2
       restartPolicy: OnFailure
       template:
+        metadata:
+          labels:
+            app: mnist
         spec:
           #nodeSelector:
             #node.kubernetes.io/instance-type: "g4dn.metal"
-          #affinity:
-            #podAffinity:
-              #requiredDuringSchedulingIgnoredDuringExecution:
-              #- topologyKey: "topology.kubernetes.io/zone" 
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchExpressions:
+                  - key: app
+                    operator: In
+                    values:
+                    - mnist
+                topologyKey: "topology.kubernetes.io/zone" 
           containers:
             - name: pytorch
               image: docker.io/kubeflowkatib/pytorch-mnist:v1beta1-45c5727

@@ -26,7 +26,21 @@ spec:
         metadata:
           annotations:
             sidecar.istio.io/inject: "false"
+          labels:
+            app: mnist
         spec:
+          #nodeSelector:
+            #node.kubernetes.io/instance-type: "g4dn.2xlarge"
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchExpressions:
+                  - key: app
+                    operator: In
+                    values:
+                    - mnist
+                topologyKey: "topology.kubernetes.io/zone" 
           containers: 
             - name: pytorch
               image: ${REGISTRY}${IMAGE}:latest

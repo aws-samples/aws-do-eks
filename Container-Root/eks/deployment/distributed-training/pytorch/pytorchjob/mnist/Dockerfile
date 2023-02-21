@@ -1,9 +1,6 @@
-#FROM pytorch/pytorch:1.0-cuda10.0-cudnn7-runtime
-FROM pytorch/pytorch:1.13.1-cuda11.6-cudnn8-runtime
+FROM pytorch/pytorch:1.8.1-cuda10.2-cudnn7-runtime
 
-
-
-RUN pip install tensorboardX==1.6.0
+RUN pip install tensorboardX==1.6.0 protobuf==3.19.0 && pip cache remove *
 RUN mkdir -p /opt/mnist
 
 WORKDIR /opt/mnist/src

@@ -19,5 +19,9 @@ if [ -f ~/.kubeon ]; then
         source ~/kube-ps1.sh
         PS1='[\u@\h \W \$(kube_ps1)]\$ '
 fi
+
+export TERM=xterm-256color
+
 EOF
+
 
