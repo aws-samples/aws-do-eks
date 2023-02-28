@@ -1,0 +1,12 @@
+pyarmor
+pycryptodome
+openvino
+scipy
+tqdm
+pyyaml
+yapf
+opencv-python
+numpy
+onnxruntime
+Pillow
+gradio

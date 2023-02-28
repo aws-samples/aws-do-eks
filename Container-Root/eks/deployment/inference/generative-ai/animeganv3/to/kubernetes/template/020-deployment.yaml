@@ -1,0 +1,40 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: ${APP_NAME}
+  namespace: ${NAMESPACE}
+  labels:
+    app: ${APP_NAME}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: ${APP_NAME}
+  template:
+    metadata:
+      labels:
+        app: ${APP_NAME}
+    spec:
+      #nodeSelector:
+      #  beta.kubernetes.io/instance-type: "${INSTANCE_TYPE}"
+      containers:
+      - name: main
+        image: "${REGISTRY}${IMAGE}${TAG}"
+        imagePullPolicy: Always
+        #command: ["${command}"]
+        #args: ["${args}"]
+        env:
+        - name: PORT_INTERNAL
+          value: "${PORT_INTERNAL}"
+        ports:
+        - name: pod-port
+          containerPort: ${PORT_INTERNAL}
+        #resources:
+        #  limits:
+        #    cpu: 4
+        #    memory: 4Gi
+        #    nvidia.com/gpu: 1
+        #    k8s.amazonaws.com/vgpu: 5
+        #  requests:
+        #    cpu: "1"
+        #    memory: 1Gi   
