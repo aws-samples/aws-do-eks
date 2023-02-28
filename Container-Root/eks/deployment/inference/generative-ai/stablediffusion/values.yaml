@@ -20,7 +20,7 @@ models:
 imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
-cliFlags: "--extra-models-cpu --optimized-turbo"
+cliFlags: "--extra-models-cpu --optimized-turbo -v 100"
 
 persistence:
   annotations: {}
@@ -31,7 +31,7 @@ persistence:
   ##   GKE, AWS & OpenStack)
   ##
   accessMode: ReadWriteOnce
-  size: 8Gi
+  size: 20Gi
 
 
 serviceAccount:

@@ -22,6 +22,9 @@ managedNodeGroups:
       withAddonPolicies:
         autoScaler: true
         cloudWatch: true
+        ebs: true
+        efs: true
+        fsx: true
  
   - name: g4dn
     instanceType: g4dn.8xlarge
@@ -36,6 +39,7 @@ managedNodeGroups:
       withAddonPolicies:
         cloudWatch: true
         ebs: true
+        efs: true
         fsx: true
 
   - name: p3dn
@@ -51,6 +55,7 @@ managedNodeGroups:
       withAddonPolicies:
         cloudWatch: true
         ebs: true
+        efs: true
         fsx: true
 
 iam:
