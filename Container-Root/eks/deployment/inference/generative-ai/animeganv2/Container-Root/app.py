@@ -27,8 +27,8 @@ def inference(img, ver):
         out = face2paint(model1, img)
     return out
   
-title = "AnimeGANv2: Create your own animation " 
-description = "Gradio Demo for AnimeGANv2. Ipload an image and click <b>Submit</b>. For best results, please use a cropped portrait picture."
+title = "AnimeGANv2: Create your own anime character " 
+description = "Upload an image and click <b>Submit</b>. For best results, please use a cropped portrait picture."
 article = """
 
 ------------
@@ -38,7 +38,7 @@ article = """
 This demo is inspired by:
 
 * Github repo: <a href='https://github.com/bryandlee/animegan2-pytorch' target='_blank'>animaegan2-pytorch</a>
-* HugginFace space: <a href='https://huggingface.co/spaces/akhaliq/AnimeGANv2' target="_blank'>AnimeGANv2</a>
+* HugginFace space: <a href='https://huggingface.co/spaces/akhaliq/AnimeGANv2' target='_blank'>AnimeGANv2</a>
 
 """
 

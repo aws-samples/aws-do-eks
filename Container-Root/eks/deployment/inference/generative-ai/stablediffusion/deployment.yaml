@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    meta.helm.sh/release-name: stable-diffusion
+    meta.helm.sh/release-namespace: stable-diffusion
+  labels:
+    app.kubernetes.io/instance: stable-diffusion
+    app.kubernetes.io/managed-by: Helm
+    app.kubernetes.io/name: stable-diffusion
+    app.kubernetes.io/version: 1.4.0
+    helm.sh/chart: stable-diffusion-1.0.6
+  name: stable-diffusion
+  namespace: stable-diffusion
+spec:
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: stable-diffusion
+      app.kubernetes.io/name: stable-diffusion
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: stable-diffusion
+        app.kubernetes.io/name: stable-diffusion
+    spec:
+      containers:
+      - envFrom:
+        - configMapRef:
+            name: stable-diffusion-config
+        image: amithkk/stable-diffusion:latest
+        imagePullPolicy: IfNotPresent
+        name: stable-diffusion-stable-diffusion
+        ports:
+        - containerPort: 7860
+          name: http
+          protocol: TCP
+        resources: {}
+        securityContext: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /models
+          name: stable-diffusion-model-store
+      dnsPolicy: ClusterFirst
+      initContainers:
+      - command:
+        - /bin/sh
+        args:
+        - -c
+        - "if [ \"$(md5sum /models/model.ckpt)\" == 'c01059060130b8242849d86e97212c84  /models/model.ckpt' ]; then echo model.ckpt already exists; else wget -nc https://huggingface.co/CompVis/stable-diffusion-v-1-4-original/resolve/main/sd-v1-4.ckpt -O /models/model.ckpt; fi; if [ -f /models/GFPGANv1.3.pth ]; then echo GFPGANv1.3.pth already exists; else wget -nc https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/GFPGANv1.3.pth -O /models/GFPGANv1.3.pth; fi; if [ -f /models/RealESRGAN_x4plus.pth ]; then echo RealESRGAN_x4plus.pth already exists; else wget -nc https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth -O /models/RealESRGAN_x4plus.pth; fi; if [ -f /models/RealESRGAN_x4plus_anime_6B.pth ]; then echo RealESRGAN_x4plus_anime_6B.pth already exists; else wget -nc https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.2.4/RealESRGAN_x4plus_anime_6B.pth -O /models/RealESRGAN_x4plus_anime_6B.pth; fi;"
+        image: busybox:1.35
+        imagePullPolicy: IfNotPresent
+        name: ensure-stable-models
+        resources: {}
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+        volumeMounts:
+        - mountPath: /models
+          name: stable-diffusion-model-store
+      nodeSelector:
+        nvidia.com/gpu.present: "true"
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      serviceAccount: stable-diffusion
+      serviceAccountName: stable-diffusion
+      terminationGracePeriodSeconds: 30
+      volumes:
+      - name: stable-diffusion-model-store
+        persistentVolumeClaim:
+          claimName: stable-diffusion-model-store-stable-diffusion-0
+

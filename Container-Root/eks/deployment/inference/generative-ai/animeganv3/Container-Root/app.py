@@ -52,11 +52,11 @@ article = r"""
 ----------
 
 ## License  
-Please refer to <a href=`https://github.com/TachibanaYoshino/AnimeGANv3#license` target='_blank'>AnimeGANv3</a> for LICENSE information.
+Please refer to <a href='https://github.com/TachibanaYoshino/AnimeGANv3#license' target='_blank'>AnimeGANv3</a> for LICENSE information.
 
 ## Acknowledgements 
-* This demo is based on <a href='https://github.com/TachibanaYoshino/AnimeGANv3' target='_blank'><b>AnimeGANv3</b> GitHub repo</a> and 
-<a href='https://huggingface.co/spaces/TachibanaYoshino/AnimeGANv3' target='_blank'><b>AnimeGANv3</b> HuggingFace grad.io app</a><br> with author Xin Chen
+* This demo is based on <a href='https://github.com/TachibanaYoshino/AnimeGANv3' target='_blank'>AnimeGANv3 GitHub repo</a> and 
+<a href='https://huggingface.co/spaces/TachibanaYoshino/AnimeGANv3' target='_blank'>AnimeGANv3 HuggingFace grad.io app</a><br> with author Xin Chen
 * The Huggingface UI is referenced from @akhaliq/GFPGAN.     
 * The dataset of AnimeGANv3_JP_face v1.0 is from DCTnet and then manually optimized
 * This demo is also inspired by <a href='https://differentdimensionme.net/#demo' target='_blank'>Different Dimension Me</a>
