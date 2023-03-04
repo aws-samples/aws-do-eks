@@ -31,10 +31,10 @@ spec:
           containerPort: ${PORT_INTERNAL}
         resources:
           limits:
-        #    cpu: 4
+            cpu: 1
         #    memory: 4Gi
-            nvidia.com/gpu: 1
+        #    nvidia.com/gpu: 1
         #    k8s.amazonaws.com/vgpu: 5
-        #  requests:
-        #    cpu: "1"
+          requests:
+            cpu: 1
         #    memory: 1Gi   

@@ -3,7 +3,7 @@ kind: ClusterConfig
 
 metadata:
   name: do-eks
-  version: "1.21"
+  version: "1.24"
   region: us-east-1
 
 availabilityZones:
