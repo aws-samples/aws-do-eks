@@ -7,7 +7,6 @@ cat << EOF >> ~/.bashrc
 alias ll='ls -alh --color=auto'
 alias kon='touch ~/.kubeon; source ~/.bashrc'
 alias koff='rm -f ~/.kubeon; source ~/.bashrc'
-alias k='kubectl'
 alias kctl='kubectl'
 alias kc='kubectx'
 alias kn='kubens'

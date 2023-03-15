@@ -1,12 +1,22 @@
+# Reference: https://eksctl.io/usage/eksctl-karpenter/
+
 apiVersion: eksctl.io/v1alpha5
 kind: ClusterConfig
 
 metadata:
   name: do-eks-karpenter
-  version: "1.22"
-  region: eu-west-1
+  version: "1.25"
+  region: us-west-2
   tags:
     karpenter.sh/discovery: do-eks-karpenter
+
+iam:
+  withOIDC: true
+
+karpenter:
+  version: 'v0.27.0'
+  createServiceAccount: true
+  defaultInstanceProfile: 'KarpenterNodeInstanceProfile'
 
 managedNodeGroups:
   - name: c5-xl-do-eks-karpenter-ng
@@ -14,12 +24,10 @@ managedNodeGroups:
     instancePrefix: c5-xl
     privateNetworking: true
     minSize: 0
-    desiredCapacity: 1
+    desiredCapacity: 2
     maxSize: 10
-    volumeSize: 900
+    volumeSize: 300
     iam:
       withAddonPolicies:
         cloudWatch: true
 
-iam:
-  withOIDC: true

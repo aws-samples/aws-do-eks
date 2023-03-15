@@ -3,7 +3,7 @@ kind: Deployment
 metadata:
   name: scale-1az
 spec:
-  replicas: 16
+  replicas: 2
   selector:
     matchLabels:
       app: scale-1az
