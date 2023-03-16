@@ -7,5 +7,5 @@ if [ "$burn_time" == "" ]; then
 	burn_time=30
 fi
 
-kubectl -n default exec $(kubectl -n default get po | grep gpu-burn | head -n 1 | cut -d ' ' -f 1) -- /root/gpu_burn $burn_time
+kubectl -n kube-system exec $(kubectl -n kube-system get po | grep gpu-burn | head -n 1 | cut -d ' ' -f 1) -- /app/gpu_burn $burn_time
 

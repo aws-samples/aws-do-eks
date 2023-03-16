@@ -21,7 +21,7 @@ spec:
       - image: "oguzpastirmaci/gpu-burn"
       # ref: https://github.com/wilicc/gpu-burn
         imagePullPolicy: IfNotPresent
-        command: ["bash", "-c", "while true; do ./gpu_burn 20; sleep 20; done"]
+        command: ["bash", "-c", "while true; do /app/gpu_burn 20; sleep 20; done"]
         name: "gpu-burn"
         securityContext:
           runAsNonRoot: false

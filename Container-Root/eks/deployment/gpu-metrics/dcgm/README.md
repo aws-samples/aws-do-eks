@@ -49,7 +49,7 @@ To generate some load for our test we will use the gpu_burn utility. The provide
 running one GPU each and executes a recurring load pattern where the GPUs are fully loaded for 20 seconds, then not loaded for 20 seconds.
 
 ```
-kubectl deploy -f /eks/deploymet/gpu-metrics/gpu-burn-deployment.yaml
+kubectl apply -f /eks/deploymet/gpu-metrics/gpu-burn-deployment.yaml
 ```
 
 ## Start test pod
@@ -91,7 +91,7 @@ kubectl apply -f /eks/deployment/gpu-metrics/nvidia-smi-daemonset.yaml
 The commands below will display the local GPU utilization in the first available nvidia-smi pod.
 To use the 2nd pod change `sed -n 1p` to `sed -n 2p`, etc.
 ```
-kubectl -n default exec -it $(kubectl -n default get pods | grep nvidia-smi | sed -n 1p | cut -d ' ' -f 1) -- bash
+kubectl -n kube-system exec -it $(kubectl -n kube-system get pods | grep nvidia-smi | sed -n 1p | cut -d ' ' -f 1) -- bash
 watch nvidia-smi
 ```
 
