@@ -46,6 +46,7 @@ apt-get update && apt-get install -y curl jq vim nano less unzip git gettext-bas
 
 # Install python
 ./eks/ops/setup/install-python.sh
+python -m pip install torchx[kubernetes]
 
 # Install kubeps1 and configure bashrc aliases 
 ./eks/ops/setup/install-kubeps1.sh

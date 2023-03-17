@@ -1,0 +1,16 @@
+FROM public.ecr.aws/w6p6i9i7/aws-efa-nccl-rdma:21.11-pt-py3
+
+# download imagenet tiny for data
+RUN apt-get -q update && apt-get -q install -y wget unzip; rm -rf examples/ docker-examples/ tutorials/
+RUN wget -q http://cs231n.stanford.edu/tiny-imagenet-200.zip && unzip -q tiny-imagenet-200.zip -d /workspace/data && rm tiny-imagenet-200.zip
+
+RUN apt-get update && apt-get install -y git htop
+RUN pip3 install python-etcd
+
+RUN mkdir -p /workspace/data
+WORKDIR /workspace
+
+RUN wget https://raw.githubusercontent.com/pytorch/elastic/master/examples/imagenet/main.py
+
+ADD *.py /workspace
+
