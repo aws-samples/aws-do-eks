@@ -1,0 +1,43 @@
+# Example from: https://github.com/kubeflow/training-operator/tree/master/examples/pytorch/elastic/imagenet
+apiVersion: "kubeflow.org/v1"
+kind: PyTorchJob
+metadata:
+  name: elastic-example-imagenet
+spec:
+  elasticPolicy:
+    rdzvBackend: etcd
+    rdzvHost: etcd-service
+    rdzvPort: 2379
+    minReplicas: 2
+    maxReplicas: 4
+    maxRestarts: 100
+    metrics:
+      - type: Resource
+        resource:
+          name: cpu
+          target:
+            type: Utilization
+            averageUtilization: 80
+  pytorchReplicaSpecs:
+    Worker:
+      replicas: 2
+      restartPolicy: OnFailure
+      template:
+        spec:
+          containers:
+            - name: pytorch
+              image: kubeflow/pytorch-elastic-example-imagenet:latest
+              imagePullPolicy: IfNotPresent
+              resources:
+                requests:
+                  cpu: 4
+                  nvidia.com/gpu: 1
+                limits:
+                  nvidia.com/gpu: 1
+              env:
+              - name: LOGLEVEL
+                value: DEBUG
+              command:
+                - bash
+                - -c
+                - "wget https://raw.githubusercontent.com/pytorch/examples/main/imagenet/main.py -O /workspace/examples/imagenet.py; python -m torch.distributed.run /workspace/examples/imagenet.py --arch=resnet18 --epochs=20 --batch-size=32 --workers=0 --resume=checkpoint.pth.tar /workspace/data/tiny-imagenet-200" 

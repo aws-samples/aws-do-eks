@@ -5,9 +5,11 @@ metadata:
   name: elastic-example-imagenet
 spec:
   elasticPolicy:
-    rdzvBackend: c10d
-    minReplicas: 1
-    maxReplicas: 3
+    rdzvBackend: etcd
+    rdzvHost: etcd-service
+    rdzvPort: 2379
+    minReplicas: 2
+    maxReplicas: 4
     maxRestarts: 100
     metrics:
       - type: Resource
@@ -29,9 +31,9 @@ spec:
               resources:
                 requests:
                   cpu: 4
-                  nvidia.com/gpu: 8
+                  nvidia.com/gpu: 1
                 limits:
-                  nvidia.com/gpu: 8
+                  nvidia.com/gpu: 1
               env:
               - name: LOGLEVEL
                 value: DEBUG

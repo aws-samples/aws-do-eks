@@ -1,0 +1,14 @@
+apiVersion: rbac.authorization.k8s.io/v1
+# This cluster role binding allows anyone in the "manager" group to read secrets in any namespace.
+kind: ClusterRoleBinding
+metadata:
+  name: training-operator-hpa-access
+subjects:
+- kind: ServiceAccount
+  name: training-operator # Name is case sensitive
+  namespace: kubeflow
+  apiGroup: ""
+roleRef:
+  kind: ClusterRole
+  name: hpa-access
+  apiGroup: rbac.authorization.k8s.io
