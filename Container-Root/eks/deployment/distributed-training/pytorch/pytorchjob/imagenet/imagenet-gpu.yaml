@@ -20,7 +20,7 @@ spec:
             averageUtilization: 80
   pytorchReplicaSpecs:
     Worker:
-      replicas: 2
+      replicas: 4
       restartPolicy: OnFailure
       template:
         spec:
@@ -30,7 +30,6 @@ spec:
               imagePullPolicy: IfNotPresent
               resources:
                 requests:
-                  cpu: 4
                   nvidia.com/gpu: 1
                 limits:
                   nvidia.com/gpu: 1
@@ -40,4 +39,4 @@ spec:
               command:
                 - bash
                 - -c
-                - "wget https://raw.githubusercontent.com/pytorch/examples/main/imagenet/main.py -O /workspace/examples/imagenet.py; python -m torch.distributed.run /workspace/examples/imagenet.py --arch=resnet18 --epochs=20 --batch-size=32 --workers=0 --resume=checkpoint.pth.tar /workspace/data/tiny-imagenet-200" 
+                - "wget https://raw.githubusercontent.com/pytorch/examples/main/imagenet/main.py -O /workspace/examples/imagenet.py; python -m torch.distributed.run /workspace/examples/imagenet.py --arch=resnet18 --epochs=20 --batch-size=32 --workers=0 --resume=/workspace/checkpoint.pth.tar /workspace/data/tiny-imagenet-200" 
