@@ -1,4 +1,4 @@
-apiVersion: ubeflow.org/v1alpha2
+apiVersion: kubeflow.org/v1alpha2
 kind: MPIJob
 metadata:
   name: tensorflow-mnist

@@ -22,6 +22,8 @@ fi
 
 export TERM=xterm-256color
 
+export PATH=$PATH:/root/go/bin:/eks/ops:.
+
 EOF
 
 
