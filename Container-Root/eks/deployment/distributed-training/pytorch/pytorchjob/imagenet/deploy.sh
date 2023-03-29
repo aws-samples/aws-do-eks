@@ -1,6 +1,10 @@
 #!/bin/bash
 
-# Please deploy kubeflow/training-operator if it has not been deployed yet
+pushd ../../../../kubeflow/training-operator/
+./deploy.sh
+popd
 
-kubectl apply -f ./etcd-deployment.yaml
+pushd ../../../../etcd/
+./deploy.sh
+popd
 

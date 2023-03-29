@@ -1,4 +1,10 @@
 #!/bin/bash
 
-kubectl delete -f ./etcd-deployment.sh
+pushd ../../../../kubeflow/training-operator/
+./remove.sh
+popd
+
+pushd ../../../../etcd/
+./remove.sh
+popd
 

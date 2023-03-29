@@ -1,9 +1,17 @@
 #!/bin/bash
 
-# Instructions available here: https://pytorch.org/torchx/latest/schedulers/kubernetes.html
+# Install volcano
 
-kubectl apply -f https://raw.githubusercontent.com/volcano-sh/volcano/release-1.7/installer/volcano-development.yaml
+pushd ../../../volcano
+./deploy.sh
+popd
 
-pip install torchx[kubernetes]
+pushd ../../../etcd
+./deploy.sh
+popd
+
+# torchx should alredy be installed in the do-eks container
+# if needed, it can be installed using the line below
+#pip install torchx[kubernetes]
 
 

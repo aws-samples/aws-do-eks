@@ -1,12 +1,14 @@
-#!/usr/bin/env python3
+#
+# Resource: https://raw.githubusercontent.com/pytorch/examples/main/imagenet/main.py 
+#
 
-# File obtained from image: kubeflow/pytorch-elastic-example-imagenet:latest
+#!/usr/bin/env python3
 
 # Copyright (c) Facebook, Inc. and its affiliates.
 # All rights reserved.
 #
 # This source code is licensed under the BSD-style license found in the
-# LICENSE file in the root directory of the following source tree:
+# LICENSE file in the root directory of this source tree.
 
 r"""
 Source: `pytorch imagenet example <https://github.com/pytorch/examples/blob/master/imagenet/main.py>`_ # noqa B950
@@ -56,6 +58,7 @@ from typing import List, Tuple
 
 import numpy
 import torch
+import torch.backends.cudnn as cudnn
 import torch.distributed as dist
 import torch.nn as nn
 import torch.nn.parallel
@@ -66,7 +69,6 @@ import torchvision.datasets as datasets
 import torchvision.models as models
 import torchvision.transforms as transforms
 from torch.distributed.elastic.utils.data import ElasticDistributedSampler
-from torch.distributed.elastic.multiprocessing.errors import record
 from torch.nn.parallel import DistributedDataParallel
 from torch.optim import SGD
 from torch.utils.data import DataLoader
@@ -136,7 +138,7 @@ parser.add_argument(
 )
 parser.add_argument(
     "--dist-backend",
-    default="gloo",
+    default="nccl",
     choices=["nccl", "gloo"],
     type=str,
     help="distributed backend",
@@ -148,17 +150,19 @@ parser.add_argument(
     help="checkpoint file path, to load and save to",
 )
 
-@record
+
 def main():
     args = parser.parse_args()
-    device = torch.device("cpu")
+    device_id = int(os.environ["LOCAL_RANK"])
+    torch.cuda.set_device(device_id)
+    print(f"=> set cuda device = {device_id}")
 
     dist.init_process_group(
         backend=args.dist_backend, init_method="env://", timeout=timedelta(seconds=10)
     )
 
     model, criterion, optimizer = initialize_model(
-        args.arch, args.lr, args.momentum, args.weight_decay, device
+        args.arch, args.lr, args.momentum, args.weight_decay, device_id
     )
 
     train_loader, val_loader = initialize_data_loader(
@@ -167,7 +171,7 @@ def main():
 
     # resume from checkpoint if one exists;
     state = load_checkpoint(
-        args.checkpoint_file, args.arch, model, optimizer
+        args.checkpoint_file, device_id, args.arch, model, optimizer
     )
 
     start_epoch = state.epoch + 1
@@ -180,16 +184,17 @@ def main():
         adjust_learning_rate(optimizer, epoch, args.lr)
 
         # train for one epoch
-        train(train_loader, model, criterion, optimizer, epoch, print_freq)
+        train(train_loader, model, criterion, optimizer, epoch, device_id, print_freq)
 
         # evaluate on validation set
-        acc1 = validate(val_loader, model, criterion, print_freq)
+        acc1 = validate(val_loader, model, criterion, device_id, print_freq)
 
         # remember best acc@1 and save checkpoint
         is_best = acc1 > state.best_acc1
         state.best_acc1 = max(acc1, state.best_acc1)
 
-        save_checkpoint(state, is_best, args.checkpoint_file)
+        if device_id == 0:
+            save_checkpoint(state, is_best, args.checkpoint_file)
 
 
 class State:
@@ -223,7 +228,7 @@ class State:
             "optimizer": self.optimizer.state_dict(),
         }
 
-    def apply_snapshot(self, obj):
+    def apply_snapshot(self, obj, device_id):
         """
         The complimentary function of ``capture_snapshot()``. Applies the
         snapshot object that was returned by ``capture_snapshot()``.
@@ -239,24 +244,25 @@ class State:
     def save(self, f):
         torch.save(self.capture_snapshot(), f)
 
-    def load(self, f):
+    def load(self, f, device_id):
         # Map model to be loaded to specified single gpu.
-        snapshot = torch.load(f)
-        self.apply_snapshot(snapshot)
+        snapshot = torch.load(f, map_location=f"cuda:{device_id}")
+        self.apply_snapshot(snapshot, device_id)
 
 
 def initialize_model(
-    arch: str, lr: float, momentum: float, weight_decay: float, device
+    arch: str, lr: float, momentum: float, weight_decay: float, device_id: int
 ):
     print(f"=> creating model: {arch}")
     model = models.__dict__[arch]()
     # For multiprocessing distributed, DistributedDataParallel constructor
     # should always set the single device scope, otherwise,
     # DistributedDataParallel will use all available devices.
-    model.to(device)
-    model = nn.parallel.DistributedDataParallel(model)
+    model.cuda(device_id)
+    cudnn.benchmark = True
+    model = DistributedDataParallel(model, device_ids=[device_id])
     # define loss function (criterion) and optimizer
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss().cuda(device_id)
     optimizer = SGD(
         model.parameters(), lr, momentum=momentum, weight_decay=weight_decay
     )
@@ -287,7 +293,7 @@ def initialize_data_loader(
         train_dataset,
         batch_size=batch_size,
         num_workers=num_data_workers,
-        # pin_memory=True,
+        pin_memory=True,
         sampler=train_sampler,
     )
     val_loader = DataLoader(
@@ -305,13 +311,14 @@ def initialize_data_loader(
         batch_size=batch_size,
         shuffle=False,
         num_workers=num_data_workers,
-        # pin_memory=True,
+        pin_memory=True,
     )
     return train_loader, val_loader
 
 
 def load_checkpoint(
     checkpoint_file: str,
+    device_id: int,
     arch: str,
     model: DistributedDataParallel,
     optimizer,  # SGD
@@ -334,7 +341,7 @@ def load_checkpoint(
 
     if os.path.isfile(checkpoint_file):
         print(f"=> loading checkpoint file: {checkpoint_file}")
-        state.load(checkpoint_file)
+        state.load(checkpoint_file, device_id)
         print(f"=> loaded checkpoint file: {checkpoint_file}")
 
     # logic below is unnecessary when the checkpoint is visible on all nodes!
@@ -369,6 +376,8 @@ def load_checkpoint(
         print(f"=> checkpoint broadcast size is: {blob_len}")
 
         if rank != max_rank:
+            # pyre-fixme[6]: For 1st param expected `Union[List[int], Size,
+            #  typing.Tuple[int, ...]]` but got `Union[bool, float, int]`.
             blob = torch.zeros(blob_len.item(), dtype=torch.uint8)
         else:
             blob = torch.as_tensor(raw_blob, dtype=torch.uint8)
@@ -379,7 +388,7 @@ def load_checkpoint(
         if rank != max_rank:
             with io.BytesIO(blob.numpy()) as f:
                 snapshot = torch.load(f)
-            state.apply_snapshot(snapshot)
+            state.apply_snapshot(snapshot, device_id)
 
         # wait till everyone has loaded the checkpoint
         dist.barrier(group=pg)
@@ -419,6 +428,7 @@ def train(
     criterion,  # nn.CrossEntropyLoss
     optimizer,  # SGD,
     epoch: int,
+    device_id: int,
     print_freq: int,
 ):
     batch_time = AverageMeter("Time", ":6.3f")
@@ -439,6 +449,9 @@ def train(
     for i, (images, target) in enumerate(train_loader):
         # measure data loading time
         data_time.update(time.time() - end)
+
+        images = images.cuda(device_id, non_blocking=True)
+        target = target.cuda(device_id, non_blocking=True)
 
         # compute output
         output = model(images)
@@ -467,6 +480,7 @@ def validate(
     val_loader: DataLoader,
     model: DistributedDataParallel,
     criterion,  # nn.CrossEntropyLoss
+    device_id: int,
     print_freq: int,
 ):
     batch_time = AverageMeter("Time", ":6.3f")
@@ -483,6 +497,10 @@ def validate(
     with torch.no_grad():
         end = time.time()
         for i, (images, target) in enumerate(val_loader):
+            if device_id is not None:
+                images = images.cuda(device_id, non_blocking=True)
+            target = target.cuda(device_id, non_blocking=True)
+
             # compute output
             output = model(images)
             loss = criterion(output, target)

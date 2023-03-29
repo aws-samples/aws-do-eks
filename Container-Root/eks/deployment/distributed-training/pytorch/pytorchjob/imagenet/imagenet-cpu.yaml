@@ -2,14 +2,14 @@
 apiVersion: "kubeflow.org/v1"
 kind: PyTorchJob
 metadata:
-  name: elastic-example-imagenet
+  name: imagenet-elastic-cpu
 spec:
   elasticPolicy:
     rdzvBackend: etcd
     rdzvHost: etcd-service
     rdzvPort: 2379
     minReplicas: 2
-    maxReplicas: 4
+    maxReplicas: 24
     maxRestarts: 100
     metrics:
       - type: Resource
@@ -31,9 +31,6 @@ spec:
               resources:
                 requests:
                   cpu: 4
-                  nvidia.com/gpu: 1
-                limits:
-                  nvidia.com/gpu: 1
               env:
               - name: LOGLEVEL
                 value: DEBUG

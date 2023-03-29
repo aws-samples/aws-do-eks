@@ -1,0 +1,32 @@
+apiVersion: batch.volcano.sh/v1alpha1
+kind: Job
+metadata:
+  name: imagenet-volcano-job
+spec:
+  minAvailable: 2
+  schedulerName: volcano
+  queue: test
+  policies:
+    - event: PodEvicted
+      action: RestartJob
+  tasks:
+    - replicas: 2
+      name: imagenet
+      policies:
+      - event: TaskCompleted
+        action: CompleteJob
+      template:
+        spec:
+          containers:
+            - image: kubeflow/pytorch-elastic-example-imagenet:latest
+              command:
+              - bash
+              - -c
+              -  "wget https://raw.githubusercontent.com/pytorch/examples/main/imagenet/main.py -O /workspace/examples/imagenet.py; python -m torch.distributed.run /workspace/examples/imagenet.py --arch=resnet18 --epochs=20 --batch-size=32 --workers=0 --resume=/workspace/checkpoint.pth.tar /workspace/data/tiny-imagenet-200"
+              name: imagenet
+              resources:
+                requests:
+                  nvidia.com/gpu: 1
+                limits:
+                  nvidia.com/gpu: 1
+          restartPolicy: Always

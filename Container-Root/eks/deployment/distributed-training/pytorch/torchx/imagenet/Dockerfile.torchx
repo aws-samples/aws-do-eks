@@ -10,7 +10,11 @@ RUN pip3 install python-etcd
 RUN mkdir -p /workspace/data
 WORKDIR /workspace
 
+RUN git clone https://github.com/pytorch/torchx.git && pushd torchx && git checkout v0.4.0 && popd
+RUN pip3 install hydra-core omegaconf torchx
+ENV PYTHONPATH=/workspace/torchx:$PYTHONPATH
+
 RUN wget https://raw.githubusercontent.com/pytorch/elastic/master/examples/imagenet/main.py
 
-ADD *.py /workspace
+ADD *.py /workspace/
 

@@ -2,14 +2,14 @@
 apiVersion: "kubeflow.org/v1"
 kind: PyTorchJob
 metadata:
-  name: elastic-example-imagenet
+  name: imagenet-elastic-gpu
 spec:
   elasticPolicy:
     rdzvBackend: etcd
     rdzvHost: etcd-service
     rdzvPort: 2379
     minReplicas: 2
-    maxReplicas: 4
+    maxReplicas: 36
     maxRestarts: 100
     metrics:
       - type: Resource
@@ -20,10 +20,25 @@ spec:
             averageUtilization: 80
   pytorchReplicaSpecs:
     Worker:
-      replicas: 4
+      replicas: 36
       restartPolicy: OnFailure
       template:
+        metadata:
+          labels:
+            app: imagenet
         spec:
+          #nodeSelector:
+          #   node.kubernetes.io/instance-type: "g4dn.metal"
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchExpressions:
+                  - key: app
+                    operator: In
+                    values:
+                    - imagenet
+                topologyKey: "topology.kubernetes.io/zone"
           containers:
             - name: pytorch
               image: kubeflow/pytorch-elastic-example-imagenet:latest
@@ -39,4 +54,4 @@ spec:
               command:
                 - bash
                 - -c
-                - "wget https://raw.githubusercontent.com/pytorch/examples/main/imagenet/main.py -O /workspace/examples/imagenet.py; python -m torch.distributed.run /workspace/examples/imagenet.py --arch=resnet18 --epochs=20 --batch-size=32 --workers=0 --resume=/workspace/checkpoint.pth.tar /workspace/data/tiny-imagenet-200" 
+                - "wget https://raw.githubusercontent.com/pytorch/elastic/master/examples/imagenet/main.py -O /workspace/examples/imagenet.py; python -m torch.distributed.run /workspace/examples/imagenet.py --arch=resnet18 --epochs=20 --batch-size=32 --workers=0 --checkpoint-file=/workspace/checkpoint.pth.tar /workspace/data/tiny-imagenet-200" 

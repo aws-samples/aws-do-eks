@@ -1,0 +1,6 @@
+FROM ghcr.io/pytorch/torchx:0.4.0
+
+RUN pip3 install python-etcd
+
+ADD . /app/
+
