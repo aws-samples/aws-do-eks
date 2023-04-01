@@ -1,0 +1,72 @@
+apiVersion: kubeflow.org/v2beta1
+kind: MPIJob
+metadata:
+  name: imagenet-gpu
+spec:
+  slotsPerWorker: 1
+  runPolicy:
+    cleanPodPolicy: Running
+  mpiReplicaSpecs:
+    Launcher:
+      replicas: 1
+      template:
+        spec:
+          containers:
+          - image: ${REGISTRY}${IMAGE}${TAG}-${ext}
+            name: mpi-launcher-gpu
+            imagePullPolicy: Always
+            command:
+            - mpirun
+            args:
+            - -np
+            - "2"
+            - --allow-run-as-root
+            - -bind-to
+            - none
+            - -map-by
+            - slot
+#            - -x
+#            - LD_LIBRARY_PATH
+            - -x
+            - PATH
+            - -mca
+            - pml
+            - ob1
+            - -mca
+            - btl
+            - ^openib
+            - python
+            - /app/imagenet.py
+            - "--arch=resnet18"
+            - "--epochs=20"
+            - "--batch-size=32"
+            - "--multiprocessing-distributed"
+            - "--world-size=2"
+            - "--gpu=0"
+            - "--dist-backend=nccl"
+            - "--dist-url=tcp://imagenet-gpu-worker-0.imagenet-gpu-worker:23456"
+#            - "--resume=/workspace/checkpoint.pth.tar"
+            - "/workspace/data/tiny-imagenet-200"
+            resources:
+              limits:
+                cpu: 2
+                memory: 4Gi
+    Worker:
+      replicas: 2
+      template:
+        spec:
+          containers:
+          - image: ${REGISTRY}${IMAGE}${TAG}-${ext}
+            name: mpi-worker
+            resources:
+              limits:
+                cpu: 2
+                memory: 10Gi
+                nvidia.com/gpu: 1
+            volumeMounts:
+            - name: shmem
+              mountPath: /dev/shm
+          volumes:
+          - name: shmem
+            hostPath:
+              path: /dev/shm
