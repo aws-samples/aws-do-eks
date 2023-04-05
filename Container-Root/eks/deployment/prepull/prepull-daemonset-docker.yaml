@@ -1,0 +1,43 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: prepull-docker
+  namespace: kube-system
+  labels:
+    k8s-app: prepull-docker
+spec:
+  selector:
+    matchLabels:
+      name: prepull-docker
+  template:
+    metadata:
+      labels:
+        name: prepull-docker
+    spec:
+      #nodeSelector:
+      #  node.kubernetes.io/instance-type: g4dn.2xlarge
+      initContainers:
+      - name: prepull-docker
+        image: docker
+        command: ["docker"]
+        # The image to pre-pull is specified in the docker pull command below
+        args: ["pull", "terencewestphal/htop:latest"]
+        volumeMounts:
+        - name: docker
+          mountPath: /var/run
+      containers:
+      - name: pause
+        image: gcr.io/google_containers/pause
+        #resources:
+        #  limits:
+        #    memory: 200Mi
+        #    nvidia.com/gpu: 1
+        #  requests:
+        #    cpu: 100m
+        #    memory: 200Mi
+        #    nvidia.com/gpu: 1
+      terminationGracePeriodSeconds: 10
+      volumes:
+      - name: docker
+        hostPath:
+          path: /var/run

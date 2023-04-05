@@ -1,0 +1,37 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: prepull-echo
+  namespace: kube-system
+  labels:
+    k8s-app: prepull-echo
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      name: prepull-echo
+  template:
+    metadata:
+      labels:
+        name: prepull-echo
+    spec:
+      nodeSelector:
+        node.kubernetes.io/instance-type: g4dn.2xlarge
+      initContainers:
+      - name: prepull-echo
+        # This is the image to pre-pull
+        image: terencewestphal/htop:latest
+        command: ["/bin/sh"]
+        args: ["-c", "echo Image pre-pulled"]
+      containers:
+      - name: pause
+        image: gcr.io/google_containers/pause
+        resources:
+          limits:
+        #    memory: 200Mi
+            nvidia.com/gpu: 1
+          requests:
+        #    cpu: 100m
+        #    memory: 200Mi
+            nvidia.com/gpu: 1
+      terminationGracePeriodSeconds: 10
