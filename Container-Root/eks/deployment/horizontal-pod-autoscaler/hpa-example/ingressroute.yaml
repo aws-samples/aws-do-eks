@@ -1,0 +1,14 @@
+apiVersion: traefik.containo.us/v1alpha1
+kind: IngressRoute
+metadata:
+  name: ingressroute-apache
+  namespace: hpa-example
+spec:
+  entryPoints:
+    - web
+  routes:
+  - match: Host(`php-apache.hpa-example.com`) || PathPrefix(`/hpa-example`)
+    kind: Rule
+    services:
+    - name: php-apache
+      port: 80

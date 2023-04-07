@@ -17,7 +17,7 @@ spec:
     spec:
       containers:
       - name: php-apache
-        image: k8s.gcr.io/hpa-example
+        image: 516928513568.dkr.ecr.us-west-2.amazonaws.com/php-apache:latest
         ports:
         - containerPort: 80
         resources:
@@ -35,7 +35,8 @@ metadata:
     run: php-apache
 spec:
   ports:
-  - port: 80
+  - name: web
+    port: 80
   selector:
     run: php-apache
 

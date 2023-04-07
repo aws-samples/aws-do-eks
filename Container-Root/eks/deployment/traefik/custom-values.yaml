@@ -1,0 +1,12 @@
+# File custom-values.yml
+## Install with "helm install --values=./custom-values.yml traefik traefik/traefik
+#additionalArguments:
+#  - "--api.insecure=true"
+#  - "--api.dashboard=true"
+#  - "--metrics.prometheus=true"
+
+globalArguments: []
+
+service:
+  type: NodePort
+

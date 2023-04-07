@@ -1,0 +1,17 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: php-apache-ingress
+  namespace: hpa-example
+spec:
+  ingressClassName: traefik
+  rules:
+  - http:
+      paths:
+      - path: /php-apache
+        pathType: Prefix
+        backend:
+          service:
+            name: php-apache
+            port:
+              number: 80

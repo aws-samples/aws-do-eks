@@ -1,9 +1,13 @@
-apiVersion: autoscaling/v2beta2
+#apiVersion: autoscaling/v2beta2
+apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
   name: php-apache
   namespace: hpa-example
 spec:
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 30
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment

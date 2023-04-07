@@ -1,0 +1,15 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: keda-prometheus-hpa
+  namespace: hpa-example
+spec:
+  scaleTargetRef:
+    name: php-apache
+  triggers:
+  - type: prometheus
+    metadata:
+      serverAddress: http://prometheus-server.prometheus.svc.cluster.local:80
+      metricName: http_requests_total # DEPRECATED: This parameter is deprecated as of KEDA v2.10 and will be removed in version 2.12
+      threshold: '1'
+      query: rate(traefik_service_requests_total{service="hpa-example-php-apache-80@kubernetes",code="200"}[2m])
