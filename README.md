@@ -1,6 +1,6 @@
 <img alt="aws-do-cli" src="./aws-do-eks-1024.png" width="25%" align="right" />
 
-# AWS do EKS (aws-do-eks) <br/> Create and Manage your Amazon EKS clusters using the [do-framework](https://bit.ly/do-framework)
+# Run DeepSparse on Amazon EKS Clusters Using the [do-framework](https://bit.ly/do-framework)
 
 <center><img src="aws-do-eks.png" width="80%"/> </br>
 
@@ -9,6 +9,77 @@ Fig. 1 - EKS cluster sample
 
 
 ## Overview
+
+This example directory is a friendly fork of the [AWS-do-EKS](https://github.com/aws-samples/aws-do-eks) repository. It allows users to create an EKS cluster with the intention of running inference with DeepSparse. Additionally, files from the [AWS-do-Inference](https://github.com/aws-samples/aws-do-inference) repository are used for building, managing and deploying a Docker container running the DeepSparse Server in the EKS Cluster.
+
+This deployment requires the following tools and libraries installed:
+
+* The [AWS CLI](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html) version 2.X that is [configured](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-quickstart.html). The default region configured for this deployment is `us-east-1`.
+
+* [Docker and the Docker CLI](https://docs.docker.com/get-docker/).
+
+## Getting Started
+
+```bash 
+git clone https://github.com/neuralmagic/deepsparse.git
+cd deepsparse/examples/aws-eks
+```
+
+## Build the EKS Cluster
+
+1. Build an image that includes all necessary tools and scripts for creating and managing the EKS clusters:
+`./build.sh`
+
+2. Start container locally:
+`./run.sh`
+
+3. Open a bash shell in the container:
+`./exec.sh`
+
+4. In the bash shell, create the EKS Cluster on AWS:
+`./eks-create.sh`
+
+For more in-depth detail of each script and further configuration of the EKS cluster read the `Configure` section below.
+
+## Deploy a Docker Container with the DeepSparse Server in the Cluster
+
+After your EKS cluster is staged, which may take around ~40 minutes, in a seperate terminal shell, cd into `aws-do-inference` directory. Next, add your AWS **account ID** and **region** to the `registry` variable found in the `config.properties` file. 
+
+To configure the DeepSparse model and task configuration, edit the following file: `/aws-do-inference/3-pack/server-config.yaml`
+
+1. Build a base image with the `processor` of interest configured in the `config.properties` file. In this example, DeepSparse will run in the cluster behind a CPU `c5.2xlarge` instance:
+`./build.sh`
+
+2. Login to a private registry on AWS:
+`./login.sh`
+
+3. Aftewards, push the image to ECR:
+`./build.sh push`
+
+4. Build an image with the DeepSparse Server:
+`./pack.sh`
+
+5. Push image to ECR:
+`./pack.sh push`
+
+6. Deploy the container in the active EKS cluster:
+`./deploy.sh`
+
+
+In the open bash shell of your EKS Cluster, run the following command to see all of your running pods in the cluster:
+
+`kubectl --namespace kube-system get pods`
+
+To communicate with your cluster serving the DeepSparse Server from your local machine, first create a port forward:
+
+`kubectl port-forward svc/pruned80-quant-none-vnni-cpu-0 8080:8080 -n kube-system`
+
+Test the deployment by calling the DeepSparse Server to run sentiment analysis:
+
+`curl -X POST http://localhost:8080/predict -H 'Content-Type: application/json' -d '{"sequences": "Snorlax loves my Tesla!"}'`
+
+****
+
 As described in the [Amazon EKS User Guide](https://docs.aws.amazon.com/eks/latest/userguide/create-cluster.html), creating an EKS cluster can be done using [eksctl](https://eksctl.io/usage/creating-and-managing-clusters/), the [AWS console](https://console.aws.amazon.com/eks/home#/clusters), or the [aws cli](https://docs.aws.amazon.com/cli/latest/userguide/cli-chap-install.html). There are also [other options](https://registry.terraform.io/modules/terraform-aws-modules/eks/aws/latest), however typically each tool has a learning curve and requires some proficiency.  
 The Do framework strives to simplify DevOps and MLOps tasks by automating complex operations into intuitive action scripts. For example, instead of running an eksctl command with several command line arguments to create an EKS cluster, aws-do-eks provides an `eks-create.sh` script which wraps a collection of tools including eksctl and provides the end user with a simplified and intuitive experience. The only prerequisite needed to build and run this project is [Docker](https://docs.docker.com/get-docker/). The main use case of this project is to specify a desired cluster configuration, then create or manage the EKS cluster by executing a script. This process is described in further detail below.
 

@@ -26,27 +26,27 @@ if [ "$CONFIG" == "conf" ]; then
 		nodegroup/eks-nodegroup-create.sh
 	done
 
-	# Create GPU nodegroups
-	echo ""
-	echo "Creating GPU nodegroups in cluster ${CLUSTER_NAME} ..."
-	export nodegroup_opts="${GPU_NODEGROUP_OPTIONS}"
-	for index in ${!GPU_NODEGROUP_INSTANCE_TYPES[@]}
-	do
-		export instance_type=${GPU_NODEGROUP_INSTANCE_TYPES[$index]}
-		export nodegroup_name=$(echo $instance_type | sed -e 's/\./-/g')
-		nodegroup/eks-nodegroup-create.sh
-	done
+	# # Create GPU nodegroups
+	# echo ""
+	# echo "Creating GPU nodegroups in cluster ${CLUSTER_NAME} ..."
+	# export nodegroup_opts="${GPU_NODEGROUP_OPTIONS}"
+	# for index in ${!GPU_NODEGROUP_INSTANCE_TYPES[@]}
+	# do
+	# 	export instance_type=${GPU_NODEGROUP_INSTANCE_TYPES[$index]}
+	# 	export nodegroup_name=$(echo $instance_type | sed -e 's/\./-/g')
+	# 	nodegroup/eks-nodegroup-create.sh
+	# done
 
-	# Create ASIC nodegroups
-	echo ""
-	echo "Creating ASIC nodegroups in cluster ${CLUSTER_NAME} ..."
-	export nodegroup_opts="${ASIC_NODEGROUP_OPTIONS}"
-	for index in ${!ASIC_NODEGROUP_INSTANCE_TYPES[@]}
-	do
-		export instance_type=${ASIC_NODEGROUP_INSTANCE_TYPES[$index]}
-		export nodegroup_name=$(echo $instance_type | sed -e 's/\./-/g')
-		nodegroup/eks-nodegroup-create.sh
-	done
+	# # Create ASIC nodegroups
+	# echo ""
+	# echo "Creating ASIC nodegroups in cluster ${CLUSTER_NAME} ..."
+	# export nodegroup_opts="${ASIC_NODEGROUP_OPTIONS}"
+	# for index in ${!ASIC_NODEGROUP_INSTANCE_TYPES[@]}
+	# do
+	# 	export instance_type=${ASIC_NODEGROUP_INSTANCE_TYPES[$index]}
+	# 	export nodegroup_name=$(echo $instance_type | sed -e 's/\./-/g')
+	# 	nodegroup/eks-nodegroup-create.sh
+	# done
 
 	# Create Fargate Profiles
 	echo ""
