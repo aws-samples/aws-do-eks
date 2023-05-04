@@ -4,7 +4,7 @@ kind: ClusterConfig
 metadata:
   name: eks-kubeflow
   region: us-west-2
-  version: "1.21"
+  version: "1.22"
 iam:
   withOIDC: true
 managedNodeGroups:
