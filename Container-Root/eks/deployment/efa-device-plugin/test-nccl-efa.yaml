@@ -18,13 +18,6 @@ spec:
           #- image: <account>.dkr.ecr.us-west-2.amazonaws.com/cuda-efa-nccl-tests:ubuntu18.04
           - image: public.ecr.aws/w6p6i9i7/aws-efa-nccl-rdma:base-cudnn8-cuda11-ubuntu18.04
             name: test-nccl-efa-launcher
-            #env:
-            #- name: LD_LIBRARY_PATH
-            #  value: /usr/local/cuda/extras/CUPTI/lib64:/opt/amazon/openmpi/lib:/opt/nccl/build/lib:/opt/amazon/efa/lib:/opt/aws-ofi-nccl/install/lib:/usr/local/nvidia/lib:/usr/local/nvidia/lib64
-              #value: /opt/amazon/openmpi/lib:/opt/nccl/build/lib:/opt/amazon/efa/lib:/opt/aws-ofi-nccl/install/lib:/usr/local/nvidia/lib:$LD_LIBRARY_PATH
-            #- name: PATH
-            #  value: /opt/amazon/openmpi/bin/:/opt/amazon/efa/bin:/usr/bin:/usr/local/bin:/usr/local/nvidia/bin:/usr/local/cuda/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-            #  value: $PATH:/opt/amazon/efa/bin
             command:
             - /opt/amazon/openmpi/bin/mpirun
             - --allow-run-as-root
@@ -36,9 +29,7 @@ spec:
             - -map-by
             - slot
             - -x
-            - PATH
-            - -x
-            - LD_LIBRARY_PATH
+            - LD_LIBRARY_PATH=/usr/local/cuda/extras/CUPTI/lib64:/opt/amazon/openmpi/lib:/opt/nccl/build/lib:/opt/amazon/efa/lib:/opt/aws-ofi-nccl/install/lib:/usr/local/nvidia/lib:/usr/local/nvidia/lib64
             - -x
             - NCCL_DEBUG=INFO
             - -x
@@ -46,9 +37,9 @@ spec:
             - -x
             - FI_PROVIDER=efa
             - -x
-            - FI_EFA_USE_DEVICE_RDMA=1
+            - FI_EFA_USE_DEVICE_RDMA=0
             - -x
-            - RDMAV_FORK_SAFE=1
+            - RDMAV_FORK_SAFE=0
             - -x
             - NCCL_SHM_DISABLE=0
             - --mca
@@ -75,9 +66,7 @@ spec:
       template:
         spec:
           #nodeSelector:
-            #beta.kubernetes.io/instance-type: "p4d.24xlarge"
-            #beta.kubernetes.io/instance-type: "p3dn.24xlarge"
-            #beta.kubernetes.io/instance-type: "g4dn.metal"
+            #node.kubernetes.io/instance-type: "g4dn.metal"
           imagePullPolicy: IfNotPresent
           containers:
           #- image: <account>.dkr.ecr.us-west-2.amazonaws.com/cuda-efa-nccl-tests:ubuntu18.04
@@ -91,12 +80,12 @@ spec:
                 nvidia.com/gpu: 1
                 #hugepages-2Mi: 5120Mi
                 vpc.amazonaws.com/efa: 1
-                memory: 8000Mi
+                #memory: 8000Mi
               requests:
                 nvidia.com/gpu: 1
                 #hugepages-2Mi: 5120Mi
                 vpc.amazonaws.com/efa: 1
-                memory: 8000Mi
+                #memory: 8000Mi
           volumes:
           - name: shmem
             hostPath:
