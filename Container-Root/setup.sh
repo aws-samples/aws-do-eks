@@ -12,7 +12,10 @@ if [ -d /etc/apt ]; then
 fi
 
 # Install basic tools
-apt-get update && apt-get install -y curl jq vim nano less unzip git gettext-base groff sudo htop bash-completion
+apt-get update && apt-get install -y curl jq vim nano less unzip git gettext-base groff sudo htop bash-completion wget
+
+# Install yq
+./eks/ops/setup/install-yq.sh
 
 # Install aws cli
 ./eks/ops/setup/install-aws-cli.sh
@@ -47,6 +50,9 @@ apt-get update && apt-get install -y curl jq vim nano less unzip git gettext-bas
 # Install python
 ./eks/ops/setup/install-python.sh
 python -m pip install torchx[kubernetes]
+
+# Install terraform
+./eks/ops/setup/install-terraform.sh
 
 # Install kubeps1 and configure bashrc aliases 
 ./eks/ops/setup/install-kubeps1.sh

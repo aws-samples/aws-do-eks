@@ -1,27 +1,20 @@
 #!/bin/bash
 
-source ./eks.conf
+source ./conf/env.conf
 
-echo ""
-echo "Status of cluster ${CLUSTER_NAME} ..."
+pushd ${IMPL}
 
-echo ""
-CMD="eksctl get cluster --name $CLUSTER_NAME"
-echo "${CMD}"
-if [ "${DRY_RUN}" == "" ]; then
-    ${CMD}
+CMD="./eks-status.sh"
+
+if [ "${VERBOSE}" == "true" ]; then
+        echo ""
+        echo "${CMD}"
+        echo ""
 fi
 
-echo ""
-CMD="eksctl get nodegroups --cluster ${CLUSTER_NAME}"
-echo "${CMD}"
+
 if [ "${DRY_RUN}" == "" ]; then
-    ${CMD}
+	${CMD}
 fi
 
-echo ""
-CMD="eksctl get fargateprofiles --cluster ${CLUSTER_NAME}"
-echo "${CMD}"
-if [ "${DRY_RUN}" == "" ]; then
-    ${CMD}
-fi
+popd

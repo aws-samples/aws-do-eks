@@ -8,6 +8,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV AWS_PAGER=""
 
 ADD Container-Root /
+ADD wd/conf/ /eks/conf/
 
 RUN export http_proxy=$http_proxy; export https_proxy=$https_proxy; export no_proxy=$no_proxy; /setup.sh; rm -f /setup.sh
 

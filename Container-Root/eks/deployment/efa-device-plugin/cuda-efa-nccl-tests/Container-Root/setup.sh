@@ -105,3 +105,14 @@ export NCCL_PROTO=simple
 
 rm -rf /var/lib/apt/lists/*
 
+###################################################
+## Install OSU Micro-benchmarks
+#mkdir -p /opt/omb
+#cd /opt/omb
+#wget http://mvapich.cse.ohio-state.edu/download/mvapich/osu-micro-benchmarks-5.6.2.tar.gz
+#tar zxvf ./osu-micro-benchmarks-5.6.2.tar.gz
+#cd osu-micro-benchmarks-5.6.2/
+#./configure CC=mpicc CXX=mpicxx
+# make -j 4
+#rm -f osu-micro-benchmarks-5.6.2.tar.gz
+

@@ -31,7 +31,7 @@ spec:
             - --allow-run-as-root
             - --tag-output
             - -np
-            - "16"
+            - "2"
             - -bind-to
             - none
             - -map-by
@@ -57,6 +57,8 @@ spec:
             - --mca
             - pml
             - ^cm
+            - --mca
+            - plm_rsh_agent=/usr/bin/ssh
             - --oversubscribe
             - /opt/amazon/efa/bin/fi_info
             - -p
@@ -71,12 +73,12 @@ spec:
             name: efa-info-worker
             resources:
               limits:
-                nvidia.com/gpu: 8
-                hugepages-2Mi: 5120Mi
-                vpc.amazonaws.com/efa: 4
-                memory: 8000Mi
+#                nvidia.com/gpu: 8
+#                hugepages-2Mi: 5120Mi
+                vpc.amazonaws.com/efa: 1
+#                memory: 8000Mi
               requests:
-                nvidia.com/gpu: 8
-                hugepages-2Mi: 5120Mi
-                vpc.amazonaws.com/efa: 4
-                memory: 8000Mi
+#                nvidia.com/gpu: 8
+#                hugepages-2Mi: 5120Mi
+                vpc.amazonaws.com/efa: 1
+#                memory: 8000Mi

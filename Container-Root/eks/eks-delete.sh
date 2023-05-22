@@ -1,27 +1,18 @@
 #!/bin/bash
 
-source ./eks.conf
+source ./conf/env.conf
 
-if [ "$CONFIG" == "conf" ]; then
+pushd ${IMPL}
 
-	echo ""
-	echo "Deleting cluster ${CLUSTER_NAME} ..."
+CMD="./eks-delete.sh"
 
-	CMD="eksctl delete cluster --name ${CLUSTER_NAME}"
-elif [ "$CONFIG" == "yaml" ]; then
-	echo ""
-	echo "Deleting cluster using ${EKS_YAML} ..."
-	
-	CMD="eksctl delete cluster -f ${EKS_YAML}"
-else
-	echo ""
-	echo "Unrecognized CONFIG type $CONFIG"
-	echo "Please specify CONFIG=conf or CONFIG=yaml in eks.conf"
-	echo ""
-	exit 1
+if [ "${VERBOSE}" == "true" ]; then
+        echo ""
+        echo "${CMD}"
+        echo ""
 fi
 
-echo ${CMD}
-if [ "${DRY_RUN}" == "" ]; then
-    ${CMD}
-fi
+${CMD}
+
+popd
+

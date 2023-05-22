@@ -13,3 +13,7 @@ Container-Root/eks/deployment/prometheus-grafana/prometheus-adapter/prometheus-a
 Container-Root/eks/deployment/aws-load-balancer-controller/iam_policy.json
 Container-Root/eks/deployment/distributed-training/pytorch/torchx/lightning/imagenet
 Container-Root/eks/deployment/distributed-training/pytorch/mpijob/*.yaml
+Container-Root/eks/terraform/terraform-aws-eks-blueprints
+**/.terraform
+**/.terraform.lock.hcl
+**/terraform.tfstate
