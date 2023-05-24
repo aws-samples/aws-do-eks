@@ -113,15 +113,18 @@ module "eks" {
   eks_managed_node_groups = {
     sys = {
       instance_types = ["m5.large"]
+      capacity_type  = "ON_DEMAND"
       min_size       = 1
       max_size       = 5
       desired_size   = 1
     }
     gpu = {
       instance_types = ["g4dn.8xlarge"]
+      capacity_type  = "ON_DEMAND"
+      #capacity_type  = "SPOT"
       min_size       = 0
       max_size       = 10
-      desired_size   = 0
+      desired_size   = 1
       block_device_mappings = {
         xvda = {
           device_name = "/dev/xvda"

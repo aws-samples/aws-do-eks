@@ -1,0 +1,40 @@
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: do-eks-yaml-g5
+  version: "1.25"
+  region: us-east-1
+
+availabilityZones:
+  - us-east-1a
+  - us-east-1b
+  - us-east-1c
+  - us-east-1d
+
+managedNodeGroups:
+
+  - name: sys
+    instanceType: m5.xlarge
+    desiredCapacity: 1
+    privateNetworking: true
+    iam:
+      withAddonPolicies:
+        autoScaler: true
+        cloudWatch: true
+ 
+  - name: g5
+    instanceType: g5.2xlarge
+    instancePrefix: g5-2xl
+    privateNetworking: true
+    efaEnabled: false
+    minSize: 0
+    desiredCapacity: 1
+    maxSize: 10
+    volumeSize: 80
+    iam:
+      withAddonPolicies:
+        cloudWatch: true
+
+iam:
+  withOIDC: true
