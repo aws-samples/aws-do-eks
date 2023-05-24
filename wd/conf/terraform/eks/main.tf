@@ -125,6 +125,7 @@ module "eks" {
       min_size       = 0
       max_size       = 10
       desired_size   = 1
+      ami_id         = data.aws_ami.eks_gpu_node.id
       block_device_mappings = {
         xvda = {
           device_name = "/dev/xvda"
