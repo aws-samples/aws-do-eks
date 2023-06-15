@@ -1,3 +1,4 @@
 #!/bin/bash
 
-kubectl get nodes "$@"
+kubectl get nodes -L node.kubernetes.io/instance-type "$@"
+

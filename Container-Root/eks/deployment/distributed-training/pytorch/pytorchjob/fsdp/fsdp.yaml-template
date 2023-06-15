@@ -1,0 +1,57 @@
+apiVersion: "kubeflow.org/v1"
+kind: PyTorchJob
+metadata:
+  name: pytorch-fsdp 
+spec:
+  elasticPolicy:
+    rdzvBackend: etcd
+    rdzvHost: etcd-service
+    rdzvPort: 2379
+    minReplicas: 1
+    maxReplicas: 36
+    maxRestarts: 100
+    metrics:
+      - type: Resource
+        resource:
+          name: cpu
+          target:
+            type: Utilization
+            averageUtilization: 80
+  pytorchReplicaSpecs:
+    Worker:
+      replicas: 16
+      restartPolicy: OnFailure
+      template:
+        metadata:
+          labels:
+            app: fsdp
+        spec:
+          nodeSelector:
+            node.kubernetes.io/instance-type: "g4dn.metal"
+            #node.kubernetes.io/instance-type: "g5.2xlarge"
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchExpressions:
+                  - key: app
+                    operator: In
+                    values:
+                    - fsdp
+                topologyKey: "topology.kubernetes.io/zone"
+          containers:
+            - name: pytorch
+              image: ${REGISTRY}${IMAGE}${TAG}
+              imagePullPolicy: Always
+              resources:
+                requests:
+                  nvidia.com/gpu: 1
+                limits:
+                  nvidia.com/gpu: 1
+              env:
+              - name: LOGLEVEL
+                value: DEBUG
+              command:
+                - bash
+                - -c
+                - "python -m torch.distributed.run --nproc-per-node=1 fsdp_train.py"
