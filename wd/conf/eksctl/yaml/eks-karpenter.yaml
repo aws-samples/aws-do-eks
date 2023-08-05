@@ -5,7 +5,7 @@ kind: ClusterConfig
 
 metadata:
   name: do-eks-yaml-karpenter
-  version: "1.25"
+  version: "1.27"
   region: us-west-2
   tags:
     karpenter.sh/discovery: do-eks-yaml-karpenter
@@ -14,9 +14,9 @@ iam:
   withOIDC: true
 
 karpenter:
-  version: 'v0.27.0'
+  version: 'v0.29.0'
   createServiceAccount: true
-  defaultInstanceProfile: 'KarpenterNodeInstanceProfile'
+  #  defaultInstanceProfile: 'KarpenterInstanceProfile'
 
 managedNodeGroups:
   - name: c5-xl-do-eks-karpenter-ng
@@ -30,4 +30,6 @@ managedNodeGroups:
     iam:
       withAddonPolicies:
         cloudWatch: true
-
+        ebs: true
+        efs: true
+        fsx: true

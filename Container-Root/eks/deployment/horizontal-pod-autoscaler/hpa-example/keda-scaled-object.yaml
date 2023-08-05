@@ -6,6 +6,8 @@ metadata:
 spec:
   scaleTargetRef:
     name: php-apache
+  minReplicaCount:  1 
+  cooldownPeriod:   30
   triggers:
   - type: prometheus
     metadata:

@@ -1,19 +1,16 @@
 #!/bin/bash
-# Source eks.conf
-if [ -f ./eks.conf ]; then
-        . ./eks.conf
-elif [ -f /eks/eks.conf ]; then
-        . /eks/eks.conf
-elif [ -f ../../eks.conf ]; then
-        . ../../eks.conf
-else
-        echo ""
-        echo "Error: Could not locate eks.conf"
+
+# Get cluster name
+if [ -f "/eks/conf/env.conf" ]; then
+	pushd /eks
+	CLUSTER_NAME=$(/eks/eks-name.sh)
+	popd
 fi
 
 if [ "$CLUSTER_NAME" == "" ]; then
 	echo ""
 else
+	echo "CLUSTER_NAME=$CLUSTER_NAME"
 cat <<EOF | kubectl apply -f -
 apiVersion: karpenter.sh/v1alpha5
 kind: Provisioner
