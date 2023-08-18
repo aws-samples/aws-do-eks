@@ -20,7 +20,8 @@ printf "done"
 }
 get_secret_name_from_service_account() {
 echo -e "\\nGetting secret of service account ${SERVICE_ACCOUNT_NAME} on ${NAMESPACE}"
-    SECRET_NAME=$(kubectl get sa "${SERVICE_ACCOUNT_NAME}" --namespace="${NAMESPACE}" -o json | jq -r .secrets[].name)
+    #SECRET_NAME=$(kubectl get sa "${SERVICE_ACCOUNT_NAME}" --namespace="${NAMESPACE}" -o json | jq -r .secrets[].name)
+    SECRET_NAME=$(kubectl -n ${NAMESPACE} get secret ${SERVICE_ACCOUNT_NAME} -o json | jq -r .metadata.name)
 echo "Secret name: ${SECRET_NAME}"
 }
 extract_ca_crt_from_secret() {
