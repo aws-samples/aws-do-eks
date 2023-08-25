@@ -2,5 +2,6 @@
 
 . .env
 
-docker build -t ${REGISTRY}${IMAGE}${TAG} -f Dockerfile .
+#docker build --no-cache --progress=plain -t ${REGISTRY}${IMAGE}${TAG} -f Dockerfile .
+docker build --progress=plain -t ${REGISTRY}${IMAGE}${TAG} -f Dockerfile .
 

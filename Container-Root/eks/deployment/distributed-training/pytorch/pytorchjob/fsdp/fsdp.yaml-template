@@ -19,15 +19,20 @@ spec:
             averageUtilization: 80
   pytorchReplicaSpecs:
     Worker:
-      replicas: 16
+      replicas: 2
       restartPolicy: OnFailure
       template:
         metadata:
           labels:
             app: fsdp
         spec:
+          volumes:
+            - name: dshm
+              emptyDir:
+                medium: Memory
           nodeSelector:
-            node.kubernetes.io/instance-type: "g4dn.metal"
+            node.kubernetes.io/instance-type: "p4de.24xlarge"
+            #node.kubernetes.io/instance-type: "g4dn.metal"
             #node.kubernetes.io/instance-type: "g5.2xlarge"
           affinity:
             podAffinity:
@@ -45,13 +50,22 @@ spec:
               imagePullPolicy: Always
               resources:
                 requests:
-                  nvidia.com/gpu: 1
+                  nvidia.com/gpu: 8
+                  vpc.amazonaws.com/efa: 4
                 limits:
-                  nvidia.com/gpu: 1
+                  nvidia.com/gpu: 8
+                  vpc.amazonaws.com/efa: 4
               env:
               - name: LOGLEVEL
                 value: DEBUG
+              - name: FI_PROVIDER
+                value: efa
+              - name: NCCL_DEBUG
+                value: INFO
               command:
                 - bash
                 - -c
-                - "python -m torch.distributed.run --nproc-per-node=1 fsdp_train.py"
+                - "torchrun --nproc-per-node=8 fsdp_train.py"
+              volumeMounts:
+                - mountPath: /dev/shm
+                  name: dshm
