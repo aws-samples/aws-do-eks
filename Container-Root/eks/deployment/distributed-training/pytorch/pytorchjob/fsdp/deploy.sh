@@ -4,7 +4,7 @@ pushd ../../../../kubeflow/training-operator/
 ./deploy.sh
 popd
 
-pushd ../../../../etcd/
-./deploy.sh
-popd
+./generate.sh
+
+kubectl apply -f ./etcd.yaml
 

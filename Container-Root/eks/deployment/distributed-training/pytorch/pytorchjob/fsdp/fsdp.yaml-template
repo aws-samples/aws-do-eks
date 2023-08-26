@@ -1,12 +1,12 @@
 apiVersion: "kubeflow.org/v1"
 kind: PyTorchJob
 metadata:
-  name: pytorch-fsdp 
+  name: $JOB_NAME
 spec:
   elasticPolicy:
     rdzvBackend: etcd
-    rdzvHost: etcd-service
-    rdzvPort: 2379
+    rdzvHost: $RDZV_HOST
+    rdzvPort: $RDZV_PORT
     minReplicas: 1
     maxReplicas: 36
     maxRestarts: 100
@@ -19,21 +19,21 @@ spec:
             averageUtilization: 80
   pytorchReplicaSpecs:
     Worker:
-      replicas: 2
+      replicas: $NUM_WORKERS
       restartPolicy: OnFailure
       template:
         metadata:
           labels:
-            app: fsdp
+            app: $JOB_NAME
         spec:
           volumes:
-            - name: dshm
+            - name: shmem
               emptyDir:
                 medium: Memory
+              #hostPath: 
+              #  path: /dev/shm
           nodeSelector:
-            node.kubernetes.io/instance-type: "p4de.24xlarge"
-            #node.kubernetes.io/instance-type: "g4dn.metal"
-            #node.kubernetes.io/instance-type: "g5.2xlarge"
+            node.kubernetes.io/instance-type: "$INSTANCE_TYPE"
           affinity:
             podAffinity:
               requiredDuringSchedulingIgnoredDuringExecution:
@@ -42,7 +42,7 @@ spec:
                   - key: app
                     operator: In
                     values:
-                    - fsdp
+                    - $JOB_NAME
                 topologyKey: "topology.kubernetes.io/zone"
           containers:
             - name: pytorch
@@ -50,22 +50,33 @@ spec:
               imagePullPolicy: Always
               resources:
                 requests:
-                  nvidia.com/gpu: 8
-                  vpc.amazonaws.com/efa: 4
+                  nvidia.com/gpu: $GPU_PER_WORKER
+                  vpc.amazonaws.com/efa: $EFA_PER_WORKER
                 limits:
-                  nvidia.com/gpu: 8
-                  vpc.amazonaws.com/efa: 4
+                  nvidia.com/gpu: $GPU_PER_WORKER
+                  vpc.amazonaws.com/efa: $EFA_PER_WORKER
               env:
               - name: LOGLEVEL
-                value: DEBUG
+                value: "DEBUG"
               - name: FI_PROVIDER
-                value: efa
+                value: "$FI_PROVIDER"
+              # use FI_EFA_USE_DEVICE_RDMA for p4d instances
+              - name: FI_EFA_USE_DEVICE_RDMA
+                value: "1"
+              - name: FI_EFA_FORK_SAFE
+                value: "1"
+              - name: FI_LOG_LEVEL
+                value: "1"
+              - name: FI_EFA_ENABLE_SHM_TRANSFER
+                value: "1"
+              - name: NCCL_ASYNC_ERROR_HANDLING
+                value: "1"
               - name: NCCL_DEBUG
-                value: INFO
+                value: "INFO"
               command:
                 - bash
                 - -c
-                - "torchrun --nproc-per-node=8 fsdp_train.py"
+                - "python -m torch.distributed.run --nproc-per-node=$NPROC_PER_WORKER fsdp_train.py"
               volumeMounts:
-                - mountPath: /dev/shm
-                  name: dshm
+                - name: shmem
+                  mountPath: /dev/shm

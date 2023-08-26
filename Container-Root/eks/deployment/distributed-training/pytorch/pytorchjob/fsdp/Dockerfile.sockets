@@ -1,15 +1,10 @@
-FROM pytorch/pytorch:2.0.1-cuda11.7-cudnn8-devel
-#FROM 763104351884.dkr.ecr.us-west-2.amazonaws.com/pytorch-training:2.0.1-gpu-py310-cu118-ubuntu20.04-ec2
+FROM pytorch/pytorch:2.0.1-cuda11.7-cudnn8-runtime
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt update && apt install -y git vim curl autoconf make g++ libtool hwloc
+RUN apt update && apt install -y git vim curl htop
 
-COPY ./efa-setup.sh /tmp
-
-WORKDIR /tmp
-
-RUN chmod +x *.sh; ./efa-setup.sh
+RUN pip3 install python-etcd
 
 RUN mkdir -p /workspace/
 
@@ -23,6 +18,3 @@ WORKDIR /workspace/fsdp_llm_copy
 #RUN sed -i config/nanogpt_config.py -e 's/str = "1B"/str = "10.5M"/g'
 #RUN sed -i config/nanogpt_config.py -e 's/iters_to_run: int = 8 /iters_to_run: int = 800 /g'
 
-RUN pip3 install python-etcd
-
-RUN apt update && apt install -y htop

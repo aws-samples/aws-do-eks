@@ -3,15 +3,12 @@ kind: ClusterConfig
 
 metadata:
   name: do-eks-yaml-gpu-fsdp
-#  name: do-eks-yaml-gpu-g4-p3-p4
   version: "1.25"
-  region: us-east-1
+  region: us-west-2
 
 availabilityZones:
-  - us-east-1a
-  - us-east-1b
-  - us-east-1c
-  - us-east-1d
+  - us-west-2a
+  - us-west-2b
 
 iam:
   withOIDC: true
@@ -21,33 +18,19 @@ addons:
     version: v1.12.6-eksbuild.2
 
 managedNodeGroups:
-  - name: p4d-24xlarge-efa
-    instanceType: p4d.24xlarge
-    instancePrefix: p4d-efa
+  - name: p4de-24xlarge-efa
+    instanceType: p4de.24xlarge
+    instancePrefix: p4de-efa
     privateNetworking: true
-#    availabilityZones: ["us-east-1b"]
+    availabilityZones: ["us-west-2b"]
     efaEnabled: true
     minSize: 0
     desiredCapacity: 0
     maxSize: 10
     volumeSize: 500
-    iam:
-      withAddonPolicies:
-        autoScaler: true
-        ebs: true
-        efs: true
-        fsx: true
-        cloudWatch: true
-  - name: p3dn-24xlarge-efa
-    instanceType: p3dn.24xlarge
-    instancePrefix: p3dn-efa
-    privateNetworking: true
-#    availabilityZones: ["us-east-1b"]
-    efaEnabled: true
-    minSize: 0
-    desiredCapacity: 0
-    maxSize: 10
-    volumeSize: 500
+    #capacityReservation:
+    #  capacityReservationTarget:
+    #    capacityReservationID: "cr-*********"
     iam:
       withAddonPolicies:
         autoScaler: true
@@ -59,7 +42,7 @@ managedNodeGroups:
     instanceType: g4dn.metal
     instancePrefix: g4dn-efa
     privateNetworking: true
-    availabilityZones: ["us-east-1b"]
+    availabilityZones: ["us-west-2b"]
     efaEnabled: true
     minSize: 0
     desiredCapacity: 2
@@ -67,38 +50,6 @@ managedNodeGroups:
     volumeSize: 500
     iam:
       withAddonPolicies:
-        ebs: true
-        efs: true
-        fsx: true
-        cloudWatch: true
-  - name: g5-2xlarge
-    instanceType: g5.2xlarge
-    instancePrefix: g5-2xl
-    privateNetworking: true
-#    availabilityZones: ["us-east-1b"]
-    minSize: 0
-    desiredCapacity: 0
-    maxSize: 10
-    volumeSize: 500
-    iam:
-      withAddonPolicies:
-        autoScaler: true
-        ebs: true
-        efs: true
-        fsx: true
-        cloudWatch: true
-  - name: p3-16xlarge
-    instanceType: p3.16xlarge
-    instancePrefix: p3-16xl
-    privateNetworking: true
-#    availabilityZones: ["us-east-1b"]
-    minSize: 0
-    desiredCapacity: 0
-    maxSize: 10
-    volumeSize: 500
-    iam:
-      withAddonPolicies:
-        autoScaler: true
         ebs: true
         efs: true
         fsx: true
