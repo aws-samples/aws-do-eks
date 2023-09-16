@@ -3,5 +3,10 @@
 . .env
 
 #docker build --no-cache --progress=plain -t ${REGISTRY}${IMAGE}${TAG} -f Dockerfile .
-docker build --progress=plain -t ${REGISTRY}${IMAGE}${TAG} -f Dockerfile.$FI_PROVIDER .
+
+if [ "$DOCKERFILE_EXT" == "efa.dlc" ]; then
+	./login.sh 763104351884.dkr.ecr.us-west-2.amazonaws.com
+fi
+
+docker build --progress=plain -t ${REGISTRY}${IMAGE}${TAG} -f Dockerfile.$DOCKERFILE_EXT .
 
