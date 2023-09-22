@@ -1,4 +1,6 @@
-FROM pytorch/pytorch:2.0.1-cuda11.7-cudnn8-runtime
+#FROM pytorch/pytorch:2.0.1-cuda11.7-cudnn8-runtime
+
+FROM nvcr.io/nvidia/pytorch:23.08-py3
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -12,6 +14,8 @@ WORKDIR /workspace
 
 #RUN git clone https://github.com/lessw2020/fsdp_llm.git
 RUN git clone https://github.com/kanwaljitkhurmi/fsdp_llm_copy.git
+
+RUN pip install -U --index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/Triton-Nightly/pypi/simple/ triton-nightly
 
 WORKDIR /workspace/fsdp_llm_copy
 
