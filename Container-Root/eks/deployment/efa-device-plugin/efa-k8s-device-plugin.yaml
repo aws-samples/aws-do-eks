@@ -36,28 +36,13 @@ spec:
           requiredDuringSchedulingIgnoredDuringExecution:
             nodeSelectorTerms:
               - matchExpressions:
-                  - key: "beta.kubernetes.io/instance-type"
-                    operator: In
-                    values:
-                      - c5n.18xlarge
-                      - c5n.metal
-                      - g4dn.metal
-                      - i3en.24xlarge
-                      - i3en.metal
-                      - inf1.24xlarge
-                      - m5dn.24xlarge
-                      - m5n.24xlarge
-                      - p3dn.24xlarge
-                      - r5dn.24xlarge
-                      - r5n.24xlarge
-                      - p4d.24xlarge
-              - matchExpressions:
                   - key: "node.kubernetes.io/instance-type"
                     operator: In
                     values:
                       - c5n.18xlarge
                       - c5n.metal
                       - g4dn.metal
+                      - c5n.9xlarge
                       - i3en.24xlarge
                       - i3en.metal
                       - inf1.24xlarge
@@ -67,6 +52,37 @@ spec:
                       - r5dn.24xlarge
                       - r5n.24xlarge
                       - p4d.24xlarge
+                      - hpc6a.48xlarge
+                      - dl1.24xlarge
+                      - g5.48xlarge
+                      - p4de.24xlarge
+                      - trn1.32xlarge
+                      - trn1n.32xlarge
+                      - p5.48xlarge
+              - matchExpressions:
+                  - key: "node.kubernetes.io/instance-type"
+                    operator: In
+                    values:
+                      - c5n.18xlarge
+                      - c5n.metal
+                      - c5n.9xlarge
+                      - g4dn.metal
+                      - i3en.24xlarge
+                      - i3en.metal
+                      - inf1.24xlarge
+                      - m5dn.24xlarge
+                      - m5n.24xlarge
+                      - p3dn.24xlarge
+                      - r5dn.24xlarge
+                      - r5n.24xlarge
+                      - p4d.24xlarge
+                      - hpc6a.48xlarge
+                      - dl1.24xlarge
+                      - g5.48xlarge
+                      - p4de.24xlarge
+                      - trn1.32xlarge
+                      - trn1n.32xlarge
+                      - p5.48xlarge
       hostNetwork: true
       containers:
         - image: 602401143452.dkr.ecr.us-west-2.amazonaws.com/eks/aws-efa-k8s-device-plugin:v0.3.3
@@ -76,6 +92,7 @@ spec:
             allowPrivilegeEscalation: false
             capabilities:
               drop: ["ALL"]
+            runAsNonRoot: false
           volumeMounts:
             - name: device-plugin
               mountPath: /var/lib/kubelet/device-plugins
@@ -83,5 +100,4 @@ spec:
         - name: device-plugin
           hostPath:
             path: /var/lib/kubelet/device-plugins
-
 
