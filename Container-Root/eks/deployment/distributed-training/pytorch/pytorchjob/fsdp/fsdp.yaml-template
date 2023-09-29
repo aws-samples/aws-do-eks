@@ -76,7 +76,7 @@ spec:
               command:
                 - bash
                 - -c
-                - "python -m torch.distributed.run --nproc-per-node=$NPROC_PER_WORKER fsdp_train.py"
+                - "$(CMD)"
               volumeMounts:
                 - name: shmem
                   mountPath: /dev/shm

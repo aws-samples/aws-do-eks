@@ -23,7 +23,6 @@ managedNodeGroups:
         autoScaler: true
         cloudWatch: true
  
-nodeGroups: 
   - name: p5
     instanceType: p5.48xlarge
     instancePrefix: p5
@@ -39,6 +38,8 @@ nodeGroups:
         cloudWatch: true
         ebs: true
         fsx: true
+
+#nodeGroups: 
 
 iam:
   withOIDC: true
