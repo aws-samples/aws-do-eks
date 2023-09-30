@@ -1,0 +1,35 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: neuron2-device-driver
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: "neuron2-device-driver"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: "neuron2-device-driver"
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: "neuron2-device-driver"
+      name: "neuron2-device-driver"
+    spec:
+      hostPID: true
+      hostNetwork: true
+      nodeSelector:
+        #beta.kubernetes.io/instance-type: "p4d.24xlarge"
+        processor: inf2
+      initContainers:
+      - name: "installer"
+        image: "ubuntu:20.04"
+        #command: ["bash", "-c", "while true; do date; sleep 10; done"]
+        command: ["nsenter", "--target", "1", "--mount", "--uts", "--ipc", "--net", "--pid", "--","bash", "-c", "echo IyEvYmluL2Jhc2gKCiMgQ29uZmlndXJlIExpbnV4IGZvciBOZXVyb24gcmVwb3NpdG9yeSB1cGRhdGVzCnN1ZG8gdGVlIC9ldGMveXVtLnJlcG9zLmQvbmV1cm9uLnJlcG8gPiAvZGV2L251bGwgPDxFT0YKW25ldXJvbl0KbmFtZT1OZXVyb24gWVVNIFJlcG9zaXRvcnkKYmFzZXVybD1odHRwczovL3l1bS5yZXBvcy5uZXVyb24uYW1hem9uYXdzLmNvbQplbmFibGVkPTEKbWV0YWRhdGFfZXhwaXJlPTAKRU9GCnN1ZG8gcnBtIC0taW1wb3J0IGh0dHBzOi8veXVtLnJlcG9zLm5ldXJvbi5hbWF6b25hd3MuY29tL0dQRy1QVUItS0VZLUFNQVpPTi1BV1MtTkVVUk9OLlBVQgoKIyBVcGRhdGUgT1MgcGFja2FnZXMgCnN1ZG8geXVtIHVwZGF0ZSAteQoKIyBJbnN0YWxsIE9TIGhlYWRlcnMgCnN1ZG8geXVtIGluc3RhbGwga2VybmVsLWRldmVsLSQodW5hbWUgLXIpIGtlcm5lbC1oZWFkZXJzLSQodW5hbWUgLXIpIC15CgojIEluc3RhbGwgZ2l0IApzdWRvIHl1bSBpbnN0YWxsIGdpdCAteQoKIyBpbnN0YWxsIE5ldXJvbiBEcml2ZXIKc3VkbyB5dW0gaW5zdGFsbCBhd3MtbmV1cm9ueC1ka21zLTIuKiAteQoKIyBJbnN0YWxsIE5ldXJvbiBSdW50aW1lIApzdWRvIHl1bSBpbnN0YWxsIGF3cy1uZXVyb254LWNvbGxlY3RpdmVzLTIuKiAteQpzdWRvIHl1bSBpbnN0YWxsIGF3cy1uZXVyb254LXJ1bnRpbWUtbGliLTIuKiAteQoKIyBJbnN0YWxsIE5ldXJvbiBUb29scyAKc3VkbyB5dW0gaW5zdGFsbCBhd3MtbmV1cm9ueC10b29scy0yLiogLXkKCiMgQWRkIFBBVEgKZWNobyAiUEFUSD0vb3B0L2F3cy9uZXVyb24vYmluOiRQQVRIIiA+PiAvZXRjL2Jhc2hyYwoK | base64 -d > /tmp/neuron2-driver-al2-setup.sh; chmod +x /tmp/neuron2-driver-al2-setup.sh; /tmp/neuron2-driver-al2-setup.sh"]
+        securityContext:
+          privileged: true
+          runAsNonRoot: false
+          runAsUser: 0
+      containers:
+      - name: "heartbeat"
+        image: "ubuntu:20.04"
+        command: ["bash", "-c", "while true; do echo Nuron2 Driver Setup pod is alive on $(date); sleep 60; done"]
