@@ -54,6 +54,7 @@
 							"sudo su ubuntu bash -c 'source /home/ubuntu/.bashrc; sleep 2; aws eks update-kubeconfig --name eks-inference-workshop | tee -a /tmp/bootstrap.log' \n",
 							"sudo su ubuntu bash -c '/home/ubuntu/aws-do-eks/Container-Root/eks/deployment/neuron-device-driver/labels-add.sh | tee -a /tmp/bootstrap.log' \n",
 							"sudo su ubuntu bash -c 'kubectl apply -f /home/ubuntu/aws-do-eks/Container-Root/eks/deployment/neuron-device-driver/neuron2-device-driver-daemonset.yaml | tee -a /tmp/bootstrap.log' \n",
+							"sudo su ubuntu bash -c '/home/ubuntu/aws-do-eks/Container-Root/eks/deployment/neuron-device-plugin/deploy.sh | tee -a /tmp/bootstrap.log' \n",
 							"date | tee -a /tmp/bootstrap.log \n",
 							"echo 'Done executing userdata script.' | tee -a /tmp/bootstrap.log \n"
 						]]
