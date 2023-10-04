@@ -5,7 +5,7 @@ scipy
 tqdm
 pyyaml
 yapf
-opencv-python
+opencv-python==4.8.0.74
 numpy
 onnxruntime
 Pillow
