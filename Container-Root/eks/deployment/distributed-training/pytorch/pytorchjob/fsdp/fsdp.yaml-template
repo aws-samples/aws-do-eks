@@ -76,7 +76,7 @@ spec:
               command:
                 - bash
                 - -c
-                - "$(CMD)"
+                - "${CMD}"
               volumeMounts:
                 - name: shmem
                   mountPath: /dev/shm

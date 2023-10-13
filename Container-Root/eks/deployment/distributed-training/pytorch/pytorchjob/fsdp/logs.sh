@@ -1,4 +1,6 @@
 #!/bin/bash
 
-kubetail fsdp -s 60s
+. .env
+
+kubetail $JOB_NAME -s 60s
 

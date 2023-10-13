@@ -1,6 +1,6 @@
-#FROM pytorch/pytorch:2.0.1-cuda11.7-cudnn8-devel
+FROM pytorch/pytorch:2.0.1-cuda11.7-cudnn8-devel
 #FROM 763104351884.dkr.ecr.us-west-2.amazonaws.com/pytorch-training:2.0.1-gpu-py310-cu118-ubuntu20.04-ec2
-FROM nvcr.io/nvidia/pytorch:23.08-py3
+#FROM nvcr.io/nvidia/pytorch:23.08-py3
 
 ARG EFA_INSTALLER_VERSION=latest
 ARG AWS_OFI_NCCL_VERSION=aws
@@ -42,8 +42,6 @@ RUN DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-unauthenticated \
     hwloc \
     check
 
-#ENV LD_LIBRARY_PATH=/usr/lib/x86_64-linux-gnu/:/opt/hpcx/nccl_rdma_sharp_plugin/lib/:/usr/local/cuda/extras/CUPTI/lib64:/opt/amazon/openmpi/lib:/opt/nccl/build/lib:/opt/amazon/efa/lib:/opt/aws-ofi-nccl/install/lib:$LD_LIBRARY_PATH
-#ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:/opt/amazon/openmpi/lib:/opt/nccl/build/lib:/opt/amazon/efa/lib:/opt/aws-ofi-nccl/install/lib:/usr/local/cuda/targets/x86_64-linux/lib:/usr/local/cuda/targets/x86_64-linux/lib/stubs:$LD_LIBRARY_PATH
 ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:/opt/amazon/openmpi/lib:/opt/nccl/build/lib:/opt/amazon/efa/lib:/opt/aws-ofi-nccl/install/lib:/usr/local/cuda/targets/x86_64-linux/lib:$LD_LIBRARY_PATH
 ENV PATH=/opt/amazon/openmpi/bin/:/opt/amazon/efa/bin:/usr/bin:/usr/local/bin:$PATH
 
@@ -74,7 +72,8 @@ RUN git clone https://github.com/NVIDIA/nccl /opt/nccl \
     && cd /opt/nccl \
     && git checkout -b ${NCCL_VERSION} \
     && make -j src.build CUDA_HOME=/usr/local/cuda \
-    NVCC_GENCODE="-gencode=arch=compute_86,code=sm_86 -gencode=arch=compute_80,code=sm_80 -gencode=arch=compute_75,code=sm_75 -gencode=arch=compute_70,code=sm_70 -gencode=arch=compute_60,code=sm_60 -gencode=arch=compute_90,code=sm_90"
+    NVCC_GENCODE="-gencode=arch=compute_86,code=sm_86 -gencode=arch=compute_80,code=sm_80 -gencode=arch=compute_75,code=sm_75 -gencode=arch=compute_70,code=sm_70 -gencode=arch=compute_60,code=sm_60"
+#    NVCC_GENCODE="-gencode=arch=compute_86,code=sm_86 -gencode=arch=compute_80,code=sm_80 -gencode=arch=compute_75,code=sm_75 -gencode=arch=compute_70,code=sm_70 -gencode=arch=compute_60,code=sm_60 -gencode=arch=compute_90,code=sm_90"
 
 ###################################################
 ## Install AWS-OFI-NCCL plugin
@@ -100,7 +99,8 @@ RUN git clone https://github.com/NVIDIA/nccl-tests.git /opt/nccl-tests \
        MPI_HOME=/opt/amazon/openmpi/ \
        CUDA_HOME=/usr/local/cuda \
        NCCL_HOME=/opt/nccl/build \
-       NVCC_GENCODE="gencode=arch=compute_90,code=sm_90 -gencode=arch=compute_86,code=sm_86 -gencode=arch=compute_80,code=sm_80 -gencode=arch=compute_75,code=sm_75 -gencode=arch=compute_70,code=sm_70 -gencode=arch=compute_60,code=sm_60"
+       NVCC_GENCODE="-gencode=arch=compute_86,code=sm_86 -gencode=arch=compute_80,code=sm_80 -gencode=arch=compute_75,code=sm_75 -gencode=arch=compute_70,code=sm_70 -gencode=arch=compute_60,code=sm_60"
+#       NVCC_GENCODE="-gencode=arch=compute_90,code=sm_90 -gencode=arch=compute_86,code=sm_86 -gencode=arch=compute_80,code=sm_80 -gencode=arch=compute_75,code=sm_75 -gencode=arch=compute_70,code=sm_70 -gencode=arch=compute_60,code=sm_60"
 
 RUN rm -rf /var/lib/apt/lists/*
 ENV LD_PRELOAD=/opt/nccl/build/lib/libnccl.so
@@ -112,14 +112,27 @@ RUN mkdir -p /workspace/
 
 WORKDIR /workspace
 
-#RUN git clone https://github.com/lessw2020/fsdp_llm.git
-RUN git clone https://github.com/kanwaljitkhurmi/fsdp_llm_copy.git
+RUN git clone -b flop_counter https://github.com/facebookresearch/llama-recipes.git
+#RUN git clone https://github.com/facebookresearch/llama-recipes.git
 
-RUN pip install -U --index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/Triton-Nightly/pypi/simple/ triton-nightly
+WORKDIR /workspace/llama-recipes
 
-WORKDIR /workspace/fsdp_llm_copy
+RUN pip3 install -U pip setuptools
+#RUN pip install --extra-index-url https://download.pytorch.org/whl/test/cu118 -e .
 
-RUN sed -i config/nanogpt_config.py -e 's/str = "124M"/str = "20B"/g'
-#RUN sed -i config/nanogpt_config.py -e 's/str = "1B"/str = "10.5M"/g'
-#RUN sed -i config/nanogpt_config.py -e 's/iters_to_run: int = 8 /iters_to_run: int = 800 /g'
+RUN pip3 install fsspec==2023.1.0
+RUN pip3 install huggingface_hub==0.17.0
+RUN pip3 install -r requirements.txt
 
+RUN pip3 install tabulate
+
+RUN pip3 uninstall -y torch
+
+RUN pip3 install --pre torch --index-url https://download.pytorch.org/whl/nightly/cu118
+
+RUN pip3 install protobuf
+
+RUN rm -rf /root/.cache
+RUN apt-get clean
+
+ENV PYTHONPATH="${PYTHONPATH}:/workspace/llama-recipes/src"
