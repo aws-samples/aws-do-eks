@@ -1,0 +1,61 @@
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: eks-inference-workshop
+  version: "1.28"
+  region: "us-west-2"
+
+availabilityZones:
+  - us-west-2a
+  - us-west-2b
+
+iam:
+  withOIDC: true
+
+managedNodeGroups:
+  - name: c5
+    instanceType: c5.2xlarge
+    instancePrefix: c5
+    privateNetworking: true
+    availabilityZones: ["us-west-2a","us-west-2b"]
+    efaEnabled: false
+    minSize: 0
+    desiredCapacity: 1
+    maxSize: 10
+    volumeSize: 100
+    iam:
+      withAddonPolicies:
+        autoScaler: true
+        ebs: true
+
+  - name: c7g
+    instanceType: c7g.4xlarge
+    instancePrefix: c7g
+    privateNetworking: true
+    availabilityZones: ["us-west-2a","us-west-2b"]
+    efaEnabled: false
+    minSize: 0
+    desiredCapacity: 1
+    maxSize: 10
+    volumeSize: 100
+    iam:
+      withAddonPolicies:
+        autoScaler: true
+        ebs: true
+
+  - name: inf2
+    instanceType: inf2.8xlarge
+    instancePrefix: inf2
+    privateNetworking: true
+    availabilityZones: ["us-west-2a","us-west-2b"]
+    efaEnabled: false
+    minSize: 0
+    desiredCapacity: 1
+    maxSize: 10
+    volumeSize: 100
+    iam:
+      withAddonPolicies:
+        autoScaler: true
+        ebs: true
+

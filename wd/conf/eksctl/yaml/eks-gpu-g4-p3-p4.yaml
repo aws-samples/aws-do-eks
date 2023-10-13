@@ -17,7 +17,7 @@ iam:
 
 addons:
   - name: vpc-cni
-    version: v1.9.1-eksbuild.1
+    version: v1.12.6-eksbuild.2
 
 managedNodeGroups:
   - name: p4d-24xlarge-efa

@@ -1,0 +1,27 @@
+FROM pytorch/pytorch:2.0.1-cuda11.7-cudnn8-runtime
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt update && apt install -y git vim curl htop
+
+RUN pip3 install python-etcd
+
+RUN mkdir -p /workspace/
+
+WORKDIR /workspace
+
+RUN git clone -b flop_counter https://github.com/facebookresearch/llama-recipes.git
+#RUN git clone https://github.com/facebookresearch/llama-recipes.git
+
+WORKDIR /workspace/llama-recipes
+
+RUN pip install -U pip setuptools
+RUN pip install --extra-index-url https://download.pytorch.org/whl/test/cu118 -e .
+
+RUN pip install tabulate
+
+RUN pip3 uninstall -y torch
+
+RUN pip3 install --pre torch --index-url https://download.pytorch.org/whl/nightly/cu118
+
+ENV PYTHONPATH="${PYTHONPATH}:/workspace/llama-recipes/src"

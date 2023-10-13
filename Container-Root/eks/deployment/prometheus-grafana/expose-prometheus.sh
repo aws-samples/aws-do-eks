@@ -1,6 +1,6 @@
 #!/bin/bash
 
-kubectl port-forward -n prometheus svc/prometheus-server 8080:80 &
+kubectl port-forward -n prometheus svc/prometheus-server 8080:80 --address 0.0.0.0 &
 
 echo ""
 echo "If you are in a Cloud9 environment, the Grafana dashboard is available via the following URL:"

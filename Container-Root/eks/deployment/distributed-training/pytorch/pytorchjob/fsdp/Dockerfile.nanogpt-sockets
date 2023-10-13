@@ -1,0 +1,25 @@
+#FROM pytorch/pytorch:2.0.1-cuda11.7-cudnn8-runtime
+
+FROM nvcr.io/nvidia/pytorch:23.08-py3
+
+ARG MODEL_NAME=124M
+
+ENV MODEL_NAME=$MODEL_NAME
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+RUN apt update && apt install -y git vim curl htop
+
+RUN pip3 install python-etcd
+
+RUN mkdir -p /workspace/
+
+WORKDIR /workspace
+
+RUN git clone https://github.com/lessw2020/fsdp_llm.git
+
+RUN pip install -U --index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/Triton-Nightly/pypi/simple/ triton-nightly
+
+WORKDIR /workspace/fsdp_llm_copy
+
+RUN export e="s/str = \"124M\"/str = \"${MODEL_NAME}\"/g"; echo vvvvvvvvvvv; echo $e;  sed -i config/nanogpt_config.py -e "$e"

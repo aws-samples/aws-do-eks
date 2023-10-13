@@ -1,0 +1,67 @@
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: do-eks-yaml-gpu-fsdp
+  version: "1.25"
+  region: us-west-2
+
+availabilityZones:
+  - us-west-2a
+  - us-west-2b
+
+iam:
+  withOIDC: true
+
+addons:
+  - name: vpc-cni
+    version: v1.12.6-eksbuild.2
+
+managedNodeGroups:
+
+  - name: sys
+    instanceType: m5.4xlarge
+    desiredCapacity: 1
+    privateNetworking: true
+    iam:
+      withAddonPolicies:
+        autoScaler: true
+        cloudWatch: true
+        ebs: true
+
+  - name: p4de-24xlarge-efa
+    instanceType: p4de.24xlarge
+    instancePrefix: p4de-efa
+    privateNetworking: true
+    availabilityZones: ["us-west-2b"]
+    efaEnabled: true
+    minSize: 0
+    desiredCapacity: 0
+    maxSize: 10
+    volumeSize: 500
+    #capacityReservation:
+    #  capacityReservationTarget:
+    #    capacityReservationID: "cr-*********"
+    iam:
+      withAddonPolicies:
+        autoScaler: true
+        ebs: true
+        efs: true
+        fsx: true
+        cloudWatch: true
+  - name: g4dn-metal-efa
+    instanceType: g4dn.metal
+    instancePrefix: g4dn-efa
+    privateNetworking: true
+    availabilityZones: ["us-west-2b"]
+    efaEnabled: true
+    minSize: 0
+    desiredCapacity: 2
+    maxSize: 10
+    volumeSize: 500
+    iam:
+      withAddonPolicies:
+        ebs: true
+        efs: true
+        fsx: true
+        cloudWatch: true
