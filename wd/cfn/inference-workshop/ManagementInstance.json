@@ -2,19 +2,19 @@
 	"AWSTemplateFormatVersion": "2010-09-09",
 
 	"Description": "SO9259 - Large scale inference on EKS using Graviton and Inferentia2",
-	"Parameters": {
-		"REGION": {
-			"Description": "AWS Region",
-			"Type": "String"
-		}
-	},
 	"Mappings": {
 		"AWSRegion2AMI": {
 			"us-east-1": {
-				"ami": "ami-0d983d0db1cdc033a"
+				"ami": "ami-03f6c2c562b3df715"
+			},
+			"us-east-2": {
+				"ami": "ami-0485ca4b2b7cb275d"
+			},
+			"us-west-1": {
+				"ami": "ami-06800a9f539283f43"
 			},
 			"us-west-2": {
-				"ami": "ami-0c79a55dda52434da"
+				"ami": "ami-093e5f43b11508e3e"
 			}
 		}
 	},
@@ -40,28 +40,32 @@
 					"Fn::Base64": {
 						"Fn::Join": ["", [
 							"#!/bin/bash \n",
-							"echo 'Executing userdata script ...' | tee -a /tmp/bootstrap.log \n",
-							"chmod 666 /tmp/bootstrap.log; chown ec2-user:ec2-user /tmp/bootstrap.log \n",
-							"date | tee -a /tmp/bootstrap.log \n",
-							"apt update && apt install -y git | tee -a /tmp/bootstrap.log \n",
-							"cd /home/ubuntu; git clone https://github.com/aws-samples/aws-do-eks.git | tee -a /tmp/bootstrap.log; cd aws-do-eks; chown -R ubuntu:ubuntu /home/ubuntu/aws-do-eks; git checkout fsdp \n",
-							"bash -c /home/ubuntu/aws-do-eks/Container-Root/eks/ops/setup/install-aws-cli.sh | tee -a /tmp/bootstrap.log \n",
-							"bash -c /home/ubuntu/aws-do-eks/Container-Root/eks/ops/setup/install-eksctl.sh | tee -a /tmp/bootstrap.log \n",
-							"bash -c /home/ubuntu/aws-do-eks/Container-Root/eks/ops/setup/install-kubectl.sh | tee -a /tmp/bootstrap.log \n",
-							"bash -c /home/ubuntu/aws-do-eks/Container-Root/eks/ops/setup/install-kubectx.sh | tee -a /tmp/bootstrap.log \n",
-							"bash -c /home/ubuntu/aws-do-eks/Container-Root/eks/ops/setup/install-kubeps1.sh | tee -a /tmp/bootstrap.log \n",
-							"bash -c /home/ubuntu/aws-do-eks/Container-Root/eks/ops/setup/install-docker-snap.sh | tee -a /tmp/bootstrap.log \n",
-							"#bash -c /home/ubuntu/aws-do-eks/Container-Root/eks/ops/setup/install-python2.sh | tee -a /tmp/bootstrap.log \n",
-							"#sudo su ubuntu bash -c '/home/ubuntu/aws-do-eks/Container-Root/eks/ops/setup/install-cloud9.sh | tee -a /tmp/bootstrap.log' \n",
-							"sudo su ubuntu bash -c '/home/ubuntu/aws-do-eks/Container-Root/eks/ops/setup/install-envsubst.sh | tee -a /tmp/bootstrap.log' \n",
-							"sudo su ubuntu bash -c 'source /home/ubuntu/aws-do-eks/wd/cfn/inference-workshop/.env; cat /home/ubuntu/aws-do-eks/wd/conf/eksctl/yaml/eks-inference-workshop.yaml-template | envsubst | tee /home/ubuntu/aws-do-eks/wd/conf/eksctl/yaml/eks-inference-workshop.yaml; cat /home/ubuntu/aws-do-eks/wd/conf/eksctl/yaml/eks-inference-workshop.yaml | tee -a /tmp/bootstrap.log' \n", 
-							"sudo su ubuntu bash -c '/usr/local/bin/eksctl create cluster -f /home/ubuntu/aws-do-eks/wd/conf/eksctl/yaml/eks-inference-workshop.yaml | tee -a /tmp/bootstrap.log' \n",
-							"sudo su ubuntu bash -c 'source /home/ubuntu/.bashrc; sleep 2; aws eks update-kubeconfig --name eks-inference-workshop | tee -a /tmp/bootstrap.log' \n",
-							"sudo su ubuntu bash -c '/home/ubuntu/aws-do-eks/Container-Root/eks/deployment/neuron-device-driver/labels-add.sh | tee -a /tmp/bootstrap.log' \n",
-							"sudo su ubuntu bash -c 'kubectl apply -f /home/ubuntu/aws-do-eks/Container-Root/eks/deployment/neuron-device-driver/neuron2-device-driver-daemonset.yaml | tee -a /tmp/bootstrap.log' \n",
-							"sudo su ubuntu bash -c '/home/ubuntu/aws-do-eks/Container-Root/eks/deployment/neuron-device-plugin/deploy.sh | tee -a /tmp/bootstrap.log' \n",
-							"date | tee -a /tmp/bootstrap.log \n",
-							"echo 'Done executing userdata script.' | tee -a /tmp/bootstrap.log \n"
+							"echo 'Executing userdata script ...' | sudo tee -a /tmp/bootstrap.log \n",
+							"#sudo chmod 666 /tmp/bootstrap.log; sudo chown ec2-user:ec2-user /tmp/bootstrap.log \n",
+							"date | sudo tee -a /tmp/bootstrap.log \n",
+							"sudo yum update | sudo tee -a /tmp/bootstrap.log \n",
+						        "sudo yum install -y aws-cfn-bootstrap git | sudo tee -a /tmp/bootstrap.log \n",
+							"sudo su ec2-user bash -c 'cd /home/ec2-user; git clone https://github.com/aws-samples/aws-do-eks.git | sudo tee -a /tmp/bootstrap.log' \n",
+							"sudo bash -c '/home/ec2-user/aws-do-eks/Container-Root/eks/ops/setup/install-aws-cli.sh | sudo tee -a /tmp/bootstrap.log' \n",
+							"sudo bash -c '/home/ec2-user/aws-do-eks/Container-Root/eks/ops/setup/install-eksctl.sh | sudo tee -a /tmp/bootstrap.log' \n",
+							"sudo bash -c '/home/ec2-user/aws-do-eks/Container-Root/eks/ops/setup/install-kubectl.sh | sudo tee -a /tmp/bootstrap.log' \n",
+							"sudo bash -c '/home/ec2-user/aws-do-eks/Container-Root/eks/ops/setup/install-kubectx.sh | sudo tee -a /tmp/bootstrap.log' \n",
+							"sudo bash -c '/home/ec2-user/aws-do-eks/Container-Root/eks/ops/setup/install-kubeps1.sh | sudo tee -a /tmp/bootstrap.log' \n",
+							"sudo bash -c '/home/ec2-user/aws-do-eks/Container-Root/eks/ops/setup/install-docker-yum.sh | sudo tee -a /tmp/bootstrap.log' \n",
+							"sudo bash -c 'ln -s /usr/bin/python3 /usr/bin/python | sudo tee -a /tmp/bootstrap.log' \n",
+							"#bash -c '/home/ec2-user/aws-do-eks/Container-Root/eks/ops/setup/install-python2.sh | sudo tee -a /tmp/bootstrap.log' \n",
+							"#sudo su ec2-user bash -c '/home/ec2-user/aws-do-eks/Container-Root/eks/ops/setup/install-cloud9.sh | sudo tee -a /tmp/bootstrap.log' \n",
+							"sudo su ec2-user bash -c '/home/ec2-user/aws-do-eks/Container-Root/eks/ops/setup/install-envsubst.sh | sudo tee -a /tmp/bootstrap.log' \n",
+							"sudo su ec2-user bash -c 'source /home/ec2-user/aws-do-eks/wd/cfn/inference-workshop/.env; cat /home/ec2-user/aws-do-eks/wd/conf/eksctl/yaml/eks-inference-workshop.yaml-template | envsubst | sudo tee /home/ec2-user/aws-do-eks/wd/conf/eksctl/yaml/eks-inference-workshop.yaml' \n", 
+							"sudo su ec2-user bash -c 'cat /home/ec2-user/aws-do-eks/wd/conf/eksctl/yaml/eks-inference-workshop.yaml | sudo tee -a /tmp/bootstrap.log' \n",
+						        "sudo su ec2-user bash -c 'echo Creating EKS cluster ... | sudo tee -a /tmp/bootstrap.log' \n",	
+							"sudo su ec2-user bash -c '/usr/local/bin/eksctl create cluster -f /home/ec2-user/aws-do-eks/wd/conf/eksctl/yaml/eks-inference-workshop.yaml | sudo tee -a /tmp/bootstrap.log' \n",
+							"sudo su ec2-user bash -c 'source /home/ec2-user/.bashrc; sleep 2; aws eks update-kubeconfig --name eks-inference-workshop | sudo tee -a /tmp/bootstrap.log' \n",
+							"sudo su ec2-user bash -c '/home/ec2-user/aws-do-eks/Container-Root/eks/deployment/neuron-device-driver/labels-add.sh | sudo tee -a /tmp/bootstrap.log' \n",
+							"sudo su ec2-user bash -c 'kubectl apply -f /home/ec2-user/aws-do-eks/Container-Root/eks/deployment/neuron-device-driver/neuron2-device-driver-daemonset.yaml | sudo tee -a /tmp/bootstrap.log' \n",
+							"sudo su ec2-user bash -c '/home/ec2-user/aws-do-eks/Container-Root/eks/deployment/neuron-device-plugin/deploy.sh | sudo tee -a /tmp/bootstrap.log' \n",
+							"date | sudo tee -a /tmp/bootstrap.log \n",
+							"echo 'Done executing userdata script.' | sudo tee -a /tmp/bootstrap.log \n"
 						]]
 					}
 				}
