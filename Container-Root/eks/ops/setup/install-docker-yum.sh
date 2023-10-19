@@ -6,14 +6,14 @@
 ######################################################################
 
 if [ -f /usr/bin/yum ]; then
-    yum update
-    yum install docker -y
-    usermod -a -G docker ec2-user
+    sudo yum update
+    sudo yum install docker -y
+    sudo usermod -a -G docker ec2-user
     id ec2-user
-    newgrp docker
-    systemctl enable docker.service
+    sudo newgrp docker
+    sudo systemctl enable docker.service
     sleep 2
-    systemctl start docker.service
+    sudo systemctl start docker.service
 else
     echo "/usr/bin/yum does not exist"
     echo "Cannot install Docker cli with this script"
