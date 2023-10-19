@@ -56,6 +56,38 @@ managedNodeGroups:
     availabilityZones: ["us-west-2b"]
     efaEnabled: true
     minSize: 0
+    desiredCapacity: 0
+    maxSize: 10
+    volumeSize: 500
+    iam:
+      withAddonPolicies:
+        ebs: true
+        efs: true
+        fsx: true
+        cloudWatch: true
+  - name: g4dn-8xl-efa
+    instanceType: g4dn.8xlarge
+    instancePrefix: g4dn-8xl
+    privateNetworking: true
+    availabilityZones: ["us-west-2b"]
+    efaEnabled: true
+    minSize: 0
+    desiredCapacity: 0
+    maxSize: 10
+    volumeSize: 500
+    iam:
+      withAddonPolicies:
+        ebs: true
+        efs: true
+        fsx: true
+        cloudWatch: true
+  - name: g5-12xl-efa
+    instanceType: g5.12xlarge
+    instancePrefix: g5-12xl
+    privateNetworking: true
+    availabilityZones: ["us-west-2b"]
+    efaEnabled: true
+    minSize: 0
     desiredCapacity: 2
     maxSize: 10
     volumeSize: 500
