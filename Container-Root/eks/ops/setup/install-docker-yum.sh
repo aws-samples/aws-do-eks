@@ -11,9 +11,9 @@ if [ -f /usr/bin/yum ]; then
     sudo usermod -a -G docker ec2-user
     id ec2-user
     sudo newgrp docker
-    sudo systemctl enable docker.service
+    sudo systemctl enable docker
     sleep 2
-    sudo systemctl start docker.service
+    sudo systemctl start docker
 else
     echo "/usr/bin/yum does not exist"
     echo "Cannot install Docker cli with this script"
