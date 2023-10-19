@@ -8,8 +8,17 @@
 if [ -f /usr/bin/yum ]; then
     echo ""
     echo "Installing Docker ..."
-    yum update
-    sudo yum install docker -y
+    #yum update
+    #sudo yum install docker -y
+    
+    while true; do
+        sudo dnf install --assumeyes docker && break
+    done
+
+    while true; do
+	sudo dnf update --assumeyes && break
+    done
+    
     usermod -a -G docker ec2-user
     id ec2-user
     newgrp docker
