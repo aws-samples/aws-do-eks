@@ -12,11 +12,13 @@ if [ -f /usr/bin/yum ]; then
     #sudo yum install docker -y
     
     while true; do
-        sudo dnf install --assumeyes docker && break
+	sudo dnf update --assumeyes && break
+	sleep 5
     done
 
     while true; do
-	sudo dnf update --assumeyes && break
+        sudo dnf install --assumeyes docker && break
+	sleep 5
     done
     
     usermod -a -G docker ec2-user
