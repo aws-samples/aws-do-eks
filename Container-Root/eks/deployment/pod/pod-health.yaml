@@ -1,0 +1,24 @@
+# Ref: https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/
+apiVersion: v1
+kind: Pod
+metadata:
+  name: pod-health
+  labels:
+    app: pod-health
+spec:
+  containers:
+  - name: pod-health
+    image: nginx:stable
+    ports:
+    - containerPort: 80
+    readinessProbe:
+      tcpSocket:
+        port: 80
+      initialDelaySeconds: 15
+      periodSeconds: 10
+    livenessProbe:
+      tcpSocket:
+        port: 80
+      initialDelaySeconds: 15
+      periodSeconds: 10
+

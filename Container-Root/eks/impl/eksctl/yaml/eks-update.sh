@@ -16,6 +16,18 @@ if [ "${DRY_RUN}" == "" ]; then
 	${CMD}
 fi
 
+CMD="eksctl create nodegroup -f ${ENV_HOME}${CONF}"
+
+if [ "${VERBOSE}" == "true" ]; then
+	echo ""
+	echo "${CMD}"
+	echo ""
+fi
+
+if [ "${DRY_RUN}" == "" ]; then
+	${CMD}
+fi
+
 echo ""
 date
 echo "Done updating cluster using manifest ${ENV_HOME}${CONF}"
