@@ -12,7 +12,7 @@ PLATFORM=$(uname -s)_$GOARCH
 
 curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_${PLATFORM}.tar.gz" | tar xz -C /tmp
 
-#curl --location "https://github.com/weaveworks/eksctl/releases/download/v0.160.0-rc.0/eksctl_${PLATFORM}.tar.gz" | tar xz -C /tmp
+#curl --location "https://github.com/weaveworks/eksctl/releases/download/v0.164.0-rc.0/eksctl_${PLATFORM}.tar.gz" | tar xz -C /tmp
 
 mv /tmp/eksctl /usr/local/bin
 
