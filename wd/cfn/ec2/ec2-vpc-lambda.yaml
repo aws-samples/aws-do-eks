@@ -1,0 +1,277 @@
+Description: Provides an VPC with a subnet in a pre-defined zone id, creates an EC2 instance, resizes the instance volume using a Lambda function
+
+Parameters:
+  InstanceName:
+    Type: String
+    AllowedPattern: ".+"
+    Default: "WorkshopInstance"
+  InstanceType:
+    Type: String
+    AllowedPattern: ".+"
+    Default: "c5.4xlarge"
+  VolSizeGB:
+    Type: String
+    AllowedPattern: "[0-9]+"
+    Default: "100"
+  AvailabilityZoneId:
+    Type: String
+    AllowedPattern: ".+"
+    Default: "usw2-az2"
+  KeyPairName:
+    Type: String
+    AllowedPattern: ".+"
+    Default: "ws-default-keypair"
+
+Mappings:
+  RegionMap:
+    us-east-1:
+      inf2: "ami-06a8d37db687f7bae"
+    us-east-2:
+      inf2: "ami-03be8a5993d3dd765"
+    us-west-1:
+      inf2: "ami-0ff423c34aa99abf9"
+    us-west-2:
+      inf2: "ami-0f6e9892be141939b"
+
+Resources:
+
+  Vpc:
+    Type: "AWS::EC2::VPC"
+    Properties:
+      CidrBlock: 10.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+
+  ZoneSubnet:
+    Type: "AWS::EC2::Subnet"
+    Properties:
+      AvailabilityZoneId: !Ref AvailabilityZoneId
+      VpcId: !Ref Vpc
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: true
+
+  InternetGateway:
+    Type: "AWS::EC2::InternetGateway"
+
+  VpcGatewayAttachment:
+    Type: "AWS::EC2::VPCGatewayAttachment"
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref Vpc
+
+  RouteTable:
+    Type: "AWS::EC2::RouteTable"
+    Properties:
+      VpcId: !Ref Vpc
+
+  SubnetRouteTableAssociation:
+    Type: "AWS::EC2::SubnetRouteTableAssociation"
+    Properties:
+      RouteTableId: !Ref RouteTable
+      SubnetId: !Ref ZoneSubnet
+
+  Route:
+    Type: "AWS::EC2::Route"
+    Properties:
+      RouteTableId: !Ref RouteTable
+      DestinationCidrBlock: "0.0.0.0/0"
+      GatewayId: !Ref InternetGateway
+
+  EC2InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Description: 'Service linked role for AWS EC2'
+      Path: '/service-role/'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonS3FullAccess
+        - arn:aws:iam::aws:policy/AmazonSSMFullAccess
+        - arn:aws:iam::aws:policy/AmazonEC2FullAccess
+      RoleName: 'EC2InstanceRole'
+
+  EC2InstanceProfile:
+    Type: "AWS::IAM::InstanceProfile"
+    Properties:
+      InstanceProfileName: EC2InstanceProfile
+      Path: "/ec2/"
+      Roles:
+        - !Ref EC2InstanceRole
+
+  SecurityGroup:
+    Type: "AWS::EC2::SecurityGroup"
+    Properties:
+      GroupName: "EC2SecurityGroup"
+      GroupDescription: "Security group for EC2 instance"
+      VpcId: !Ref Vpc
+      SecurityGroupEgress:
+        - Description: "Allow all outgoing traffic to anywhere"
+          IpProtocol: -1
+          FromPort: -1
+          ToPort: -1
+          CidrIp: "0.0.0.0/0"
+      SecurityGroupIngress:
+        - Description: "Allow incoming SSH traffic from anywhere"
+          IpProtocol: "tcp"
+          FromPort: 22
+          ToPort: 22
+          CidrIp: "0.0.0.0/0"
+
+  EC2Instance:
+    DependsOn:
+      - EC2InstanceProfile
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !FindInMap [RegionMap, !Ref "AWS::Region", inf2]
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      SubnetId: !Ref ZoneSubnet
+      KeyName: !Ref KeyPairName
+      SecurityGroupIds: [ !Ref SecurityGroup ]
+      Tags:
+      - Key: "Name"
+        Value: !Ref InstanceName
+
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEC2FullAccess
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/CloudWatchLogsFullAccess
+        - arn:aws:iam::aws:policy/IAMFullAccess
+      MaxSessionDuration: 3600
+      Path: /
+      RoleName: 'LambdaRole'
+
+  LambdaEC2:
+    DependsOn: EC2Instance
+    Type: AWS::Lambda::Function
+    Properties:
+      Environment:
+        Variables:
+          INSTANCE_NAME: !Ref InstanceName
+          VOL_SIZE_GB: !Ref VolSizeGB
+      Architectures:
+        - 'x86_64'
+      Code:
+        ZipFile: |
+          #!/usr/bin/env python3
+
+          import boto3
+          import cfnresponse
+          import os
+          import json
+          import time
+
+          client = boto3.Session().client('ec2')
+
+          def lambda_handler(event, context):
+              print(event)
+              responseValue = event['ResourceProperties']['ProfileArn']
+              responseData = {}
+              responseData['Data'] = responseValue
+              cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData, "CustomResourcePhysicalID")
+              main()
+              return {'statusCode': 200, 'body': json.dumps('EC2')}
+
+          def get_modification_state(volume_id):
+              resp = client.describe_volumes_modifications(
+                  VolumeIds=[
+                      volume_id
+                  ]
+              )
+              return resp['VolumesModifications'][0]['ModificationState']
+
+          def get_tag_value(tags, key):
+              value=''
+              for tag in tags:
+                  if tag['Key'] == key:
+                      value = tag['Value']
+                      break
+              return value
+
+          def get_instance_by_name(instances, search_name):
+              matched_instance = None
+              for instance in instances:
+                  tags = instance['Tags']
+                  name = get_tag_value(tags,'Name')
+                  if name == search_name:
+                      matched_instance = instance
+                      break
+              return matched_instance
+
+          def main():
+              # Describe all instances
+              response = client.describe_instances()
+              print("describe_instances response:")
+              print(response)
+
+              # Select the instance to resize
+              instances = response['Reservations'][0]['Instances']
+              search_name = os.environ.get('INSTANCE_NAME', 'WorkshopInstance')
+              matched_instance = get_instance_by_name(instances, search_name)
+              if matched_instance is not None:
+                  instance_id = matched_instance['InstanceId']
+                  print("Found instance " + search_name + ", instance_id: " + instance_id)
+                  volume_id = matched_instance['BlockDeviceMappings'][0]['Ebs']['VolumeId']
+                  print("Resizing volume_id: " + volume_id)
+
+                  # Wait for instance to start running
+                  ec2 = boto3.resource('ec2')
+                  instance = ec2.Instance(instance_id)
+                  instance.wait_until_running()
+
+                  # Modify volume size
+                  volume_size_str = os.environ.get('VOL_SIZE_GB', '100')
+                  volume_size = int(volume_size_str)
+                  modify_volume_response = client.modify_volume(VolumeId=volume_id,Size=volume_size)
+                  while True:
+                      state = get_modification_state(volume_id)
+                      if state == 'completed' or state == None or state == 'optimizing':
+                          break
+                      elif state == 'failed':
+                          raise Exception('Failed to modify volume size')
+                      else:
+                          time.sleep(15)
+
+                  # Reboot ec2 instance so the new volume size takes effect
+                  client.reboot_instances(InstanceIds=[instance_id])
+              else:
+                  print("Could not find instance " + search_name + ". Volume will not be resized.")
+
+      Handler: index.lambda_handler
+      MemorySize: 128
+      PackageType: 'Zip'
+      Role: !GetAtt LambdaRole.Arn
+      Runtime: 'python3.9'
+      Timeout: 300
+
+  LambdaInvoke:
+    Type: AWS::CloudFormation::CustomResource
+    DependsOn: LambdaEC2
+    Version: "1.0"
+    Properties:
+      ServiceToken: !GetAtt LambdaEC2.Arn
+      ProfileArn: !Ref EC2InstanceProfile
+
+Outputs:
+  EC2URL:
+    Value: !Join ['', ['https://', !Ref 'AWS::Region','.console.aws.amazon.com/ec2/home?region=', !Ref 'AWS::Region','#ConnectToInstance:instanceId=', !Ref EC2Instance] ]
+    Description: URL of EC2 Instance
