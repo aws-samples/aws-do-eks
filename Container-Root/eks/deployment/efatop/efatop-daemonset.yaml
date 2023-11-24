@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: efatop
+spec:
+  selector:
+    matchLabels:
+      name: efatop
+  template:
+    metadata:
+      labels:
+        name: efatop
+    spec:
+      affinity:
+        nodeAffinity:
+          # EFA supported instances: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/efa.html#efa-instance-types
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: "node.kubernetes.io/instance-type"
+                    operator: In
+                    values:
+                      - c5n.18xlarge
+                      - c5n.metal
+                      - g4dn.metal
+                      - c5n.9xlarge
+                      - i3en.24xlarge
+                      - i3en.metal
+                      - inf1.24xlarge
+                      - m5dn.24xlarge
+                      - m5n.24xlarge
+                      - p3dn.24xlarge
+                      - r5dn.24xlarge
+                      - r5n.24xlarge
+                      - p4d.24xlarge
+                      - hpc6a.48xlarge
+                      - dl1.24xlarge
+                      - g5.48xlarge
+                      - p4de.24xlarge
+                      - trn1.32xlarge
+                      - trn1n.32xlarge
+                      - p5.48xlarge
+      containers:
+      - name: efatop
+        image: ubuntu:22.04
+        command: ["/bin/bash"]
+        args: ["-c", "while true; do echo ''; date; if [[ -d /sys/class/infiniband && $(ls /sys/class/infiniband | wc -l) -gt 0 ]]; then echo EFA devices found: $(ls /sys/class/infiniband | wc -l); for efa in $(ls /sys/class/infiniband | head -n 1); do echo /sys/class/infiniband/$efa/ports/1/hw_counters:; for f in $(ls /sys/class/infiniband/$efa/ports/1/hw_counters); do echo $f: $(cat /sys/class/infiniband/$efa/ports/1/hw_counters/$f); done ; done; else echo No EFA devices found on this node; fi; sleep 3; done"]
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - name: efa-vol
+          mountPath: "/dev/infiniband"
+        - name: class-vol
+          mountPath: "/sys/class/infiniband"
+        - name: devices-vol
+          mountPath: "/sys/devices"
+      volumes:
+      - name: efa-vol
+        hostPath:
+          path: "/dev/infiniband"
+      - name: class-vol
+        hostPath:
+          path: "/sys/class/infiniband"
+      - name: devices-vol
+        hostPath:
+          path: "/sys/devices"
