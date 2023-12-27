@@ -45,7 +45,15 @@ cat << EOF
     "ImageId":"$AMI",
     "InstanceType":"p5.48xlarge", 
     "KeyName": "$SSH_KEY_NAME",
-    "UserData":"$(./userdata.sh | base64 -w 0)"
+    "UserData":"$(./userdata.sh | base64 -w 0)",
+    "CapacityReservationSpecification": {
+        "CapacityReservationTarget": {
+            "CapacityReservationId": "$CAPACITY_RESERVATION_ID"
+        }
+    },
+    "Placement": {
+        "GroupName": "$PLACEMENT_GROUP_NAME"
+    }
 }
 EOF
 
