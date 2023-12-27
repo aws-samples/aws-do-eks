@@ -4,8 +4,6 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt update && apt install -y git vim curl htop
 
-RUN pip3 install python-etcd
-
 RUN mkdir -p /workspace/
 
 WORKDIR /workspace
@@ -34,4 +32,6 @@ RUN rm -rf /root/.cache
 RUN apt-get clean
 
 ENV PYTHONPATH="${PYTHONPATH}:/workspace/llama-recipes/src"
+
+RUN pip3 install awscli pynvml python-etcd
 

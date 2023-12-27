@@ -28,22 +28,12 @@ spec:
         spec:
           volumes:
             - name: shmem
-              emptyDir:
-                medium: Memory
-              #hostPath: 
-              #  path: /dev/shm
-          nodeSelector:
-            node.kubernetes.io/instance-type: "$INSTANCE_TYPE"
-          affinity:
-            podAffinity:
-              requiredDuringSchedulingIgnoredDuringExecution:
-              - labelSelector:
-                  matchExpressions:
-                  - key: app
-                    operator: In
-                    values:
-                    - $JOB_NAME
-                topologyKey: "topology.kubernetes.io/zone"
+              #emptyDir:
+              #  medium: Memory
+              hostPath: 
+                path: /dev/shm
+          #nodeSelector:
+          #  node.kubernetes.io/instance-type: "${INSTANCE_TYPE}"
           containers:
             - name: pytorch
               image: ${REGISTRY}${IMAGE}${TAG}
@@ -58,26 +48,24 @@ spec:
               env:
               - name: LOGLEVEL
                 value: "DEBUG"
-              #- name: NCCL_BUFFSIZE
-              #  value: "4194304"
-              #  value: "2097152"
-              #- name: FI_PROVIDER
-              #  value: "$FI_PROVIDER"
-              # use FI_EFA_USE_DEVICE_RDMA for p4d instances
-              #- name: FI_EFA_USE_DEVICE_RDMA
-              #  value: "1"
-              #- name: FI_EFA_FORK_SAFE
-              #  value: "1"
-              #- name: FI_LOG_LEVEL
-              #  value: "1"
-              #- name: FI_EFA_ENABLE_SHM_TRANSFER
-              #  value: "1"
-              #- name: NCCL_ASYNC_ERROR_HANDLING
-              #  value: "1"
-              #- niame: NCCL_NVLS_ENABLE
-              #  value: "1"
+              - name: FI_PROVIDER
+                value: $FI_PROVIDER
+              - name: FI_EFA_USE_DEVICE_RDMA
+                value: "1"
+              - name: FI_EFA_FORK_SAFE
+                value: "1"
+              - name: FI_LOG_LEVEL
+                value: "1"
+              - name: FI_EFA_ENABLE_SHM_TRANSFER
+                value: "1"
               - name: NCCL_DEBUG
                 value: "INFO"
+              #- name: NCCL_SOCKET_IFNAME
+              #  value: "ens"
+              - name: NCCL_ASYNC_ERROR_HANDLING
+                value: "1"
+              - name: NCCL_IGNORE_DISABLED_P2P
+                value: "1"
               command:
                 - bash
                 - -c
