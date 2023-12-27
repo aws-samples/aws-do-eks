@@ -7,14 +7,16 @@ if [ -d /etc/apt ]; then
 fi
 
 apt-get update -y
+
 apt-get remove -y --allow-change-held-packages \
                       libmlx5-1 ibverbs-utils libibverbs-dev libibverbs1 \
                       libnccl2 libnccl-dev
-                      
+
+echo ""
+echo "Installing basic tools and libraries ..."
 apt-get install -y --allow-unauthenticated \
     git \
     gcc \
-    yum-utils \
     vim \
     kmod \
     openssh-client \
@@ -39,6 +41,8 @@ mkdir -p /var/run/sshd
 sed -i 's/[ #]\(.*StrictHostKeyChecking \).*/ \1no/g' /etc/ssh/ssh_config && \
     echo "    UserKnownHostsFile /dev/null" >> /etc/ssh/ssh_config && \
     sed -i 's/#\(StrictModes \).*/\1no/g' /etc/ssh/sshd_config
+
+sed -i 's/#PermitRootLogin prohibit-password/PermitRootLogin yes/g' /etc/ssh/sshd_config
 
 export LD_LIBRARY_PATH=/usr/local/cuda/extras/CUPTI/lib64:/opt/amazon/openmpi/lib:/opt/nccl/build/lib:/opt/amazon/efa/lib:/opt/aws-ofi-nccl/install/lib:$LD_LIBRARY_PATH
 export PATH=/opt/amazon/openmpi/bin/:/opt/amazon/efa/bin:/usr/bin:/usr/local/bin:$PATH
@@ -71,9 +75,10 @@ cd $HOME \
 mkdir -p /opt/nccl
 cd /opt/nccl
 git clone https://github.com/NVIDIA/nccl /opt/nccl \
-    && git checkout v2.12.7-1 \
     && make -j src.build CUDA_HOME=/usr/local/cuda \
-    NVCC_GENCODE="-gencode=arch=compute_86,code=sm_86 -gencode=arch=compute_80,code=sm_80 -gencode=arch=compute_75,code=sm_75 -gencode=arch=compute_70,code=sm_70 -gencode=arch=compute_60,code=sm_60"
+    && git checkout $NCCL_VERSION \
+    NVCC_GENCODE="-gencode=arch=compute_90,code=sm_90 -gencode=arch=compute_86,code=sm_86 -gencode=arch=compute_80,code=sm_80 -gencode=arch=compute_75,code=sm_75 -gencode=arch=compute_70,code=sm_70 -gencode=arch=compute_60,code=sm_60"
+
 
 ###################################################
 ## Install AWS-OFI-NCCL plugin

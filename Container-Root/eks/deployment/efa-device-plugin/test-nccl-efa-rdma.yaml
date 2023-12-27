@@ -15,8 +15,7 @@ spec:
           imagePullPolicy: IfNotPresent
           restartPolicy: OnFailure
           containers:
-          #- image: <account>.dkr.ecr.us-west-2.amazonaws.com/cuda-efa-nccl-tests:ubuntu18.04
-          - image: public.ecr.aws/w6p6i9i7/aws-efa-nccl-rdma:base-cudnn8-cuda11-ubuntu18.04
+          - image: <account>.dkr.ecr.<region>.amazonaws.com/cuda-efa-nccl-tests:ubuntu22.04
             name: test-nccl-efa-launcher
             command:
             - /opt/amazon/openmpi/bin/mpirun
@@ -65,12 +64,11 @@ spec:
       replicas: 2
       template:
         spec:
-          #nodeSelector:
-            #node.kubernetes.io/instance-type: "g4dn.metal"
+          nodeSelector:
+            node.kubernetes.io/instance-type: "p4de.24xlarge"
           imagePullPolicy: IfNotPresent
           containers:
-          #- image: <account>.dkr.ecr.us-west-2.amazonaws.com/cuda-efa-nccl-tests:ubuntu18.04
-          - image: public.ecr.aws/w6p6i9i7/aws-efa-nccl-rdma:base-cudnn8-cuda11-ubuntu18.04
+          - image: <account>.dkr.ecr.us-west-2.amazonaws.com/cuda-efa-nccl-tests:ubuntu22.04
             name: test-nccl-efa-worker
             volumeMounts:
             - name: shmem
@@ -78,14 +76,14 @@ spec:
             resources:
               limits:
                 nvidia.com/gpu: 1
-                #hugepages-2Mi: 5120Mi
-                vpc.amazonaws.com/efa: 1
-                #memory: 8000Mi
+                hugepages-2Mi: 5120Mi
+                vpc.amazonaws.com/efa: 4
+                memory: 8000Mi
               requests:
                 nvidia.com/gpu: 1
-                #hugepages-2Mi: 5120Mi
-                vpc.amazonaws.com/efa: 1
-                #memory: 8000Mi
+                hugepages-2Mi: 5120Mi
+                vpc.amazonaws.com/efa: 4
+                memory: 8000Mi
           volumes:
           - name: shmem
             hostPath:

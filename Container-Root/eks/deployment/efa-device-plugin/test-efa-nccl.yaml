@@ -1,22 +1,24 @@
-apiVersion: kubeflow.org/v2beta1
+apiVersion: kubeflow.org/v1alpha2
 kind: MPIJob
 metadata:
-  name: test-nccl-efa
+  name: efa-nccl-test
 spec:
-  runPolicy:
-    cleanPodPolicy: Running
-    backoffLimit: 20
-  slotsPerWorker: 8
+  slotsPerWorker: 4
+  cleanPodPolicy: Running
   mpiReplicaSpecs:
     Launcher:
       replicas: 1
       template:
          spec:
-          imagePullPolicy: Always
+          imagePullPolicy: IfNotPresent
           restartPolicy: OnFailure
+          initContainers:
+          - name: efa-nccl-launcher-init
+            image: 159553542841.dkr.ecr.us-west-2.amazonaws.com/cuda-efa-nccl-tests:ubuntu22.04
+            command: ["/bin/bash", "-c", "echo waiting for worker pods to start; sleep 5"]
           containers:
-          - image: <account>.dkr.ecr.<region>.amazonaws.com/cuda-efa-nccl-tests:ubuntu22.04 
-            name: test-nccl-efa-launcher
+          - image: <account>.dkr.ecr.<region>.amazonaws.com/cuda-efa-nccl-tests:ubuntu22.04
+            name: efa-nccl-launcher
             env:
              - name: LD_LIBRARY_PATH
                value: /opt/amazon/openmpi/lib:/opt/nccl/build/lib:/opt/amazon/efa/lib:/opt/aws-ofi-nccl/install/lib:/usr/local/nvidia/lib:$LD_LIBRARY_PATH
@@ -31,12 +33,9 @@ spec:
             command:
             - /opt/amazon/openmpi/bin/mpirun
             - --allow-run-as-root
-            - --oversubscribe
             - --tag-output
-            #- -N
-            #- "8"
             - -np
-            - "16"
+            - "8"
             - -bind-to
             - none
             - -map-by
@@ -51,60 +50,51 @@ spec:
             - TF_XLA_FLAGS
             - -x
             - NCCL_DEBUG=INFO
-            #- -x
-            #- NCCL_NVLS_ENABLE=1
-            #- -x
-            #- NCCL_PROTO=LL,LL128,Simple
-            #- -x
-            #- NCCL_ALGO=Ring
-            #- -x
-            #- FI_PROVIDER=efa
+            - -x
+            - NCCL_ALGO=RING
+            - -x
+            - FI_EFA_USE_DEVICE_RDMA=0
+            - -x
+            - RDMAV_FORK_SAFE=0
+            - -x
+            - NCCL_DEBUG
             - --mca
             - pml
             - ^cm
-            - --mca
-            - plm_rsh_agent
-            - ssh
+            #- --mca
+            #- pml_rsh_agent=ssh
+            #- --oversubscribe
             - /opt/nccl-tests/build/all_reduce_perf
-            - -b
-            - "1"
-            - -e
-            - 2G
-            - -f
+            - --minbytes
+            - "8"
+            - --maxbytes
+            - 1G
+            - --stepfactor
             - "2"
-            - -t
+            - --nthreads
             - "1"
-            - -g
+            - --ngpus
             - "1"
-            - -c
+            - --check
             - "1"
-            - -n
+            - --iters
             - "100"
     Worker:
       replicas: 2
       template:
         spec:
-          nodeSelector:
-            node.kubernetes.io/instance-type: "p5.48xlarge"
-          imagePullPolicy: Always
+          imagePullPolicy: IfNotPresent
           containers:
           - image: <account>.dkr.ecr.<region>.amazonaws.com/cuda-efa-nccl-tests:ubuntu22.04
-            name: test-nccl-efa-worker
-            volumeMounts:
-            - name: shmem
-              mountPath: /dev/shm
+            name: efa-nccl-worker
             resources:
               limits:
-                nvidia.com/gpu: 8
-                hugepages-2Mi: 5120Mi
+                nvidia.com/gpu: 4
+                #hugepages-2Mi: 5120Mi
                 vpc.amazonaws.com/efa: 32
-                memory: 8000Mi
+                #memory: 8000Mi
               requests:
-                nvidia.com/gpu: 8
-                hugepages-2Mi: 5120Mi
+                nvidia.com/gpu: 4
+                #hugepages-2Mi: 5120Mi
                 vpc.amazonaws.com/efa: 32
-                memory: 8000Mi
-          volumes:
-          - name: shmem
-            hostPath:
-              path: /dev/shm
+                #memory: 8000Mi
