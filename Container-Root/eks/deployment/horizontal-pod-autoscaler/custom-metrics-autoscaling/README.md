@@ -178,9 +178,12 @@ metadata:
 
 iam:
   withOIDC: true
-  withAddonPolicies:
-    cloudWatch: true
-    ebs: true
+
+addons:
+  - name: aws-ebs-csi-driver
+    version: v1.26.0-eksbuild.1
+    wellKnownPolicies:
+      ebsCSIController: true
 
 karpenter:
   version: 'v0.29.0'
