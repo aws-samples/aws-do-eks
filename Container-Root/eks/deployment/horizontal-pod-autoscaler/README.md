@@ -4,5 +4,7 @@ The [Horizontal Pod Autoscaler](https://kubernetes.io/docs/tasks/run-application
 
 The `hpa-example` folder contains a simple php-apache microservice which can be built and deployed to illustrate how HPA works. The example requires `metrics-server` to be deployed on the cluster. A script for that is provided in the `/eks/deployment` directory.
 
-[KEDA](keda.sh) is a Kubernetes Event Driven Autoscaler which works alongside standard horizontal pod autoscaler and enables scaling based on various events. Refer to the `keda` directory for deployment.
+[KEDA](https://keda.sh) is a Kubernetes Event Driven Autoscaler which works alongside standard horizontal pod autoscaler and enables scaling based on various events. Refer to the `keda` directory for deployment.
+
+The `custom-metrics-autoscaling` folder contains step-by-step instructions for deployment of an architecture that automatically scales both pods and nodes in a cluster based on a user-defined custom metric.
 

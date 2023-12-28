@@ -5,13 +5,19 @@ kind: ClusterConfig
 
 metadata:
   name: do-eks-yaml-karpenter
-  version: "1.27"
+  version: "1.28"
   region: us-west-2
   tags:
     karpenter.sh/discovery: do-eks-yaml-karpenter
 
 iam:
   withOIDC: true
+
+addons:
+  - name: aws-ebs-csi-driver
+    version: v1.26.0-eksbuild.1
+    wellKnownPolicies:
+      ebsCSIController: true
 
 karpenter:
   version: 'v0.29.0'
@@ -24,7 +30,7 @@ managedNodeGroups:
     instancePrefix: c5-xl
     privateNetworking: true
     minSize: 0
-    desiredCapacity: 2
+    desiredCapacity: 1
     maxSize: 10
     volumeSize: 300
     iam:
