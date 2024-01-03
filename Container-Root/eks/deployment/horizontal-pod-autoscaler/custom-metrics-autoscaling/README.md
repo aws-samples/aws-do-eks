@@ -203,8 +203,6 @@ managedNodeGroups:
       withAddonPolicies:
         cloudWatch: true
         ebs: true
-        efs: true
-        fsx: true
 ```
 
 The manifest defines an EKS cluster version `1.29` with Karpenter version `0.33`. It has a managed node group of c5.xlarge instance type nodes which is used to run system pods like coredns and karpenter.
