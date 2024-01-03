@@ -196,7 +196,7 @@ managedNodeGroups:
     instancePrefix: c5-xl
     privateNetworking: true
     minSize: 0
-    desiredCapacity: 1
+    desiredCapacity: 2
     maxSize: 10
     volumeSize: 300
     iam:
@@ -207,7 +207,7 @@ managedNodeGroups:
         fsx: true
 ```
 
-The manifest defines an EKS cluster version `1.29` with Karpenter version `0.33`. It has a managed node group of c5.xlarge instance type which is used to run system pods.
+The manifest defines an EKS cluster version `1.29` with Karpenter version `0.33`. It has a managed node group of c5.xlarge instance type nodes which is used to run system pods like coredns and karpenter.
 
 ## 1.7. Create EKS cluster
 
@@ -342,7 +342,8 @@ The Provisioner manifest, instructs Karpenter to use spot or on-demand instances
 
 1.10. Deploy EBS CSI Controller
 
-If you created the cluster using the provided manifest, the EBS CSI Controller is already deployed and you may skip this step.  
+If you created the cluster using the provided manifest, the EBS CSI Controller is already deployed and you may skip this step. You can check if EBS CSI is deployed to your cluster by running `kubectl get pods -A | grep ebs-csi`.
+
 This Container Storage Interface (CSI) controller is needed to enable use of EBS volumes from the Kubernetes cluster. EBS volumes are needed by some of the tools we’ll use later. If you are using a pre-existing EKS cluster where the EBS CSI Controller is not deployed, you can follow the instructions below to deploy the open-source self-managed version of the CSI controller. Amazon EKS also offers this deployment as a manged add-on described [here](https://docs.aws.amazon.com/eks/latest/userguide/managing-ebs-csi.html).
 
 ```bash
@@ -408,7 +409,7 @@ popd
     REVISION: 1
     TEST SUITE: None
     NOTES:
-    Traefik Proxy v2.10.4 has been deployed successfully on traefik namespace !
+    Traefik Proxy v2.10.6 has been deployed successfully on traefik namespace !
     /eks/deployment/traefik# popd
     /eks
 
@@ -525,12 +526,12 @@ popd
 <br/>
 
 ### 2.3.2. Expose Grafana UI
-There are a few possible ways to expose a web application running on Kubernetes and you may choose your own preferred method. For simplicity we will use kubectl port-forwarding. This requires `aws` CLI v2 and `kubectl` to be installed on the machine where we will access the forwarded port with a browser. An example install script for the `aws` CLI is available [here](https://github.com/aws-samples/aws-do-eks/blob/main/Container-Root/eks/ops/setup/install-aws-cli.sh) and for `kubectl` is available [here](https://github.com/aws-samples/aws-do-eks/blob/main/Container-Root/eks/ops/setup/install-kubectl.sh).
+There are a few possible ways to expose a web application running on Kubernetes and you may choose your own preferred method. For simplicity we will use kubectl port-forwarding.
 
-To expose the Grafana UI, run `./expose-grafana.sh` from a shell outside the aws-do-eks container. 
+To expose the Grafana UI in a new `aws-do-eks` shell run: 
 
 ```bash
-pushd Container-Root/eks/deployment/prometheus-grafana
+pushd /eks/deployment/prometheus-grafana
 ./expose-grafana.sh
 popd
 ```
@@ -538,20 +539,29 @@ popd
 <details>
     <summary>Output:<\summary>
 
-    ~/environment/aws-do-eks/Container-Root/eks/deployment/prometheus-grafana (main) $ ./expose-grafana.sh 
+    root@ef15cb4b4d4a:/eks# pushd /eks/deployment/prometheus-grafana
+    /eks/deployment/prometheus-grafana /eks
+    root@ef15cb4b4d4a:/eks/deployment/prometheus-grafana# ./expose-grafana.sh 
 
     If you are in a Cloud9 environment, the Grafana dashboard is available via the following URL:
-    REGION=us-west-2
-    https://3819c228a0bb4202a1f69144e554e2ab.vfs.cloud9.us-west-2.amazonaws.com/login
+    REGION=ef15cb4b4d4a
+    https://.vfs.cloud9.ef15cb4b4d4a.amazonaws.com/login
 
     If you are port-forwarding from a local machine, the Grafana dashboard is available via the following URL:
     http://localhost:8080
-    $ Forwarding from 127.0.0.1:8080 -> 3000
-    Forwarding from [::1]:8080 -> 3000
-    ~/environment/aws-do-eks/Container-Root/eks/deployment/prometheus-grafana (main) 
+    root@ef15cb4b4d4a:/eks/deployment/prometheus-grafana# Forwarding from 0.0.0.0:8080 -> 3000
+    Handling connection for 8080
+
+    root@ef15cb4b4d4a:/eks/deployment/prometheus-grafana# popd
+    /eks
+    root@ef15cb4b4d4a:/eks#
 
 </details>
 <br/>
+
+You can check if the port forwarding process is running by executing: `ps -aef | grep port-forward`. While this process is running, you may access the Grafana UI at:
+
+[http://localhost:8080](http://localhost:8080)
 
 ### 2.3.3. Login to the Grafana UI
 Inside the `aws-do-eks` container in directory /eks/deployment/prometheus-grafana, use the `./auth.sh` script to retrieve the password for logging in to the Grafana UI.
@@ -725,7 +735,10 @@ kubectl apply -f ./ingress.yaml
 </details>
 <br/>
 
-## 3.5. Create Traefik Ingress Route
+<!--
+## 3.4. Alternatively Create Traefik Ingress Route
+Note: If using a Traefik Ingress Route instead of Kubernetes Ingress, the name of the service
+in the rate panel of the dashboard will need to be selected to reflect the Traefik-specific route name.
 
 ```bash
 kubectl apply -f ./ingressroute.yaml
@@ -738,8 +751,9 @@ kubectl apply -f ./ingressroute.yaml
     ingressroute.traefik.containo.us/ingressroute-apache created
 
 </details>
+-->
 
-## 3.6. Deploy KEDA Scaled Object
+## 3.5. Deploy KEDA Scaled Object
 
 We are going to apply the following KEDA Scaled Object manifest to the cluster:
 
@@ -786,9 +800,9 @@ Fig. 8 - Cluster Auto-scaling Dashboard with no load
 <br/>
 
 We have one system node, one service pod and 0 requests per second.<br/>
-Note: If you are running the experiment for the first time, the requests-per-second panel may display “no data available”. This is expected.
+Note: If you are running the experiment for the first time, the requests-per-second panel may display “no data available”. This is expected. You may proceed to the next step to allow a few minutes for data to be collected. If the panel is still blank, plese click on the data label at the bottom of the panel to ensure the series is displayed. If there is still no data, please edit the panel and review the prometheus query in code or builder mode to ensure that it returns rate data.
 
-## 3.7. Deploy load generator
+## 3.6. Deploy load generator
 
 ```bash
 kubectl apply -f ./load-generator.yaml
@@ -814,7 +828,7 @@ Fig. 9 - Horizontal Pod Autoscaling via KEDA
 <br/>
 Note that all pods fit on the current system pod nodes, so no new nodes were added to the cluster.
 
-## 3.8. Scale out
+## 3.7. Scale out
 
 ```bash
 ./scale.sh load-generator 40
@@ -851,7 +865,7 @@ Fig. 11 - Autoscaling in horizontal and vertical direction
 
 To zoom out, use the time-range selector.
 
-## 3.9. Scale in
+## 3.8. Scale in
 
 ```bash
 ./scale.sh load-generator 1
@@ -881,7 +895,146 @@ Fig. 12 - Scaling in
 
 Note that the number of remaining nodes in the cluster does not necessarily match the number of nodes in the beginning of the experiment. The number of nodes in the cluster is controlled by Karpenter. The Karpenter provisioner may be configured to relocate pods in order to minimize the number of running nodes.
 
-# 4. Clean up
+# 4. Scaling out GPU workloads
+
+The same approach as described in section 3 can be applied when scaling out GPU workloads. Let's again use the same "requests per second" metric, but this time specify that our workload pods require one NVIDIA GPU each. 
+
+## 4.1. Update deployment
+We'll add `nvidia.com/gpu: 1` to the resource limits and requests of our example deployment manifest `php-apache.yaml-template` located in `/eks/deployment/horizontal-pod-autoscaler/hpa-example` within the `aws-do-eks` container:
+
+```yaml
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: php-apache
+  namespace: hpa-example
+spec:
+  selector:
+    matchLabels:
+      run: php-apache
+  replicas: 1
+  template:
+    metadata:
+      labels:
+        run: php-apache
+    spec:
+      containers:
+      - name: php-apache
+        image: ${REGISTRY}${IMAGE}${TAG}
+        ports:
+        - containerPort: 80
+        resources:
+          limits:
+            cpu: 500m
+            nvidia.com/gpu: 1
+          requests:
+            cpu: 200m
+            nvidia.com/gpu: 1
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: php-apache
+  namespace: hpa-example
+  labels:
+    run: php-apache
+spec:
+  ports:
+  - name: web
+    port: 80
+  selector:
+    run: php-apache
+```
+
+Then execute `./run.sh` to update the deployment.
+
+```bash
+./run.sh
+```
+<details>
+    <summary>Output:</summary>
+
+    Generating manifest from template php-apache.yaml-template ...
+
+    Applying base manifests ...
+    namespace/hpa-example unchanged
+    deployment.apps/php-apache configured
+    service/php-apache unchanged
+
+</details>
+</br>
+
+## 4.2. Deploy NVIDIA device plugin
+The NVIDIA device plugin is needed to enable the cluster to recognize nodes that have available GPU resources and schedule pods that require GPUs on those nodes.
+
+To deploy the NVIDIA device plugin execute, from the `aws-do-eks` shell execute:
+
+```bash
+pushd /eks/deployment/nvidia-device-plugin
+./deploy.sh
+popd
+```
+
+<details>
+    <summary>Output:</summary>
+    daemonset.apps/nvidia-device-plugin-daemonset created
+</details>
+<br/>
+
+Use the following command to check the status of the device plugin:
+
+```bash
+kubectl -n kube-system get daemonset
+```
+
+<details>
+    <summary>Output:</summary>
+
+    NAMESPACE     NAME                                  DESIRED   CURRENT   READY   UP-TO-DATE   AVAILABLE   NODE SELECTOR              AGE
+    kube-system   aws-node                              8         8         8       8            8           <none>                     4d21h
+    kube-system   ebs-csi-node                          8         8         8       8            8           kubernetes.io/os=linux     4d21h
+    kube-system   kube-proxy                            8         8         8       8            8           <none>                     4d21h
+    kube-system   nvidia-device-plugin-daemonset        8         8         8       8            8           <none>                     8s
+    prometheus    prometheus-prometheus-node-exporter   8         8         8       8            8           kubernetes.io/os=linux     92m
+
+</details>
+<br/>
+
+Upon successful deployment you would see that the number of "Ready" pods from daemonset `nvidia-device-plugin-daemonset` is equal to the number of "Desired" pods.
+
+## 4.3. Scale
+
+To scale out the cluster, simply increase the number of replicas of the load generator pod.
+
+```bash
+./scale.sh load-generator 40
+```
+
+The number of requests to our example service increases. KEDA scales the service deployment accordingly, adding more pods. The pods require one GPU each. Since there aren't enough GPUs in the cluster to run the new pods, these pods remain in "Pending" state. Karpenter notices the pending pods and adds GPU nodes to the cluster. As soon as these nodes become "Ready", the nvidia-device-plugin daemonset runs on them and the GPUs get advertised in the cluster. The Kubernetes pod scheduler matches the "Pending" pods against the new nodes with available GPUs, and these pods enter the "ContainerCreating", followed by "Running" state.
+
+<center>
+<img src="images/grafana-dashboard-gpu-scale-out.png" width="80%" align="center"><br/>
+Fig. 13 - GPU nodes scaled out
+</center>
+<br/>
+
+As can be seen from the legend of the top dashboard pane, Karpenter added `g3.8xlarge`, `g4dn.xlarge`, `g4dn.12xlarge`, `g4dn.metal`, and `p3.8xlarge` GPU nodes to the cluster. You may further restrict or widen the families of node types that Karpenter is allowed to use for GPU workloads by modifying the Karpenter provisioner or set of provisioners. 
+
+To scale in the cluster, simply reduce the number of load generator pods back to 1.
+
+```bash
+./scale.sh load-generator 1
+```
+
+<center>
+<img src="images/grafana-dashboard-gpu-scale-in.png" width="80%" align="center"><br/>
+Fig. 14 - GPU nodes scaled in
+</center>
+<br/>
+
+
+# 5. Clean up
 
 If you created an EKS cluster following the steps from the previous sections, to clean up, you can delete the deployments and the EKS cluster by executing the following in the `aws-do-eks` container shell:
 
@@ -955,4 +1108,5 @@ popd
 </details>
 <br/>
 
-The auto-scaling example provided here is generic and can be utilized by any workload that has variable resource requirements. Workloads such as ML model inference, data simulation, batch processing jobs, etc. require auto-scaling because they are typically spiky in nature and it is not easy to predict their resource requirements and timing. The use of auto-scaling ensures that custer resources are allocated when needed and removed when not in use, thus maximizing utilization and minimizing cost.
+# 6. Conclusion
+We applied the same generic approach to scale both CPU and GPU workloads on Amazon EKS based on a custom metric. The auto-scaling example provided here is generic and can be utilized by any workload that has variable resource requirements, based on appropriate custom metrics. Workloads such as ML model inference, data simulation, batch processing jobs, etc. require auto-scaling because they are typically spiky in nature and it is difficult to predict their resource requirements and timing. The use of auto-scaling ensures that custer resources are allocated when needed and removed when not in use, thus maximizing utilization and minimizing cost.

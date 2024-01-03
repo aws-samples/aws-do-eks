@@ -30,7 +30,7 @@ managedNodeGroups:
     instancePrefix: c5-xl
     privateNetworking: true
     minSize: 0
-    desiredCapacity: 1
+    desiredCapacity: 2
     maxSize: 10
     volumeSize: 300
     iam:
