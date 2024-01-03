@@ -1,5 +1,3 @@
-# Reference: https://eksctl.io/usage/eksctl-karpenter/
-
 apiVersion: eksctl.io/v1alpha5
 kind: ClusterConfig
 
@@ -30,7 +28,7 @@ managedNodeGroups:
     instancePrefix: c5-xl
     privateNetworking: true
     minSize: 0
-    desiredCapacity: 2
+    desiredCapacity: 1
     maxSize: 10
     volumeSize: 300
     iam:

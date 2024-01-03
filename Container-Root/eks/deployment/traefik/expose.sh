@@ -8,7 +8,7 @@ fi
 echo ""
 echo "Exposing traefik port ${PORT} on local port 8080 ..."
 
-kubectl -n traefik port-forward $(kubectl -n traefik get pods --selector "app.kubernetes.io/name=traefik" --output=name) 8080:${PORT} &
+kubectl -n traefik port-forward $(kubectl -n traefik get pods --selector "app.kubernetes.io/name=traefik" --output=name) 8080:${PORT} --address 0.0.0.0 &
 
 echo ""
 echo "If you are in a Cloud9 environment, the Traefik service is available via the following URL:"
