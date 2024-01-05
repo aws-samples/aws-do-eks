@@ -186,7 +186,7 @@ addons:
       ebsCSIController: true
 
 karpenter:
-  version: 'v0.29.0'
+  version: 'v0.32.4'
   createServiceAccount: true
   #  defaultInstanceProfile: 'KarpenterInstanceProfile'
 
@@ -205,7 +205,7 @@ managedNodeGroups:
         ebs: true
 ```
 
-The manifest defines an EKS cluster version `1.29` with Karpenter version `0.33`. It has a managed node group of c5.xlarge instance type nodes which is used to run system pods like coredns and karpenter.
+The manifest defines an EKS cluster version `1.29` with Karpenter version `0.32.4`. It has a managed node group of c5.xlarge instance type nodes which is used to run system pods like coredns and karpenter.
 
 ## 1.7. Create EKS cluster
 
@@ -228,8 +228,8 @@ Note: The process of creating an EKS cluster takes around 20 minutes.
     2023-07-25 15:09:08 [ℹ]  subnets for us-west-2a - public:192.168.0.0/19 private:192.168.96.0/19
     2023-07-25 15:09:08 [ℹ]  subnets for us-west-2d - public:192.168.32.0/19 private:192.168.128.0/19
     2023-07-25 15:09:08 [ℹ]  subnets for us-west-2c - public:192.168.64.0/19 private:192.168.160.0/19
-    2023-07-25 15:09:08 [ℹ]  nodegroup "c5-xl-do-eks-karpenter-ng" will use "" [AmazonLinux2/1.25]
-    2023-07-25 15:09:08 [ℹ]  using Kubernetes version 1.25
+    2023-07-25 15:09:08 [ℹ]  nodegroup "c5-xl-do-eks-karpenter-ng" will use "" [AmazonLinux2/1.28]
+    2023-07-25 15:09:08 [ℹ]  using Kubernetes version 1.28
     2023-07-25 15:09:08 [ℹ]  creating EKS cluster "do-eks-yaml-karpenter" in "us-west-2" region with managed nodes
     ...
 
@@ -268,13 +268,13 @@ You should see a number of running pods in the `kube-system` namespace as well a
 
 </details>
 
-## 1.9. Create Karpenter Provisioner
+## 1.9. Create Karpenter NodePool and EC2NodeClass
 
 From the `aws-do-eks` container shell run:
 
 ```bash
 pushd /eks/deployment/karpenter
-./provisioner-deploy.sh
+./provisioner-deploy-v1beta1.sh
 popd
 ```
 
@@ -283,60 +283,79 @@ popd
 
     # pushd /eks/deployment/karpenter
     /eks/deployment/karpenter /eks
-    # ./provisioner-deploy.sh
-    /eks /eks/deployment/karpenter
-    /eks/deployment/karpenter
+    # ./provisioner-deploy-v1beta1.sh
     CLUSTER_NAME=do-eks-yaml-karpenter
-    provisioner.karpenter.sh/default created
-    awsnodetemplate.karpenter.k8s.aws/default created
+    nodepool.karpenter.sh/default created
+    ec2nodeclass.karpenter.k8s.aws/default created
     # popd
     /eks
 
 </details>
 <br/>
 
-Let’s look into how the Karpenter provisioner was created. The script generated the following two manifests:
+Let’s look into how the Karpenter configuration was created. The script generated the following two manifests:
 
 ```yaml
-apiVersion: karpenter.sh/v1alpha5
-kind: Provisioner
+apiVersion: karpenter.sh/v1beta1
+kind: NodePool
 metadata:
   name: default
 spec:
-  requirements:
-    - key: karpenter.sh/capacity-type
-      operator: In
-      values: ["spot", "on-demand"]
-    - key: karpenter.k8s.aws/instance-category
-      operator: In
-      values: ["c", "m", "r", "g", "p"]
-    - key: karpenter.k8s.aws/instance-generation
-      operator: Gt
-      values:
-      - "2"
-  providerRef:
-    name: default
-  ttlSecondsAfterEmpty: 30
+  template:
+    metadata:
+      labels:
+        cluster-name: $CLUSTER_NAME
+      annotations:
+        purpose: "karpenter-example"
+    spec:
+      nodeClassRef:
+        apiVersion: karpenter.k8s.aws/v1beta1
+        kind: EC2NodeClass
+        name: default
+      requirements:
+        - key: "karpenter.sh/capacity-type"
+          operator: In
+          values: ["spot", "on-demand"]
+        - key: "karpenter.k8s.aws/instance-category"
+          operator: In
+          values: ["c", "m", "r", "g", "p"]
+        - key: "karpenter.k8s.aws/instance-generation"
+          operator: Gt
+          values: ["2"]
+  disruption:
+    consolidationPolicy: WhenUnderutilized
+    #consolidationPolicy: WhenEmpty
+    #consolidateAfter: 30s
+    expireAfter: 720h
 ---
-apiVersion: karpenter.k8s.aws/v1alpha1
-kind: AWSNodeTemplate
+apiVersion: karpenter.k8s.aws/v1beta1
+kind: EC2NodeClass
 metadata:
   name: default
 spec:
-  subnetSelector:
-    karpenter.sh/discovery: ${CLUSTER_NAME}
-  securityGroupSelector:
-    karpenter.sh/discovery: ${CLUSTER_NAME}
+  amiFamily: AL2
+  subnetSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: "${CLUSTER_NAME}"
+  securityGroupSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: "${CLUSTER_NAME}"
+  role: "KarpenterNodeRole-${CLUSTER_NAME}"
+  tags:
+    app: autoscaling-test
   blockDeviceMappings:
     - deviceName: /dev/xvda
       ebs:
         volumeSize: 80Gi
         volumeType: gp3
+        iops: 10000
         deleteOnTermination: true
+        throughput: 125
+  detailedMonitoring: true
 ``` 
 
-The AWSNodeTemplate is used to specify that provisioned nodes should have an 80Gi volume attached. This is necessary, because if the volume is too small, it may run out of space when running pods from larger container images.
-The Provisioner manifest, instructs Karpenter to use spot or on-demand instances within the specified instance families when adding new nodes to the cluster.
+Among other settings, the EC2NodeClass is used to specify that provisioned nodes should have an 80Gi volume attached. This is necessary, because if the volume is too small, it may run out of space when running pods from larger container images.
+The NodePool manifest, instructs Karpenter to use spot or on-demand instances within the specified instance families when adding new nodes to the cluster.
 
 1.10. Deploy EBS CSI Controller
 
