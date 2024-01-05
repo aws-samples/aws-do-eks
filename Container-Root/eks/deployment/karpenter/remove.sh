@@ -1,16 +1,9 @@
 #!/bin/bash
 
-# Source eks.conf
-if [ -f ./eks.conf ]; then
-        . ./eks.conf
-elif [ -f /eks/eks.conf ]; then
-        . /eks/eks.conf
-elif [ -f ../../eks.conf ]; then
-        . ../../eks.conf
-else
-        echo ""
-        echo "Error: Could not locate eks.conf"
-fi
+# Get cluster name
+pushd ../..
+CLUSTER_NAME=$(./eks-name.sh)
+popd
 
 if [ "$CLUSTER_NAME" == "" ]; then
         echo ""

@@ -1,67 +1,79 @@
 #!/bin/bash
 
-# Source eks.conf
-if [ -f ./eks.conf ]; then
-	. ./eks.conf
-elif [ -f /eks/eks.conf ]; then
-	. /eks/eks.conf
-elif [ -f ../../eks.conf ]; then
-	. ../../eks.conf
-else
-	echo ""
-	echo "Error: Could not locate eks.conf"
-fi
+# Source karpenter.conf
+source ./karpenter.conf
 
 if [ "$CLUSTER_NAME" == "" ]; then
 	echo ""
+	echo "Could not determine cluster name. Please check ./karpenter.conf"
+	echo ""
 else
-	# Create KarpenterNode IAM Role
-	TEMPOUT=$(mktemp)
-	curl -fsSL https://karpenter.sh/"${CLUSTER_KARPENTER_VERSION}"/getting-started/getting-started-with-eksctl/cloudformation.yaml  > $TEMPOUT \
+	# Reference: https://karpenter.sh/v0.32/getting-started/getting-started-with-karpenter/
+	
+	echo ""
+	echo "Creating Karpenter NodeRole, ControllerPolicy, InterruptionQueue, InterruptionQueuePolicy, and Rules using CloudFormation ..."
+	# Create Karpenter NodeRole, ControllerPolicy, InterruptionQueue, InterruptionQueuePolicy, and Rules
+	curl -fsSL https://raw.githubusercontent.com/aws/karpenter-provider-aws/"${KARPENTER_VERSION}"/website/content/en/preview/getting-started/getting-started-with-karpenter/cloudformation.yaml  > $TEMPOUT \
 	&& aws cloudformation deploy \
   	--stack-name "Karpenter-${CLUSTER_NAME}" \
   	--template-file "${TEMPOUT}" \
   	--capabilities CAPABILITY_NAMED_IAM \
   	--parameter-overrides "ClusterName=${CLUSTER_NAME}"
-	
+
+	echo ""
+	echo "Creating IAM Identity Mapping so Karpenter instances can connect to the cluster ..."
 	# Grant access to instances with IAM Role to connect to the cluster
-	export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 	eksctl create iamidentitymapping \
   	--username system:node:{{EC2PrivateDNSName}} \
   	--cluster "${CLUSTER_NAME}" \
-  	--arn "arn:aws:iam::${AWS_ACCOUNT_ID}:role/KarpenterNodeRole-${CLUSTER_NAME}" \
+  	--arn "arn:${AWS_PARTITION}:iam::${AWS_ACCOUNT_ID}:role/KarpenterNodeRole-${CLUSTER_NAME}" \
   	--group system:bootstrappers \
   	--group system:nodes
 
-	# Create KarpenterController IAM Role
+	echo ""
+	echo "Creating KarpenterController IAM Role ..."
+	# Create KarpenterController IAM Service Account and IAM Role
 	eksctl create iamserviceaccount \
   	--cluster "${CLUSTER_NAME}" --name karpenter --namespace karpenter \
   	--role-name "${CLUSTER_NAME}-karpenter" \
-  	--attach-policy-arn "arn:aws:iam::${AWS_ACCOUNT_ID}:policy/KarpenterControllerPolicy-${CLUSTER_NAME}" \
-  	--role-only \
+  	--attach-policy-arn "arn:${AWS_PARTITION}:iam::${AWS_ACCOUNT_ID}:policy/KarpenterControllerPolicy-${CLUSTER_NAME}" \
+	--role-only \
   	--approve
+  	
 
-	export KARPENTER_IAM_ROLE_ARN="arn:aws:iam::${AWS_ACCOUNT_ID}:role/${CLUSTER_NAME}-karpenter"
+	export CLUSTER_ENDPOINT="$(aws eks describe-cluster --name ${CLUSTER_NAME} --query "cluster.endpoint" --output text)"
+	export KARPENTER_IAM_ROLE_ARN="arn:${AWS_PARTITION}:iam::${AWS_ACCOUNT_ID}:role/${CLUSTER_NAME}-karpenter"
+
+	echo ""
+	echo "CLUSTER_ENDPOINT=$CLUSTER_ENDPOINT"
+	echo "KARPENTER_IAM_ROLE_ARN=$KARPENTER_IAM_ROLE_ARN"
+	echo ""
 
 	# Create EC2 Spot Service Linked Role
-	# If the role has already been successfully created, you will see:
-	# An error occurred (InvalidInput) when calling the CreateServiceLinkedRole operation: Service role name AWSServiceRoleForEC2Spot has been taken in this account, please try a different suffix.
+	echo ""
+	echo "Enabling spot ..."
+	echo ""
+	echo "It is ok to see an error here if the service linked role already exists"
 	aws iam create-service-linked-role --aws-service-name spot.amazonaws.com || true
+	echo ""
 
-	# Install Karpenter Helm Chart
-	helm repo add karpenter https://charts.karpenter.sh/
-	helm repo update
+	# Install Karpenter from Helm Chart
+	echo ""
+	echo "It is ok to see an error here if helm is not logged in to public.ecr.aws"
+	helm registry logout public.ecr.aws || true
+	
+	echo ""
+	echo "Installing Karpenter using helm ..."
+	helm upgrade --install karpenter oci://public.ecr.aws/karpenter/karpenter --version "${KARPENTER_VERSION}" --namespace "${KARPENTER_NAMESPACE}" --create-namespace \
+	  --set "serviceAccount.annotations.eks\.amazonaws\.com/role-arn=${KARPENTER_IAM_ROLE_ARN}" \
+	  --set "settings.clusterName=${CLUSTER_NAME}" \
+	  --set "settings.interruptionQueue=${CLUSTER_NAME}" \
+	  --set controller.resources.requests.cpu=1 \
+	  --set controller.resources.requests.memory=1Gi \
+	  --set controller.resources.limits.cpu=1 \
+	  --set controller.resources.limits.memory=1Gi \
+	  --wait
 
-	# Install Karpenter
-	export CLUSTER_ENDPOINT="$(aws eks describe-cluster --name ${CLUSTER_NAME} --query "cluster.endpoint" --output text)"
-	helm upgrade --install --namespace karpenter --create-namespace \
-	karpenter karpenter/karpenter \
-  	--version ${CLUSTER_KARPENTER_VERSION} \
-  	--set serviceAccount.annotations."eks\.amazonaws\.com/role-arn"=${KARPENTER_IAM_ROLE_ARN} \
-  	--set clusterName=${CLUSTER_NAME} \
-  	--set clusterEndpoint=${CLUSTER_ENDPOINT} \
-  	--set aws.defaultInstanceProfile=KarpenterNodeInstanceProfile-${CLUSTER_NAME} \
- 	--wait # for the defaulting webhook to install before creating a Provisioner
-
+	kubectl -n $KARPENTER_NAMESPACE get pods
 fi
 

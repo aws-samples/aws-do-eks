@@ -40,6 +40,7 @@ kind: AWSNodeTemplate
 metadata:
   name: default
 spec:
+  instanceProfile: KarpenterNodeInstanceProfile-${CLUSTER_NAME} 
   subnetSelector:
     karpenter.sh/discovery: ${CLUSTER_NAME}
   securityGroupSelector:
