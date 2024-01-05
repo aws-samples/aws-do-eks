@@ -357,7 +357,7 @@ spec:
 Among other settings, the EC2NodeClass is used to specify that provisioned nodes should have an 80Gi volume attached. This is necessary, because if the volume is too small, it may run out of space when running pods from larger container images.
 The NodePool manifest, instructs Karpenter to use spot or on-demand instances within the specified instance families when adding new nodes to the cluster.
 
-1.10. Deploy EBS CSI Controller
+## 1.10. Deploy EBS CSI Controller
 
 If you created the cluster using the provided manifest, the EBS CSI Controller is already deployed and you may skip this step. You can check if EBS CSI is deployed to your cluster by running `kubectl get pods -A | grep ebs-csi`.
 
