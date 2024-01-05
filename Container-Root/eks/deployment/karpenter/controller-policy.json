@@ -18,22 +18,24 @@
                 "ec2:CreateLaunchTemplate",
                 "ec2:CreateFleet",
                 "ec2:DescribeSpotPriceHistory",
-                "pricing:GetProducts"
+                "pricing:GetProducts",
+                "sqs:DeleteMessage",
+                "ec2:DescribeLaunchTemplates",
+                "sqs:GetQueueAttributes",
+                "sqs:GetQueueURL",
+                "sqs:ReceiveMessage",
+                "iam:CreateInstanceProfile",
+                "iam:TagInstanceProfile",
+                "iam:AddRoleToInstanceProfile",
+                "iam:RemoveRoleFromInstanceProfile",
+                "iam:DeleteInstanceProfile",
+                "iam:GetInstanceProfile",
+                "eks:DescribeCluster",
+                "ec2:TerminateInstances"
             ],
             "Effect": "Allow",
             "Resource": "*",
             "Sid": "Karpenter"
-        },
-        {
-            "Action": "ec2:TerminateInstances",
-            "Condition": {
-                "StringLike": {
-                    "ec2:ResourceTag/Name": "*karpenter*"
-                }
-            },
-            "Effect": "Allow",
-            "Resource": "*",
-            "Sid": "ConditionalEC2Termination"
         }
     ],
     "Version": "2012-10-17"

@@ -185,11 +185,6 @@ addons:
     wellKnownPolicies:
       ebsCSIController: true
 
-karpenter:
-  version: 'v0.32.4'
-  createServiceAccount: true
-  #  defaultInstanceProfile: 'KarpenterInstanceProfile'
-
 managedNodeGroups:
   - name: c5-xl-do-eks-karpenter-ng
     instanceType: c5.xlarge
@@ -205,7 +200,7 @@ managedNodeGroups:
         ebs: true
 ```
 
-The manifest defines an EKS cluster version `1.29` with Karpenter version `0.32.4`. It has a managed node group of c5.xlarge instance type nodes which is used to run system pods like coredns and karpenter.
+The manifest defines an EKS cluster version `1.28`. It has a managed node group of c5.xlarge instance type nodes which is used to run system pods like coredns and karpenter. We will deploy Karpenter after the cluster has been created.
 
 ## 1.7. Create EKS cluster
 
@@ -233,7 +228,6 @@ Note: The process of creating an EKS cluster takes around 20 minutes.
     2023-07-25 15:09:08 [ℹ]  creating EKS cluster "do-eks-yaml-karpenter" in "us-west-2" region with managed nodes
     ...
 
-    2023-07-25 15:20:06 [ℹ]  adding Karpenter to cluster do-eks-yaml-karpenter
     2023-07-25 15:20:56 [ℹ]  kubectl command should work with "/root/.kube/config", try 'kubectl get nodes'
     2023-07-25 15:21:36 [✔]  EKS cluster "do-eks-yaml-karpenter" in "us-west-2" region is ready
 
@@ -242,9 +236,85 @@ Note: The process of creating an EKS cluster takes around 20 minutes.
 </details>
 <br/>
 
-The new cluster will have Karpenter deployed. If you are using an existing EKS cluster that does not have Karpenter, you may deploy it by following instructions [here](https://karpenter.sh/docs/getting-started/getting-started-with-karpenter/#4-install-karpenter).
+## 1.8. Deploy Karpenter
 
-## 1.8. Verify cluster 
+You may edit /eks/deployment/karpenter/karpenter.conf to set deployment options for Karpenter, if you would like them to be different than the pre-set ones. Then execute the `deploy.sh` script as shown below. The script automates the instructions, provided in the Karpenter documentation [here](https://karpenter.sh/docs/getting-started/getting-started-with-karpenter/#4-install-karpenter).
+
+```bash
+pushd /eks/deployment/karpenter
+./deploy.sh
+popd
+```
+
+<details>
+    <summary>Output:</summary>
+
+    # ./deploy.sh  
+
+    Configuration: 
+
+    KARPENTER_NAMESPACE=karpenter
+    KARPENTER_VERSION=v0.32.4
+    K8S_VERSION=1.28
+    CLUSTER_NAME=do-eks-yaml-karpenter
+    AWS_DEFAULT_REGION=us-west-2
+    AWS_ACCOUNT_ID=159553542841
+    TEMPOUT=/tmp/tmp.9buJBCovu5
+
+
+    Creating Karpenter NodeRole, ControllerPolicy, InterruptionQueue, InterruptionQueuePolicy, and Rules using CloudFormation ...
+
+    Waiting for changeset to be created..
+    Waiting for stack create/update to complete
+    Successfully created/updated stack - Karpenter-do-eks-yaml-karpenter
+
+    Creating IAM Identity Mapping so Karpenter instances can connect to the cluster ...
+    2024-01-05 17:19:48 [ℹ]  checking arn arn:aws:iam::159553542841:role/KarpenterNodeRole-do-eks-yaml-karpenter against entries in the auth ConfigMap
+    2024-01-05 17:19:48 [ℹ]  adding identity "arn:aws:iam::159553542841:role/KarpenterNodeRole-do-eks-yaml-karpenter" to auth ConfigMap
+
+    Creating KarpenterController IAM Role ...
+    2024-01-05 17:19:49 [ℹ]  1 existing iamserviceaccount(s) (kube-system/aws-node) will be excluded
+    2024-01-05 17:19:49 [ℹ]  1 iamserviceaccount (karpenter/karpenter) was included (based on the include/exclude rules)
+    2024-01-05 17:19:49 [!]  serviceaccounts in Kubernetes will not be created or modified, since the option --role-only is used
+    2024-01-05 17:19:49 [ℹ]  1 task: { create IAM role for serviceaccount "karpenter/karpenter" }
+    2024-01-05 17:19:49 [ℹ]  building iamserviceaccount stack "eksctl-do-eks-yaml-karpenter-addon-iamserviceaccount-karpenter-karpenter"
+    2024-01-05 17:19:49 [ℹ]  deploying stack "eksctl-do-eks-yaml-karpenter-addon-iamserviceaccount-karpenter-karpenter"
+    2024-01-05 17:19:49 [ℹ]  waiting for CloudFormation stack "eksctl-do-eks-yaml-karpenter-addon-iamserviceaccount-karpenter-karpenter"
+    2024-01-05 17:20:19 [ℹ]  waiting for CloudFormation stack "eksctl-do-eks-yaml-karpenter-addon-iamserviceaccount-karpenter-karpenter"
+
+    CLUSTER_ENDPOINT=https://13978949D1AA818CB963F2FFF0DD1CFA.gr7.us-west-2.eks.amazonaws.com
+    KARPENTER_IAM_ROLE_ARN=arn:aws:iam::159553542841:role/do-eks-yaml-karpenter-karpenter
+
+
+    Enabling spot ...
+
+    It is ok to see an error here if the service linked role already exists
+
+    An error occurred (InvalidInput) when calling the CreateServiceLinkedRole operation: Service role name AWSServiceRoleForEC2Spot has been taken in this account, please try a different suffix.
+
+
+    It is ok to see an error here if helm is not logged in to public.ecr.aws
+    Error: not logged in
+
+    Installing Karpenter using helm ...
+    Release "karpenter" does not exist. Installing it now.
+    Pulled: public.ecr.aws/karpenter/karpenter:v0.32.4
+    Digest: sha256:b733abfbaf897937e775adb55e7906dbd0b7abc64a6c9e37479f09b376edc7f7
+    NAME: karpenter
+    LAST DEPLOYED: Fri Jan  5 17:20:22 2024
+    NAMESPACE: karpenter
+    STATUS: deployed
+    REVISION: 1
+    TEST SUITE: None
+    NAME                         READY   STATUS    RESTARTS   AGE
+    karpenter-789c779866-rdcp4   1/1     Running   0          12s
+    karpenter-789c779866-skwvz   1/1     Running   0          12s
+    #
+
+</details>
+<br/>
+
+## 1.9. Verify cluster 
 
 ```bash
 kubectl get pods -A
