@@ -46,6 +46,7 @@ spec:
                   nvidia.com/gpu: $GPU_PER_WORKER
                   vpc.amazonaws.com/efa: $EFA_PER_WORKER
               env:
+              # for P5 FI_* should be commented out
               - name: LOGLEVEL
                 value: "DEBUG"
               - name: FI_PROVIDER
@@ -60,12 +61,10 @@ spec:
                 value: "1"
               - name: NCCL_DEBUG
                 value: "INFO"
-              #- name: NCCL_SOCKET_IFNAME
-              #  value: "ens"
               - name: NCCL_ASYNC_ERROR_HANDLING
                 value: "1"
-              - name: NCCL_IGNORE_DISABLED_P2P
-                value: "1"
+              #- name: NCCL_IGNORE_DISABLED_P2P
+              #  value: "1"
               command:
                 - bash
                 - -c
