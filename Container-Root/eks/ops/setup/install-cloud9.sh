@@ -20,7 +20,30 @@ if [ ! -f /usr/bin/node ]; then
 fi
 node --version
 
-# Install Cloud9
-curl -L https://raw.githubusercontent.com/c9/install/master/install.sh | bash
+# Install Cloud9 in /opt/c9
+curl -o /tmp/install.sh -L https://raw.githubusercontent.com/c9/install/master/install.sh
+chmod +x /tmp/install.sh
+pushd /tmp
+./install.sh -d /opt/c9
+popd
+
+# Install tmux script
+sudo ln -s -f /opt/c9/bin/tmux /usr/bin/tmux
+
+cat << EOF >> /tmp/cast
+#!/bin/bash
+
+panes=\$(tmux list-panes -a -F '#{session_name}:#{window_index}.#{pane_index}')
+
+for p in \$panes; do 
+    #echo Sending command to pane: \$p;
+    tmux send-keys -t \$p "\$1 \$2 \$3 \$4 \$5 \$6 \$7 \$8 \$8 \$9" Enter;
+done
+
+EOF
+
+chmod +x /tmp/cast
+sudo mv /tmp/cast /usr/bin/cast
+sudo ln -s -f /usr/bin/cast /usr/bin/c
 
 
