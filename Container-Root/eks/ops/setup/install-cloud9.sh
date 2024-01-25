@@ -36,7 +36,7 @@ if [ ! -d $C9_HOME ]; then
 fi
 
 if [ -d $C9_HOME ]; then 
-	sudo ln -s -f /opt/c9/bin/tmux /usr/bin/tmux
+	sudo ln -s -f ${C9_HOME}/bin/tmux /usr/bin/tmux
 fi
 
 cat << EOF >> /tmp/cast
