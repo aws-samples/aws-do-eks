@@ -94,9 +94,9 @@ RUN mkdir -p /workspace/
 
 WORKDIR /workspace
 
-RUN git clone -b flop_counter https://github.com/facebookresearch/llama-recipes.git
+#RUN git clone -b flop_counter https://github.com/facebookresearch/llama-recipes.git
 #RUN git clone -b flop_counter_gc https://github.com/facebookresearch/llama-recipes.git
-#RUN git clone https://github.com/facebookresearch/llama-recipes.git
+RUN git clone https://github.com/facebookresearch/llama-recipes.git
 
 WORKDIR /workspace/llama-recipes
 
