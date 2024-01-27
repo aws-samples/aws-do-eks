@@ -1,8 +1,12 @@
 # Prometheus - Grafana Deployment
 
-This deployment uses Helm charts to deploy Prometheus and Grafana to your cluster.
+## Prerequisites
+
+Prometheus and Grafana use Kubernetes persistent volumes to store data. A default storage class is required. The default storage class in EKS is typically gp2. This requires the EBS CSI driver to be deployed to the cluster. You can deploy the driver either via the scripts in /eks/deployment/csi/ebs, or by depoying the EBS CSI managed add-on from the EKS console.
 
 ## Deploy
+
+This deployment uses Helm charts to deploy Prometheus and Grafana to your cluster.
 
 To deploy Prometheus and Grafana, simply run
 

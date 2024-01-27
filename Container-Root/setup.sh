@@ -57,3 +57,6 @@ python -m pip install torchx[kubernetes]
 # Install kubeps1 and configure bashrc aliases 
 ./eks/ops/setup/install-kubeps1.sh
 
+# Install k9s
+./eks/ops/setup/install-k9s.sh
+
