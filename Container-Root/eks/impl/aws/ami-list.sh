@@ -5,7 +5,7 @@
 # SPDX-License-Identifier: MIT-0                                     #
 ######################################################################
 
-# Ref: https://docs.aws.amazon.com/eks/latest/userguide/retrieve-ami-id.htm
+# Ref: https://docs.aws.amazon.com/eks/latest/userguide/retrieve-ami-id.html
 
 source ./nodegroup.conf
 
