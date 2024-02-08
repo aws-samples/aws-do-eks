@@ -1,12 +1,10 @@
-apiVersion: kubeflow.org/v2beta1
+apiVersion: kubeflow.org/v1alpha2
 kind: MPIJob
 metadata:
-  name: test-nccl-efa
+  name: ${MPI_JOB_NAME}
 spec:
-  runPolicy:
-    cleanPodPolicy: Running
-    backoffLimit: 20
-  slotsPerWorker: 8
+  slotsPerWorker: 1
+  cleanPodPolicy: Running
   mpiReplicaSpecs:
     Launcher:
       replicas: 1
@@ -15,9 +13,8 @@ spec:
           imagePullPolicy: IfNotPresent
           restartPolicy: OnFailure
           containers:
-          #- image: public.ecr.aws/w6p6i9i7/aws-efa-nccl-rdma:base-cudnn8-cuda11-ubuntu18.04
-          - image: <account>.dkr.ecr.us-west-2.amazonaws.com/cuda-efa-nccl-tests:ubuntu22.04
-            name: test-nccl-efa-launcher
+          - image: ${IMAGE_URI}
+            name: ${MPI_JOB_NAME}-launcher
             env:
              - name: LD_LIBRARY_PATH
                value: /opt/amazon/openmpi/lib:/opt/nccl/build/lib:/opt/amazon/efa/lib:/opt/aws-ofi-nccl/install/lib:/usr/local/nvidia/lib:$LD_LIBRARY_PATH
@@ -34,7 +31,7 @@ spec:
             - --allow-run-as-root
             - --tag-output
             - -np
-            - "8"
+            - "2"
             - -bind-to
             - none
             - -map-by
@@ -50,54 +47,38 @@ spec:
             - -x
             - NCCL_DEBUG=INFO
             - -x
-            - NCCL_NVLS_ENABLE=1
+            - NCCL_ALGO=${NCCL_ALGO}
+            - -x
+            - FI_EFA_USE_DEVICE_RDMA=${FI_EFA_USE_DEVICE_RDMA}
+            - -x
+            - RDMAV_FORK_SAFE=${RDMAV_FORK_SAFE}
             - --mca
             - pml
             - ^cm
             - --mca
             - pml_rsh_agent=ssh
             - --oversubscribe
-            - /opt/nccl-tests/build/all_reduce_perf
-            - -b
-            - "1"
-            - -e
-            - 2G
-            - -f
-            - "2"
+            - /opt/amazon/efa/bin/fi_info
+            - -p
+            - "efa"
             - -t
-            - "1"
-            - -g
-            - "1"
-            - -c
-            - "1"
-            - -n
-            - "100"
+            - "FI_EP_RDM"
     Worker:
-      replicas: 1
+      replicas: ${NUM_WORKERS}
       template:
         spec:
-          nodeSelector:
-            node.kubernetes.io/instance-type: "p5.48xlarge"
           imagePullPolicy: IfNotPresent
           containers:
-          #- image: public.ecr.aws/w6p6i9i7/aws-efa-nccl-rdma:base-cudnn8-cuda11-ubuntu18.04
-          - image: <account>.dkr.ecr.us-west-2.amazonaws.com/cuda-efa-nccl-tests:ubuntu22.04
-            name: test-nccl-efa-worker
-            volumeMounts:
-            - name: shmem
-              mountPath: /dev/shm
+          - image: ${IMAGE_URI}
+            name: ${MPI_JOB_NAME}-worker
             resources:
               limits:
-                nvidia.com/gpu: 8
-                hugepages-2Mi: 5120Mi
-                vpc.amazonaws.com/efa: 32
-                memory: 8000Mi
+                nvidia.com/gpu: ${GPU_PER_WORKER}
+                #hugepages-2Mi: ${HUGEPAGES_2MI}
+                vpc.amazonaws.com/efa: ${EFA_PER_WORKER}
+                #memory: ${MEMORY}
               requests:
-                nvidia.com/gpu: 8
-                hugepages-2Mi: 5120Mi
-                vpc.amazonaws.com/efa: 32
-                memory: 8000Mi
-          volumes:
-          - name: shmem
-            hostPath:
-              path: /dev/shm
+                nvidia.com/gpu: ${GPU_PER_WORKER}
+                #hugepages-2Mi: ${HUGEPAGES_2MI}
+                vpc.amazonaws.com/efa: ${EFA_PER_WORKER}
+                #memory: ${MEMORY}
