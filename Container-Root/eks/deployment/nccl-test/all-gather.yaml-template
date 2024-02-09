@@ -72,7 +72,7 @@ spec:
             - --mca
             - plm_rsh_agent
             - ssh
-            - /opt/nccl-tests/build/all_reduce_perf
+            - /opt/nccl-tests/build/all_gather_perf
             - -b
             - "1"
             - -e
@@ -87,8 +87,8 @@ spec:
             - "1"
             - -n
             - "100"
-            - -o
-            - "all"
+            #- -o
+            #- "all"
     Worker:
       replicas: ${NUM_WORKERS}
       template:
