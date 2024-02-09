@@ -6,6 +6,7 @@ ARG no_proxy
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV AWS_PAGER=""
+ENV VERBOSE="true"
 
 ADD Container-Root /
 ADD wd/conf/ /eks/conf/
