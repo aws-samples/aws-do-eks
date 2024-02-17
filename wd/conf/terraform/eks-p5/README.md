@@ -40,20 +40,40 @@ Input settings can be adjusted in the [variables.tf](variables.tf) file.
 
 When the `terraform apply` completes successfully, the EKS cluster id, and the command to connect to the cluster are provided as outputs as described in [outputs.tf](outputs.tf).
 
-# Example Walkthrough
+# Example Walkthrough - create a cluster with P5 nodegroup and EFA networking enabled.
 
 ## 1. Clone Repository
 
 ```bash
 git clone https://github.com/aws-samples/aws-do-eks
-cd aws-do-eks/wd/conf/terraform/eks-gpu
 ```
 
-## 2. Configure Terraform Plan
+## 2. Build and run `aws-do-eks` container (Optional)
 
-Edit [variables.tf](variables.tf) as needed. If you are using an On-deman capacity reservation, specify the capacity reservation id in [variables.tf](variables.tf) and uncomment the `capacity_reservation_specification` block in [main.tf](main.tf).
+If you already have the `aws` CLI, `terraform`, and `kubectl` installed in your environment and prefer to run from your native shell, you may skip this step.
 
-## 3. Initialize Terraform Plan
+The commands below, build a container that has all necessary tools so you may run the rest of the steps from a container shell, without having to install anything.
+
+```bash
+./build.sh
+./run.sh
+./exec.sh
+```
+
+## 3. Configure Terraform Plan
+
+If running in the `aws-do-eks` container shell, the project folder is available under `/aws-do-eks`.
+```bash
+cd /aws-do-eks/wd/conf/terraform/eks-p5
+```
+Otherwise, if you are running in your host-native shell, navigate to the `eks-p5` folder as follows:
+```bash
+cd aws-do-eks/wd/conf/terraform/eks-p5
+```
+
+Edit [variables.tf](variables.tf) as needed. If you are not using an on-demand capacity reservation, comment out the `capacity_reservation_specification` block in [main.tf](main.tf).
+
+## 4. Initialize Terraform Plan
 
 ```bash
 terraform init
@@ -124,7 +144,7 @@ commands will detect it and remind you to do so if necessary.
 
 </details>
 
-## 4. Create Terraform Plan
+## 5. Create Terraform Plan
 
 ```bash
 terraform plan -out tfplan
@@ -159,7 +179,7 @@ To perform exactly these actions, run the following command to apply:
 ```
 </details>
 
-## 5. Apply Terraform Plan
+## 6. Apply Terraform Plan
 
 ```bash
 terraform apply tfplan
@@ -194,7 +214,7 @@ configure_kubectl = "aws eks update-kubeconfig --region us-west-2 --name do-eks-
 
 It takes about 15 minutes to create the cluster.
 
-## 6. Connect to EKS
+## 7. Connect to EKS
 
 Copy the value of the `configure_kubectl` output and execute it in your shell to connect to your EKS cluster.
 
@@ -225,7 +245,7 @@ You should see nodes listed (in this example `p5.48xlarge`) nodes in the list.
 This verifies that you are connected to your EKS cluster and it is configured with EFA nodes.
 
 
-## 9. Cleanup
+## 8. Cleanup
 
 ```bash
 terraform destroy

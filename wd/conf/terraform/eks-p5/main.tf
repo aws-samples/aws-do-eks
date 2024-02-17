@@ -467,9 +467,10 @@ module "eks" {
 
       ]
 
-      #capacity_reservation_specification = {
-      #  capacity_reservation_id = var.odcr_id
-      #}
+      # Comment out this block to use on-demand instances without ODCR
+      capacity_reservation_specification = {
+        capacity_reservation_id = var.odcr_id
+      }
 
       #post_bootstrap_user_data = <<-EOT
       #  # Install EFA
