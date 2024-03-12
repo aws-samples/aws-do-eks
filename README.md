@@ -239,6 +239,10 @@ See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more inform
 
 This project is licensed under the MIT-0 License. See the [LICENSE](LICENSE) file.
 
+## Disclaimer
+
+This sample code should not be used in production accounts, on production workloads, or on production or other critical data. You are responsible for testing, securing, and optimizing the sample code as appropriate for production-grade use based on your specific quality control practice and standards.
+
 ## References
 
 * [Docker](https://docker.com)
