@@ -17,13 +17,14 @@ RUN mkdir -p /workspace/
 WORKDIR /workspace
 
 RUN git clone https://github.com/lessw2020/fsdp_llm.git
-#RUN git clone https://github.com/kanwaljitkhurmi/fsdp_llm_copy
 
+# Install Triton nightly or stable
 RUN pip install -U --index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/Triton-Nightly/pypi/simple/ triton-nightly
 #RUN pip install -U triton
 
 WORKDIR /workspace/fsdp_llm
 
+# Configure nanogpt
 RUN export e="s/str = \"124M\"/str = \"${MODEL_NAME}\"/g"; echo vvvvvvvvvvv; echo $e;  sed -i config/nanogpt_config.py -e "$e"
 #RUN sed -i config/nanogpt_config.py -e "s/use_flash22_fp16: bool = False/use_flash22_fp16: bool = True/g"
 #RUN sed -i config/nanogpt_config.py -e "s/use_flash22_bf16: bool = False/use_flash22_bf16: bool = False/g"
