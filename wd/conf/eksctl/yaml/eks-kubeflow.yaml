@@ -4,11 +4,12 @@ kind: ClusterConfig
 metadata:
   name: do-eks-yaml-kubeflow
   region: us-west-2
-  version: "1.25"
+  version: "1.28"
 iam:
   withOIDC: true
 managedNodeGroups:
 - name: nodegroup
+  instanceType: m5.xlarge
   desiredCapacity: 6
   iam:
     attachPolicyARNs:
