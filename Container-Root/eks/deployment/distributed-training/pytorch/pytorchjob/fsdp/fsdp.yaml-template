@@ -76,6 +76,8 @@ spec:
                 value: "expandable_segments:True"
               - name: NCCL_DEBUG
                 value: "INFO"
+              - name: NCCL_SOCKET_IFNAME
+                value: "^lo"
               - name: TORCH_NCCL_ASYNC_ERROR_HANDLING
                 value: "1"
               #- name: TORCH_DIST_INIT_BARRIER
