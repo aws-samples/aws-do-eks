@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: efaburn
+spec:
+  selector:
+    matchLabels:
+      name: efaburn
+  template:
+    metadata:
+      labels:
+        name: efaburn
+    spec:
+      # Uncomment to limit daemonset to specific instance types
+      #affinity:
+      #  nodeAffinity:
+      #    # EFA supported instances: https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/efa.html#efa-instance-types
+      #    requiredDuringSchedulingIgnoredDuringExecution:
+      #      nodeSelectorTerms:
+      #        - matchExpressions:
+      #            - key: "node.kubernetes.io/instance-type"
+      #              operator: In
+      #              values:
+      #                - c5n.18xlarge
+      #                - c5n.metal
+      #                - g4dn.metal
+      #                - c5n.9xlarge
+      #                - i3en.24xlarge
+      #                - i3en.metal
+      #                - inf1.24xlarge
+      #                - m5dn.24xlarge
+      #                - m5n.24xlarge
+      #                - p3dn.24xlarge
+      #                - r5dn.24xlarge
+      #                - r5n.24xlarge
+      #                - p4d.24xlarge
+      #                - hpc6a.48xlarge
+      #                - dl1.24xlarge
+      #                - g5.48xlarge
+      #                - p4de.24xlarge
+      #                - trn1.32xlarge
+      #                - trn1n.32xlarge
+      #                - p5.48xlarge
+      containers:
+      - name: efaburn
+        image: "$REGISTRY$IMAGE$TAG"
+        imagePullPolicy: Always
+        resources:
+          requests:
+            vpc.amazonaws.com/efa: $NUM_EFA
+            hugepages-2Mi: 5120Mi
+            memory: 8000Mi
+          limits:
+            vpc.amazonaws.com/efa: $NUM_EFA
+            hugepages-2Mi: 5120Mi
+            memory: 8000Mi
+

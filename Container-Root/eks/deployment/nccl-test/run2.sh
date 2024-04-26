@@ -1,6 +1,6 @@
 #!/bin/bash
 
-. ./env
+. .env
 
 TEST_NAME=$1
 if [ "$1" == "" ]; then
