@@ -9,7 +9,6 @@ ENV AWS_PAGER=""
 ENV VERBOSE="true"
 
 ADD Container-Root /
-RUN mkdir -p /eks/conf
 ADD wd/conf/ /eks/conf/
 
 RUN export http_proxy=$http_proxy; export https_proxy=$https_proxy; export no_proxy=$no_proxy; /setup.sh; rm -f /setup.sh
