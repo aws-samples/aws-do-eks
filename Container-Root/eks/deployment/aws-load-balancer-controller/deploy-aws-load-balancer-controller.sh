@@ -3,7 +3,9 @@
 echo ""
 echo "Deploying AWS Load Balancer Controller to $CLUSTER_NAME ..."
 
-source ../../eks.conf
+pushd ../..
+CLUSTER_NAME=$(./eks-name.sh)
+popd
 
 # Prerequisites
 pushd ..
