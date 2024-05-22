@@ -1,8 +1,8 @@
 apiVersion: autoscaling/v2
 kind: HorizontalPodAutoscaler
 metadata:
-  name: ${APP_NAME}
-  namespace: ${APP_NAME}
+  name: stable-diffusion
+  namespace: stable-diffusion
 spec:
   behavior:
     scaleDown:
@@ -24,7 +24,7 @@ spec:
   scaleTargetRef:
     apiVersion: apps/v1
     kind: Deployment
-    name: ${APP_NAME}
+    name: stable-diffusion
   minReplicas: 1
   maxReplicas: 20
   metrics:

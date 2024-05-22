@@ -19,3 +19,5 @@ cat ./ingress.yaml-template | envsubst > ./ingress.yaml
 
 kubectl -n stable-diffusion apply -f ./ingress.yaml
 
+kubectl -n stable-diffusion apply -f ./hpa.yaml
+
