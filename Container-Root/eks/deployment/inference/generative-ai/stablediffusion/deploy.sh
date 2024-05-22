@@ -15,3 +15,7 @@ kubectl -n stable-diffusion delete statefulset stable-diffusion
 
 kubectl -n stable-diffusion apply -f ./deployment.yaml
 
+cat ./ingress.yaml-template | envsubst > ./ingress.yaml
+
+kubectl -n stable-diffusion apply -f ./ingress.yaml
+

@@ -1,5 +1,7 @@
 #!/bin/bash
 
+kubectl -n stable-diffusion delete -f ./ingress.yaml
+
 kubectl -n stable-diffusion delete -f ./deployment.yaml
 
 sleep 2

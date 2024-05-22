@@ -8,6 +8,7 @@ metadata:
     alb.ingress.kubernetes.io/scheme: internet-facing
     alb.ingress.kubernetes.io/target-type: ip
     nginx.ingress.kubernetes.io/rewrite-target: /
+    alb.ingress.kubernetes.io/security-groups: ${KUBERNETES_INGRESS_SG}
 spec:
   ingressClassName: alb
   rules:
