@@ -46,21 +46,23 @@ spec:
       dnsPolicy: ClusterFirst
       initContainers:
       - command:
-        - /bin/sh
+        - /bin/bash
         args:
         - -c
-        - "if [ \"$(md5sum /models/model.ckpt)\" == 'c01059060130b8242849d86e97212c84  /models/model.ckpt' ]; then echo model.ckpt already exists; else wget -nc https://huggingface.co/CompVis/stable-diffusion-v-1-4-original/resolve/main/sd-v1-4.ckpt -O /models/model.ckpt; fi; if [ -f /models/GFPGANv1.3.pth ]; then echo GFPGANv1.3.pth already exists; else wget -nc https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/GFPGANv1.3.pth -O /models/GFPGANv1.3.pth; fi; if [ -f /models/RealESRGAN_x4plus.pth ]; then echo RealESRGAN_x4plus.pth already exists; else wget -nc https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth -O /models/RealESRGAN_x4plus.pth; fi; if [ -f /models/RealESRGAN_x4plus_anime_6B.pth ]; then echo RealESRGAN_x4plus_anime_6B.pth already exists; else wget -nc https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.2.4/RealESRGAN_x4plus_anime_6B.pth -O /models/RealESRGAN_x4plus_anime_6B.pth; fi;"
-        image: busybox:1.35
+        - "if [ \"$(md5sum /models/model.ckpt)\" == 'c01059060130b8242849d86e97212c84  /models/model.ckpt' ]; then echo model.ckpt already exists; else wget -nc --no-check-certificate https://huggingface.co/CompVis/stable-diffusion-v-1-4-original/resolve/main/sd-v1-4.ckpt -O /models/model.ckpt; fi; if [ -f /models/GFPGANv1.3.pth ]; then echo GFPGANv1.3.pth already exists; else wget -nc --no-check-certificate https://github.com/TencentARC/GFPGAN/releases/download/v1.3.0/GFPGANv1.3.pth -O /models/GFPGANv1.3.pth; fi; if [ -f /models/RealESRGAN_x4plus.pth ]; then echo RealESRGAN_x4plus.pth already exists; else wget -nc --no-check-certificate https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth -O /models/RealESRGAN_x4plus.pth; fi; if [ -f /models/RealESRGAN_x4plus_anime_6B.pth ]; then echo RealESRGAN_x4plus_anime_6B.pth already exists; else wget -nc --no-check-certificate https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.2.4/RealESRGAN_x4plus_anime_6B.pth -O /models/RealESRGAN_x4plus_anime_6B.pth; fi;"
+        image: amithkk/stable-diffusion:latest
         imagePullPolicy: IfNotPresent
         name: ensure-stable-models
-        resources: {}
+        resources: 
+          requests:
+            nvidia.com/gpu: 1
+          limits:
+            nvidia.com/gpu: 1
         terminationMessagePath: /dev/termination-log
         terminationMessagePolicy: File
         volumeMounts:
         - mountPath: /models
           name: stable-diffusion-model-store
-      nodeSelector:
-        nvidia.com/gpu.present: "true"
       restartPolicy: Always
       schedulerName: default-scheduler
       securityContext: {}

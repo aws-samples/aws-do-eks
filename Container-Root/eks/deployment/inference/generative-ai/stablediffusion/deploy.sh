@@ -1,5 +1,7 @@
 #!/bin/bash
 
+source .env
+
 # Reference: https://github.com/amithkk/stable-diffusion-k8s
 
 helm repo add amithkk-sd https://amithkk.github.io/stable-diffusion-k8s
