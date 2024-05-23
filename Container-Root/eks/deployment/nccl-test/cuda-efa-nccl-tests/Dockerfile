@@ -106,3 +106,7 @@ ENV NCCL_PROTO simple
 RUN rm -rf /var/lib/apt/lists/*
 ENV LD_PRELOAD /opt/nccl/build/lib/libnccl.so
 
+ADD Container-Root /
+
+RUN /setup-sbom-utils.sh
+

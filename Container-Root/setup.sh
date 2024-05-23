@@ -60,3 +60,6 @@ python -m pip install torchx[kubernetes]
 # Install k9s
 ./eks/ops/setup/install-k9s.sh
 
+# Install sbom utilities
+./eks/ops/setup/install-sbom-utils.sh
+
