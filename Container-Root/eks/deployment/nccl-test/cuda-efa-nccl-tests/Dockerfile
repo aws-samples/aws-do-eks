@@ -109,4 +109,3 @@ ENV LD_PRELOAD /opt/nccl/build/lib/libnccl.so
 ADD Container-Root /
 
 RUN /setup-sbom-utils.sh
-
