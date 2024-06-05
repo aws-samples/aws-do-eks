@@ -44,6 +44,7 @@ data "aws_ami" "eks_gpu_node" {
   filter {
     name   = "name"
     values = ["amazon-eks-gpu-node-${local.cluster_version}-*"]
+    #values = ["amazon-eks-gpu-node-1.29-v20240329"]
   }
 }
 
@@ -53,7 +54,7 @@ locals {
   name            = var.cluster_name
   cluster_version = var.cluster_version
 
-  vpc_cidr = "10.11.0.0/16"
+  vpc_cidr = "10.10.0.0/16"
   azs      = slice(data.aws_availability_zones.available.names, 0, 2)
 
   tags = {
@@ -64,14 +65,14 @@ locals {
 
 # Resources
 
-resource "kubectl_manifest" "ssm_agent_daemonset" {
-  yaml_body = <<YAML
-${data.http.ssm_agent_daemonset_url.response_body}
-YAML
-}
+#resource "kubectl_manifest" "ssm_agent_daemonset" {
+#  yaml_body = <<YAML
+#${data.http.ssm_agent_daemonset_url.response_body}
+#YAML
+#}
 
-resource "helm_release" "k8s_device_plugin" {
-  name       = "k8s-device-plugin"
+resource "helm_release" "nvidia_device_plugin" {
+  name       = "nvidia-device-plugin"
   repository = "https://nvidia.github.io/k8s-device-plugin"
   chart      = "nvidia-device-plugin"
   version    = "0.14.0"
@@ -111,15 +112,28 @@ module "eks" {
   }
 
   eks_managed_node_groups = {
-    sys = {
-      instance_types = ["m5.large"]
+    cpu = {
+      instance_types = ["c6i.8xlarge"]
       capacity_type  = "ON_DEMAND"
       min_size       = 1
-      max_size       = 5
+      max_size       = 10
       desired_size   = 1
-    }
+      block_device_mappings = {
+        xvda = {
+          device_name = "/dev/xvda"
+          ebs = {
+            volume_size           = 100
+            volume_type           = "gp3"
+            iops                  = 3000
+            throughput            = 150
+            encrypted             = true
+            delete_on_termination = true
+          }
+        }
+      }
+    },
     gpu = {
-      instance_types = ["g4dn.8xlarge"]
+      instance_types = ["g5.12xlarge"]
       capacity_type  = "ON_DEMAND"
       #capacity_type  = "SPOT"
       min_size       = 0
@@ -132,7 +146,7 @@ module "eks" {
         xvda = {
           device_name = "/dev/xvda"
           ebs = {
-            volume_size           = 40
+            volume_size           = 100
             volume_type           = "gp3"
             iops                  = 3000
             throughput            = 150
@@ -141,6 +155,38 @@ module "eks" {
           }
         }
       }
+
+      pre_bootstrap_user_data = <<-EOT
+        # Mount instance store volumes in RAID-0 for kubelet and containerd
+        # https://github.com/awslabs/amazon-eks-ami/blob/master/doc/USER_GUIDE.md#raid-0-for-kubelet-and-containerd-raid0
+        /bin/setup-local-disks raid0
+      EOT
+
+      enable_efa_support = false
+
+      labels = {
+        "vpc.amazonaws.com/efa.present" = "false"
+        "nvidia.com/gpu.present"        = "true"
+      }
+
+      taints = {
+        # Ensure only GPU workloads are scheduled on this node group
+        gpu = {
+          key    = "nvidia.com/gpu"
+          value  = "true"
+          effect = "NO_SCHEDULE"
+        }
+      }
+
+      #post_bootstrap_user_data = <<-EOT
+        # Install EFA
+        #curl -O https://efa-installer.amazonaws.com/aws-efa-installer-latest.tar.gz
+        #tar -xf aws-efa-installer-latest.tar.gz && cd aws-efa-installer
+        #./efa_installer.sh -y
+        #fi_info -p efa -t FI_EP_RDM
+        # Disable ptrace
+        #sysctl -w kernel.yama.ptrace_scope=0
+      #EOT
     }
   }
 
@@ -169,26 +215,6 @@ module "eks" {
 
   tags = local.tags
 }
-
-# Blueprints modules
-
-#module "eks_blueprints_kubernetes_addons" {
-#  source = "https://github.com/aws-ia/terraform-aws-eks-blueprints/tree/main/modules/kubernetes-addons"
-#
-#  eks_cluster_id       = module.eks.cluster_name
-#  eks_cluster_endpoint = module.eks.cluster_endpoint
-#  eks_oidc_provider    = module.eks.oidc_provider
-#  eks_cluster_version  = module.eks.cluster_version
-#
-#  # Wait on the node group(s) before provisioning addons
-#  data_plane_wait_arn = join(",", [for group in module.eks.eks_managed_node_groups : group.node_group_arn])
-#
-#  enable_amazon_eks_aws_ebs_csi_driver = false
-#  enable_aws_efs_csi_driver            = true
-#  enable_aws_fsx_csi_driver            = true
-#
-#  tags = local.tags
-#}
 
 # Supporting modules
 

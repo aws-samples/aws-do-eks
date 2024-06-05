@@ -1,4 +1,7 @@
 #!/bin/bash
 
-echo "$(dirname ${ENV_HOME}${CONF})"
+
+p=$(dirname ${ENV_HOME}${CONF})
+
+echo ${p##*/}
 
