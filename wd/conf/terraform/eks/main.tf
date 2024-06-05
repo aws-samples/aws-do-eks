@@ -74,7 +74,7 @@ resource "helm_release" "k8s_device_plugin" {
   name       = "k8s-device-plugin"
   repository = "https://nvidia.github.io/k8s-device-plugin"
   chart      = "nvidia-device-plugin"
-  version    = "0.14.0"
+  version    = "0.15.0"
   namespace  = "kube-system"
 }
 
@@ -146,6 +146,13 @@ module "eks" {
 
   create_aws_auth_configmap = false
   manage_aws_auth_configmap = true
+
+  #enable_efa_support = false
+
+  labels = {
+    "vpc.amazonaws.com/efa.present" = "false"
+    "nvidia.com/gpu.present"        = "true"
+  }
 
   # Extend node-to-node security group rules
   node_security_group_additional_rules = {
