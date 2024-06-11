@@ -64,6 +64,7 @@
 							"sudo su ec2-user bash -c '/home/ec2-user/aws-do-eks/Container-Root/eks/deployment/neuron-device-driver/labels-add.sh | sudo tee -a /tmp/bootstrap.log' \n",
 							"sudo su ec2-user bash -c 'kubectl apply -f /home/ec2-user/aws-do-eks/Container-Root/eks/deployment/neuron-device-driver/neuron2-device-driver-daemonset.yaml | sudo tee -a /tmp/bootstrap.log' \n",
 							"sudo su ec2-user bash -c '/home/ec2-user/aws-do-eks/Container-Root/eks/deployment/neuron-device-plugin/deploy.sh | sudo tee -a /tmp/bootstrap.log' \n",
+							"sudo su ec2-user bash -c '/home/ec2-user/aws-do-eks/Container-Root/eks/ops/setup/install-cloudwatch-addon.sh | sudo tee -a /tmp/bootstrap.log' \n",
 							"date | sudo tee -a /tmp/bootstrap.log \n",
 							"echo 'Done executing userdata script.' | sudo tee -a /tmp/bootstrap.log \n"
 						]]
