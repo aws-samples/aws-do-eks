@@ -3,7 +3,7 @@ kind: ClusterConfig
 
 metadata:
   name: do-eks-yaml-gpu-fsdp
-  version: "1.25"
+  version: "1.28"
   region: us-west-2
 
 availabilityZones:
@@ -15,7 +15,7 @@ iam:
 
 addons:
   - name: vpc-cni
-    version: v1.12.6-eksbuild.2
+    version: v1.15.3-eksbuild.1
 
 managedNodeGroups:
 

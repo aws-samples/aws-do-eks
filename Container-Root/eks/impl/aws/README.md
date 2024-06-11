@@ -88,4 +88,5 @@ nv
 
 This will display the nodes in your cluster. Once the nodes are initialized they will join the cluster and enter `Ready` status. In the meantime you can observe the nodes through the EC2 console.
 
+NOTE: If EFA is enabled in the node group, edit the security group that the nodes are attached to and add a rule to allow all outgoing traffic originating from the same security group. This is required for EFA to work.
 

@@ -13,7 +13,7 @@ fi
 # Install kubectl
 # Reference: https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/
 # curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-URL=https://dl.k8s.io/release/v1.28.2/bin/linux/${GOARCH}/kubectl
+URL=https://dl.k8s.io/release/v1.30.0/bin/linux/${GOARCH}/kubectl
 echo "$URL"
 curl -Lo kubectl $URL
 chmod +x ./kubectl

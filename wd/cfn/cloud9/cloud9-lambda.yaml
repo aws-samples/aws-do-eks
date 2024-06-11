@@ -1,0 +1,228 @@
+Description: Provides a Cloud9 instance, resizes the instance volume size using a Lambda function
+
+Parameters:
+  LabName:
+    Type: String
+    AllowedPattern: ".+"
+    Default: "Workshop"
+  InstanceType:
+    Type: String
+    AllowedPattern: ".+"
+    Default: "c5.4xlarge"
+  InstanceOwner:
+    Type: String
+    Description: Assumed role username of Cloud9 owner, in the format 'Role/username'. Leave blank to assign leave the instance assigned to the role running the CloudFormation template.
+    Default: ""
+  VolSizeGB:
+    Type: String
+    AllowedPattern: "[0-9]+"
+    Default: "100"
+Conditions:
+  AssignCloud9Owner: !Not [!Equals [!Ref InstanceOwner, ""]]
+Resources:
+  AWSCloud9SSMAccessRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - cloud9.amazonaws.com
+              - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      Description: 'Service linked role for AWS Cloud9'
+      Path: '/service-role/'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AdministratorAccess
+      RoleName: 'AWSCloud9SSMAccessRole'
+
+  AWSCloud9SSMInstanceProfile:
+    Type: "AWS::IAM::InstanceProfile"
+    Properties:
+      InstanceProfileName: AWSCloud9SSMInstanceProfile
+      Path: "/cloud9/"
+      Roles:
+        - !Ref AWSCloud9SSMAccessRole
+
+  Cloud9Lab:
+    DependsOn:
+      - AWSCloud9SSMInstanceProfile
+    Type: AWS::Cloud9::EnvironmentEC2
+    Properties:
+      AutomaticStopTimeMinutes: 1440
+      ConnectionType: CONNECT_SSM
+      ImageId: ubuntu-22.04-x86_64
+      #ImageId: amazonlinux-2-x86_64
+      InstanceType: !Ref InstanceType
+      Name: !Ref LabName
+      OwnerArn:
+        Fn::If:
+          - AssignCloud9Owner
+          - !Sub arn:${AWS::Partition}:iam::${AWS::AccountId}:assumed-role/${InstanceOwner}
+          - Ref: AWS::NoValue
+
+  Cloud9Role:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ec2.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AdministratorAccess
+      MaxSessionDuration: 28800
+      Path: /
+      RoleName: 'workshop-admin'
+
+  Cloud9InstanceProfile:
+    Type: 'AWS::IAM::InstanceProfile'
+    Properties:
+      Path: /
+      Roles:
+        - !Ref Cloud9Role
+
+  LambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonEC2FullAccess
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/CloudWatchLogsFullAccess
+        - arn:aws:iam::aws:policy/IAMFullAccess
+      MaxSessionDuration: 3600
+      Path: /
+      RoleName: 'hpcworkshop-lambda'
+
+
+  LambdaCloud9:
+    DependsOn: Cloud9Lab
+    Type: AWS::Lambda::Function
+    Properties:
+      Environment:
+        Variables:
+          LAB_NAME: !Ref LabName
+          VOL_SIZE_GB: !Ref VolSizeGB
+      Architectures:
+        - 'x86_64'
+      Code:
+        ZipFile: |
+          #!/usr/bin/env python3
+
+          import boto3
+          import cfnresponse
+          import os
+          import json
+          import time
+
+          client = boto3.Session().client('ec2')
+
+          def lambda_handler(event, context):
+              responseValue = event['ResourceProperties']['ProfileArn']
+              responseData = {}
+              responseData['Data'] = responseValue
+              cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData, "CustomResourcePhysicalID")
+              main(responseValue)
+              return {'statusCode': 200, 'body': json.dumps('Cloud9')}
+
+          def get_modification_state(volume_id):
+              resp = client.describe_volumes_modifications(
+                  VolumeIds=[
+                      volume_id
+                  ]
+              )
+              return resp['VolumesModifications'][0]['ModificationState']
+
+          def main(instance_profile_arn):
+              response = client.describe_instances(Filters=[
+                  {
+                      'Name': 'tag:Name',
+                      'Values': [
+                          'aws-cloud9-' + os.environ.get('LAB_NAME','Workshop') + '-*',
+                      ]
+                  },
+                  {
+                  'Name': 'instance-state-name',
+                  'Values': ["pending", "running"]
+                  }
+              ])
+
+              ec2 = boto3.resource('ec2')
+
+              instance_id = response['Reservations'][0]['Instances'][0]['InstanceId']
+              volume_id = response['Reservations'][0]['Instances'][0]['BlockDeviceMappings'][0]['Ebs']['VolumeId']
+              IamInstanceProfile = {'Name': instance_profile_arn}
+              instance = ec2.Instance(instance_id)
+              instance.wait_until_running()
+              response = client.describe_iam_instance_profile_associations(Filters=[
+                  {
+                      'Name': 'instance-id',
+                      'Values': [
+                          instance_id,
+                      ]
+                  },
+              ])
+              if len(response['IamInstanceProfileAssociations']) > 0:
+                  instance_profile_association_id = response[
+                      'IamInstanceProfileAssociations'][0]['AssociationId']
+                  response = client.replace_iam_instance_profile_association(
+                      IamInstanceProfile=IamInstanceProfile,
+                      AssociationId=instance_profile_association_id)
+              else:
+                  response = client.associate_iam_instance_profile(
+                      IamInstanceProfile=IamInstanceProfile, InstanceId=instance_id)
+
+              # Modify volume size
+              volume_size_str = os.environ.get('VOL_SIZE_GB', '100')
+              volume_size = int(volume_size_str)
+              modify_volume_response = client.modify_volume(VolumeId=volume_id,Size=volume_size)
+              while True:
+                  state = get_modification_state(volume_id)
+                  if state == 'completed' or state == None or state == 'optimizing':
+                      break
+                  elif state == 'failed':
+                      raise Exception('Failed to modify volume size')
+                  else:
+                      time.sleep(15)
+
+              # Reboot ec2 instance so the new volume size takes effect
+              reboot_instance_reponse = client.reboot_instances(
+                InstanceIds=[instance_id]
+              )
+
+      Handler: index.lambda_handler
+      MemorySize: 128
+      PackageType: 'Zip'
+      Role: !GetAtt LambdaRole.Arn
+      Runtime: 'python3.9'
+      Timeout: 300
+
+  Primerinvoke:
+    Type: AWS::CloudFormation::CustomResource
+    DependsOn: LambdaCloud9
+    Version: "1.0"
+    Properties:
+      ServiceToken: !GetAtt LambdaCloud9.Arn
+      ProfileArn: !Ref Cloud9InstanceProfile
+
+Outputs:
+  Cloud9URl:
+    Value: !Join ['', ['https://', !Ref 'AWS::Region','.console.aws.amazon.com/cloud9/ide/', !Ref Cloud9Lab ] ]
+    Description: URL of your AWS Cloud9 Instance
+

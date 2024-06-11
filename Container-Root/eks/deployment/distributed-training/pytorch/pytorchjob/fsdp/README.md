@@ -1,12 +1,13 @@
-# Our of the box PyTorch FSDP on Amazon EKS using the do-framework
+# Out of the box PyTorch FSDP distributed training on Amazon EKS
 
-This example follows the principles of the [do-framework](https://bit.ly/do-framework) to provide a simple deployment of fully-sharded data parallel model training on [Amazon EKS](https://aws.amazon.com/eks). 
+This example follows the principles of the [do-framework](https://bit.ly/do-framework) to provide a simple deployment of fully-sharded data parallel model training on [Amazon EKS](https://aws.amazon.com/eks). Included here are step-by-step instructions for how to run an FSDP training/fine-tuning job for NanoGPT or Llama2 models.
 
 ## Prerequisites
 
 * [git](https://git-scm.com/downloads) is needed to clone the project
 * [Docker](https://docs.docker.com/get-docker/) is needed to build the project
-* It is assumed that an [Amazon EKS](https://aws.amazon.com/eks) cluster already exists. If you need to create one, you may use the [aws-do-eks](https://bit.ly/do-eks) project, or any other method for management of EKS infrastructure. 
+* [AWS account](https://console.aws.amazon.com)
+* [Amazon EKS](https://aws.amazon.com/eks) cluster. If you need to create a cluster, you may use the [aws-do-eks](https://bit.ly/do-eks) project, or any other method for management of EKS infrastructure. 
 
 ## Clone
 
@@ -22,6 +23,12 @@ The examples are locateed in the `distributed-training` directory under `eks/dep
 
 ```bash
 cd Container-Root/eks/deployment/distributed-training/pytorch/pytorchjob/fsdp
+```
+
+or within the `aws-do-eks` container
+
+```bash
+cd /aws-do-eks/Container-Root/eks/deployment/distributed-training/pytorch/pytorchjob/fsdp
 ```
 
 ## Configure
@@ -96,4 +103,5 @@ Before running a new job, the previous one needs to be removed.
 * [Kubeflow training-operator](https://github.com/kubeflow/training-operator)
 * [Etcd](https://etcd.io/)
 * [FSDP LLM repo](https://github.com/lessw2020/fsdp_llm)
+* [NanoGPT](https://nano-gpt.com/)
 * [Llama Recipes](https://github.com/facebookresearch/llama-recipes)

@@ -2,7 +2,7 @@
 
 echo ""
 ps -aef | grep port-forward | grep prometheus
-PORT_FORWARD_PID=$(ps -aef | grep port-forward | grep prometheus | cut -d ' ' -f 2)
+PORT_FORWARD_PID=$(ps -aef | grep port-forward | grep prometheus | awk '{print $2}')
 if [ "$PORT_FORWARD_PID" == "" ]; then
 	echo "Port forwarding is not active"
 else

@@ -3,7 +3,7 @@ kind: ClusterConfig
 
 metadata:
   name: do-eks-yaml-p4de-odcr
-  version: "1.25"
+  version: "1.28"
   region: us-east-1
   tags:
     karpenter.sh/discovery: do-eks-yaml-p4de-odcr
@@ -33,8 +33,8 @@ nodeGroups:
     efaEnabled: true
     minSize: 0
     desiredCapacity: 2
-    maxSize: 10
-    volumeSize: 900
+    maxSize: 64
+    volumeSize: 500
     capacityReservation:
       capacityReservationTarget:
         capacityReservationID: "cr-xxxxxxxxxxxxxxxxx"

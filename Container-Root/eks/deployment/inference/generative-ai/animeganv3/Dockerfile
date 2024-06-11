@@ -1,5 +1,5 @@
 #FROM nvcr.io/nvidia/cuda:11.8.0-runtime-ubuntu22.04
-FROM nvcr.io/nvidia/pytorch:23.01-py3
+FROM nvcr.io/nvidia/pytorch:24.04-py3
 
 ARG http_proxy
 ARG https_proxy

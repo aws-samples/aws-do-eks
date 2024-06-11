@@ -3,16 +3,16 @@ kind: ClusterConfig
 
 metadata:
   name: do-eks-yaml
-  version: "1.25"
-  region: us-west-2
+  version: "1.28"
+  region: us-east-1
   tags:
     karpenter.sh/discovery: do-eks-yaml
 
 availabilityZones:
-  - us-west-2a
-  - us-west-2b
-  - us-west-2c
-  - us-west-2d
+  - us-east-1a
+  - us-east-1b
+  - us-east-1c
+  - us-east-1d
 
 managedNodeGroups:
 
@@ -27,7 +27,7 @@ managedNodeGroups:
     instanceType: g4dn.8xlarge
     instancePrefix: g4dn
     privateNetworking: true
-    availabilityZones: ["us-west-2a","us-west-2b","us-west-2c","us-west-2d"]
+    availabilityZones: ["us-east-1a","us-east-1b","us-east-1c","us-east-1d"]
     efaEnabled: false
     minSize: 0
     desiredCapacity: 0

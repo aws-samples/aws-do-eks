@@ -1,7 +1,7 @@
 {
 	"AWSTemplateFormatVersion": "2010-09-09",
 
-	"Description": "SO9259 - Large scale inference on EKS using Graviton and Inferentia2",
+	"Description": "Large scale inference on EKS using Graviton and Inferentia2",
 	"Mappings": {
 		"AWSRegion2AMI": {
 			"us-east-1": {

@@ -1,11 +1,9 @@
-# Reference: https://eksctl.io/usage/eksctl-karpenter/
-
 apiVersion: eksctl.io/v1alpha5
 kind: ClusterConfig
 
 metadata:
   name: do-eks-yaml-karpenter
-  version: "1.27"
+  version: "1.28"
   region: us-west-2
   tags:
     karpenter.sh/discovery: do-eks-yaml-karpenter
@@ -13,10 +11,17 @@ metadata:
 iam:
   withOIDC: true
 
-karpenter:
-  version: 'v0.29.0'
-  createServiceAccount: true
-  #  defaultInstanceProfile: 'KarpenterInstanceProfile'
+addons:
+  - name: aws-ebs-csi-driver
+    version: v1.27.0-eksbuild.1
+    wellKnownPolicies:
+      ebsCSIController: true
+
+#karpenter:
+#  version: 'v0.32.4'
+#  createServiceAccount: true
+#  defaultInstanceProfile: 'KarpenterInstanceProfile'
+#  withSpotInterruptionQueue: true
 
 managedNodeGroups:
   - name: c5-xl-do-eks-karpenter-ng
@@ -31,5 +36,3 @@ managedNodeGroups:
       withAddonPolicies:
         cloudWatch: true
         ebs: true
-        efs: true
-        fsx: true

@@ -1,0 +1,675 @@
+St  Name                           Version                        Arch   Description                                                  Licenses
+--  ----                           -------                        ----   -----------                                                  --------
+ii  adduser                        3.118ubuntu5                   all    add and remove users and groups                              GPL-2
+ii  apt                            2.4.12                         amd64  commandline package manager                                  GPL-2
+ii  apt-utils                      2.4.12                         amd64  package management related utility programs                  GPL-2
+ii  autoconf                       2.71-2                         all    automatic configure script builder                           GFDL-1.3+ GPL-2+ GPL-2+ with Autoconf exception GPL-3+ GPL-3+ with Autoconf exception GPL-3+ with Texinfo exception MIT-X-Consortium no-modification other permissive permissive-long-disclaimer permissive-short-disclaimer permissive-without-disclaimer permissive-without-notices-or-disclaimer
+ii  automake                       1:1.16.5-1.3                   all    Tool for generating GNU Standards-compliant Makefiles        GFDL-NIV-1.3+ GPL-2+ GPL-3+ permissive
+ii  autopoint                      0.21-4ubuntu4                  all    tool for setting up gettext infrastructure in a source packa GFDL GPL LGPL
+ii  autotools-dev                  20220109.1                     all    Update infrastructure for config.{guess,sub} files           GPL-3
+ii  base-files                     12ubuntu4.4                    amd64  Debian base system miscellaneous files                       GPL
+ii  base-passwd                    3.5.52build1                   amd64  Debian base system master password and group files           GPL-2 public-domain
+ii  bash                           5.1-6ubuntu1                   amd64  GNU Bourne Again SHell                                       GPL-3
+ii  binutils                       2.38-4ubuntu2.3                amd64  GNU assembler, linker and binary utilities                   GFDL GPL LGPL
+ii  binutils-common:amd64          2.38-4ubuntu2.3                amd64  Common files for the GNU assembler, linker and binary utilit GFDL GPL LGPL
+ii  binutils-x86-64-linux-gnu      2.38-4ubuntu2.3                amd64  GNU binary utilities, for x86-64-linux-gnu target            GFDL GPL LGPL
+ii  bsdextrautils                  2.37.2-4ubuntu3.4              amd64  extra utilities from 4.4BSD-Lite                             BSD-2-clause BSD-3-clause BSD-4-clause GPL-2 GPL-2+ GPL-3+ LGPL LGPL-2+ LGPL-2.1+ LGPL-3+ MIT public-domain
+ii  bsdutils                       1:2.37.2-4ubuntu3              amd64  basic utilities from 4.4BSD-Lite                             BSD-2-clause BSD-3-clause BSD-4-clause GPL-2 GPL-2+ GPL-3+ LGPL LGPL-2+ LGPL-2.1+ LGPL-3+ MIT public-domain
+ii  build-essential                12.9ubuntu3                    amd64  Informational list of build-essential packages               GPL
+ii  bzip2                          1.0.8-5build1                  amd64  high-quality block-sorting file compressor - utilities       BSD-variant GPL-2
+ii  ca-certificates                20230311ubuntu0.22.04.1        all    Common CA certificates                                       GPL-2+ MPL-2.0
+ii  check:amd64                    0.15.2-2                       amd64  unit test framework for C                                    BSD-3-Clause GFDL-1.2+ GPL-2.0+ with autoconf exception GPL-2.0+ with autoconf macro exception GPL-3.0+ with autoconf exception GPL-3.0+ with tex exception LGPL-2.1+ PERMISSIVE permissive-1 permissive-2 permissive-3
+ii  cmake                          3.22.1-1ubuntu1.22.04.2        amd64  cross-platform, open-source make system                      Apache-2.0 BSD-0-Clause BSD-2-clause BSD-2-clause or BSD-3-clause BSD-3-clause BSD-4-Clause BSD-4-clause Expat GPL-2+with_exception GPL-3+with_exception ISC zlib
+ii  cmake-data                     3.22.1-1ubuntu1.22.04.2        all    CMake data files (modules, templates and documentation)      Apache-2.0 BSD-0-Clause BSD-2-clause BSD-2-clause or BSD-3-clause BSD-3-clause BSD-4-Clause BSD-4-clause Expat GPL-2+with_exception GPL-3+with_exception ISC zlib
+ii  coreutils                      8.32-4.1ubuntu1                amd64  GNU core utilities                                           GPL-3
+ii  cpp                            4:11.2.0-1ubuntu1              amd64  GNU C preprocessor (cpp)                                     GPL-2
+ii  cpp-11                         11.4.0-1ubuntu1~22.04          amd64  GNU C preprocessor                                           Artistic GFDL-1.2 GPL GPL-2 GPL-3 LGPL
+ii  cpp-12                         12.3.0-1ubuntu1~22.04          amd64  GNU C preprocessor                                           Artistic GFDL-1.2 GPL GPL-2 GPL-3 LGPL
+ii  cuda-cccl-12-2                 12.2.140-1                     amd64  CUDA CCCL                                                    "BSD" LICENCE "BSD" License Boost Software License MIT License MIT license bsd-license.php
+ii  cuda-command-line-tools-12-2   12.2.0-1                       amd64  CUDA command-line tools                                      unknown
+ii  cuda-compat-12-2               535.129.03-1                   amd64  CUDA Compatibility Platform                                  unknown
+ii  cuda-compiler-12-2             12.2.2-1                       amd64  CUDA compiler                                                unknown
+ii  cuda-crt-12-2                  12.2.140-1                     amd64  CUDA crt                                                     "BSD" LICENCE "BSD" License Boost Software License MIT License MIT license bsd-license.php
+ii  cuda-cudart-12-2               12.2.53-1                      amd64  CUDA Runtime native Libraries                                "BSD" LICENCE "BSD" License Boost Software License MIT License MIT license bsd-license.php
+ii  cuda-cudart-dev-12-2           12.2.53-1                      amd64  CUDA Runtime native dev links, headers                       "BSD" LICENCE "BSD" License Boost Software License MIT License MIT license bsd-license.php
+ii  cuda-cuobjdump-12-2            12.2.140-1                     amd64  CUDA cuobjdump                                               "BSD" LICENCE "BSD" License Boost Software License MIT License MIT license bsd-license.php
+ii  cuda-cupti-12-2                12.2.142-1                     amd64  CUDA profiling tools runtime libs.                           "BSD" LICENCE "BSD" License Boost Software License MIT License MIT license bsd-license.php
+ii  cuda-cupti-dev-12-2            12.2.142-1                     amd64  CUDA profiling tools interface.                              "BSD" LICENCE "BSD" License Boost Software License MIT License MIT license bsd-license.php
+ii  cuda-cuxxfilt-12-2             12.2.140-1                     amd64  CUDA cuxxfilt                                                "BSD" LICENCE "BSD" License Boost Software License MIT License MIT license bsd-license.php
+ii  cuda-driver-dev-12-2           12.2.140-1                     amd64  CUDA Driver native dev stub library                          "BSD" LICENCE "BSD" License Boost Software License MIT License MIT license bsd-license.php
+ii  cuda-gdb-12-2                  12.2.140-1                     amd64  CUDA-GDB                                                     "BSD" LICENCE "BSD" License Boost Software License MIT License MIT license bsd-license.php
+ii  cuda-keyring                   1.0-1                          all    GPG keyring for the CUDA repository                          unknown
+ii  cuda-libraries-12-2            12.2.0-1                       amd64  CUDA Libraries 12.2 meta-package                             unknown
+ii  cuda-libraries-dev-12-2        12.2.0-1                       amd64  CUDA Libraries 12.2 development meta-package                 unknown
+ii  cuda-minimal-build-12-2        12.2.0-1                       amd64  Minimal CUDA 12.2 toolkit build packages.                    unknown
+ii  cuda-nsight-compute-12-2       12.2.0-1                       amd64  NVIDIA Nsight Compute                                        unknown
+ii  cuda-nvcc-12-2                 12.2.140-1                     amd64  CUDA nvcc                                                    "BSD" LICENCE "BSD" License Boost Software License MIT License MIT license bsd-license.php
+ii  cuda-nvdisasm-12-2             12.2.140-1                     amd64  CUDA disassembler                                            "BSD" LICENCE "BSD" License Boost Software License MIT License MIT license bsd-license.php
+ii  cuda-nvml-dev-12-2             12.2.81-1                      amd64  NVML native dev links, headers                               "BSD" LICENCE "BSD" License Boost Software License MIT License MIT license bsd-license.php
+ii  cuda-nvprof-12-2               12.2.60-1                      amd64  CUDA Profiler tools                                          "BSD" LICENCE "BSD" License Boost Software License MIT License MIT license bsd-license.php
+ii  cuda-nvprune-12-2              12.2.140-1                     amd64  CUDA nvprune                                                 "BSD" LICENCE "BSD" License Boost Software License MIT License MIT license bsd-license.php
+ii  cuda-nvrtc-12-2                12.2.140-1                     amd64  NVRTC native runtime libraries                               "BSD" LICENCE "BSD" License Boost Software License MIT License MIT license bsd-license.php
+ii  cuda-nvrtc-dev-12-2            12.2.140-1                     amd64  NVRTC native dev links, headers                              "BSD" LICENCE "BSD" License Boost Software License MIT License MIT license bsd-license.php
+ii  cuda-nvtx-12-2                 12.2.53-1                      amd64  NVIDIA Tools Extension                                       "BSD" LICENCE "BSD" License Boost Software License MIT License MIT license bsd-license.php
+ii  cuda-nvvm-12-2                 12.2.140-1                     amd64  CUDA nvvm                                                    "BSD" LICENCE "BSD" License Boost Software License MIT License MIT license bsd-license.php
+ii  cuda-opencl-12-2               12.2.140-1                     amd64  CUDA OpenCL native Libraries                                 "BSD" LICENCE "BSD" License Boost Software License MIT License MIT license bsd-license.php
+ii  cuda-opencl-dev-12-2           12.2.140-1                     amd64  CUDA OpenCL native dev links, headers                        "BSD" LICENCE "BSD" License Boost Software License MIT License MIT license bsd-license.php
+ii  cuda-profiler-api-12-2         12.2.140-1                     amd64  CUDA Profiler API                                            "BSD" LICENCE "BSD" License Boost Software License MIT License MIT license bsd-license.php
+ii  cuda-sanitizer-12-2            12.2.140-1                     amd64  CUDA Sanitizer                                               "BSD" LICENCE "BSD" License Boost Software License MIT License MIT license bsd-license.php
+ii  cuda-toolkit-12-2-config-commo 12.2.140-1                     all    Common config package for CUDA Toolkit 12.2.                 "BSD" LICENCE "BSD" License Boost Software License MIT License MIT license bsd-license.php
+ii  cuda-toolkit-12-config-common  12.3.52-1                      all    Common config package for CUDA Toolkit 12.                   "BSD" LICENCE "BSD" License Boost Software License MIT License MIT license bsd-license.php
+ii  cuda-toolkit-config-common     12.3.52-1                      all    Common config package for CUDA Toolkit.                      "BSD" LICENCE "BSD" License Boost Software License MIT License MIT license bsd-license.php
+ii  curl                           7.81.0-1ubuntu1.16             amd64  command line tool for transferring data with URL syntax      BSD-3-Clause BSD-4-Clause ISC curl other public-domain
+ii  dash                           0.5.11+git20210903+057cd650a4e amd64  POSIX-compliant shell                                        BSD-3-Clause BSD-3-clause Expat FSFUL FSFULLR GPL-2+ GPL-2+ or BSD-3-clause public-domain
+ii  dbus                           1.12.20-2ubuntu4.1             amd64  simple interprocess messaging system (daemon and utilities)  AFL-2.1 BSD-3-clause BSD-3-clause-generic Expat GPL-2+ GPL-2+ or AFL-2.1 GPL-2+ or AFL-2.1, Tcl-BSDish g10-permissive
+ii  dctrl-tools                    2.24-3build2                   amd64  Command-line tools to process Debian package information     BSD-2-clause GPL-2+
+ii  debconf                        1.5.79ubuntu1                  all    Debian configuration management system                       BSD-2-clause
+ii  debhelper                      13.6ubuntu1                    all    helper programs for debian/rules                             BSD-3-clause GPL-2+ GPL-3+ public-domain
+ii  debianutils                    5.5-1ubuntu2                   amd64  Miscellaneous utilities specific to Debian                   GPL-2
+ii  debugedit                      1:5.0-4build1                  amd64  tools for handling build-ids and paths rewriting in DWARF da GPL-2+ GPL-3+
+ii  devscripts                     2.22.1ubuntu1                  amd64  scripts to make the life of a Debian Package maintainer easi Artistic Artistic or GPL-1+ Artistic-2.0 Expat GPL-1+ GPL-2 GPL-2+ GPL-3 GPL-3+ ISC Public-Domain
+ii  dh-autoreconf                  20                             all    debhelper add-on to call autoreconf and clean up after the b GPL-2+
+ii  dh-elpa-helper                 2.0.9ubuntu1                   all    helper package for emacs lisp extensions                     CC0 GPL-3+
+ii  dh-strip-nondeterminism        1.13.0-1                       all    file non-deterministic information stripper — Debhelper ad GPL-3+
+ii  diffstat                       1.64-1build2                   amd64  produces graph of changes introduced by a diff file          MIT
+ii  diffutils                      1:3.8-0ubuntu2                 amd64  File comparison utilities                                    GFDL GPL
+ii  dirmngr                        2.2.27-3ubuntu2.1              amd64  GNU privacy guard - network certificate management service   BSD-3-clause CC0-1.0 Expat GPL-3+ GPL-3+ or BSD-3-clause LGPL-2.1+ LGPL-3+ RFC-Reference TinySCHEME permissive
+ii  distro-info-data               0.52ubuntu0.7                  all    information about the distributions' releases (data files)   ISC
+ii  dkms                           2.8.7-2ubuntu2.2               all    Dynamic Kernel Module Support Framework                      GPL-2+
+ii  dmidecode                      3.3-3ubuntu0.1                 amd64  SMBIOS/DMI table decoder                                     GPL-2+
+ii  dmsetup                        2:1.02.175-2.1ubuntu4          amd64  Linux Kernel Device Mapper userspace library                 BSD-2-Clause GPL-2.0 GPL-2.0+ LGPL-2.1
+ii  dpkg                           1.21.1ubuntu2.2                amd64  Debian package management system                             BSD-2-clause GPL-2 GPL-2+ public-domain-md5 public-domain-s-s-d
+ii  dpkg-dev                       1.21.1ubuntu2.2                all    Debian package development tools                             BSD-2-clause GPL-2 GPL-2+ public-domain-md5 public-domain-s-s-d
+ii  dput                           1.1.0ubuntu2.1                 all    Debian package upload tool                                   GPL-3+
+ii  dwz                            0.14-1build2                   amd64  DWARF compression tool                                       GPL-2+ GPL-3+ LGPL-2+
+ii  e2fsprogs                      1.46.5-2ubuntu1.1              amd64  ext2/ext3/ext4 file system utilities                         GPL-2 LGPL-2
+ii  efa-profile                    1.5                            all    efa-profile adds configuration files to add Libfabric and Op unknown
+ii  emacsen-common                 3.0.4                          all    Common facilities for all emacsen                            GPL
+ii  environment-modules            5.0.1-1                        amd64  Modular system for handling environment variables            GPL-2
+ii  ethtool                        1:5.16-1ubuntu0.1              amd64  display or change Ethernet device settings                   GPL-2
+ii  fakeroot                       1.28-1ubuntu1                  amd64  tool for simulating superuser privileges                     Artistic GPL-3
+ii  file                           1:5.41-3ubuntu0.1              amd64  Recognize the type of data in a file using "magic" numbers   BSD-2-Clause-alike BSD-2-Clause-netbsd BSD-2-Clause-regents MIT-Old-Style-with-legal-disclaimer-2 public-domain
+ii  findutils                      4.8.0-1ubuntu3                 amd64  utilities for finding files--find, xargs                     GFDL-1.3 GPL-3
+ii  fontconfig-config              2.13.1-4.2ubuntu5              all    generic font configuration library - configuration           unknown
+ii  fonts-dejavu-core              2.37-2build1                   all    Vera font family derivate with additional characters         GPL-2+ bitstream-vera
+ii  g++                            4:11.2.0-1ubuntu1              amd64  GNU C++ compiler                                             GPL-2
+ii  g++-11                         11.4.0-1ubuntu1~22.04          amd64  GNU C++ compiler                                             Artistic GFDL-1.2 GPL GPL-2 GPL-3 LGPL
+ii  gcc                            4:11.2.0-1ubuntu1              amd64  GNU C compiler                                               GPL-2
+ii  gcc-11                         11.4.0-1ubuntu1~22.04          amd64  GNU C compiler                                               Artistic GFDL-1.2 GPL GPL-2 GPL-3 LGPL
+ii  gcc-11-base:amd64              11.4.0-1ubuntu1~22.04          amd64  GCC, the GNU Compiler Collection (base package)              Artistic GFDL-1.2 GPL GPL-2 GPL-3 LGPL
+ii  gcc-12                         12.3.0-1ubuntu1~22.04          amd64  GNU C compiler                                               Artistic GFDL-1.2 GPL GPL-2 GPL-3 LGPL
+ii  gcc-12-base:amd64              12.3.0-1ubuntu1~22.04          amd64  GCC, the GNU Compiler Collection (base package)              Artistic GFDL-1.2 GPL GPL-2 GPL-3 LGPL
+ii  gdb                            12.1-0ubuntu1~22.04            amd64  GNU Debugger                                                 BSD-3-clause GPL-2+ GPL-3+ GPL-3+ with GCC-Runtime-3.1 exception LGPL-2+ LGPL-2.1+
+ii  gettext                        0.21-4ubuntu4                  amd64  GNU Internationalization utilities                           GFDL GPL LGPL
+ii  gettext-base                   0.21-4ubuntu4                  amd64  GNU Internationalization utilities for the base system       GFDL GPL LGPL
+ii  gir1.2-glib-2.0:amd64          1.72.0-1                       amd64  Introspection data for GLib, GObject, Gio and GModule        BSD-2-clause GPL-2+ LGPL-2+ MIT
+ii  git                            1:2.34.1-1ubuntu1.10           amd64  fast, scalable, distributed revision control system          Apache-2.0 Boost EDL-1.0 Expat GPL-1+ or Artistic-1 GPL-2 GPL-2+ ISC LGPL-2+ LGPL-2.1+ dlmalloc mingw-runtime
+ii  git-man                        1:2.34.1-1ubuntu1.10           all    fast, scalable, distributed revision control system (manual  Apache-2.0 Boost EDL-1.0 Expat GPL-1+ or Artistic-1 GPL-2 GPL-2+ ISC LGPL-2+ LGPL-2.1+ dlmalloc mingw-runtime
+ii  gnupg                          2.2.27-3ubuntu2.1              all    GNU privacy guard - a free PGP replacement                   BSD-3-clause CC0-1.0 Expat GPL-3+ GPL-3+ or BSD-3-clause LGPL-2.1+ LGPL-3+ RFC-Reference TinySCHEME permissive
+ii  gnupg-l10n                     2.2.27-3ubuntu2.1              all    GNU privacy guard - localization files                       BSD-3-clause CC0-1.0 Expat GPL-3+ GPL-3+ or BSD-3-clause LGPL-2.1+ LGPL-3+ RFC-Reference TinySCHEME permissive
+ii  gnupg-utils                    2.2.27-3ubuntu2.1              amd64  GNU privacy guard - utility programs                         BSD-3-clause CC0-1.0 Expat GPL-3+ GPL-3+ or BSD-3-clause LGPL-2.1+ LGPL-3+ RFC-Reference TinySCHEME permissive
+ii  gnupg2                         2.2.27-3ubuntu2.1              all    GNU privacy guard - a free PGP replacement (dummy transition BSD-3-clause CC0-1.0 Expat GPL-3+ GPL-3+ or BSD-3-clause LGPL-2.1+ LGPL-3+ RFC-Reference TinySCHEME permissive
+ii  gpg                            2.2.27-3ubuntu2.1              amd64  GNU Privacy Guard -- minimalist public key operations        BSD-3-clause CC0-1.0 Expat GPL-3+ GPL-3+ or BSD-3-clause LGPL-2.1+ LGPL-3+ RFC-Reference TinySCHEME permissive
+ii  gpg-agent                      2.2.27-3ubuntu2.1              amd64  GNU privacy guard - cryptographic agent                      BSD-3-clause CC0-1.0 Expat GPL-3+ GPL-3+ or BSD-3-clause LGPL-2.1+ LGPL-3+ RFC-Reference TinySCHEME permissive
+ii  gpg-wks-client                 2.2.27-3ubuntu2.1              amd64  GNU privacy guard - Web Key Service client                   BSD-3-clause CC0-1.0 Expat GPL-3+ GPL-3+ or BSD-3-clause LGPL-2.1+ LGPL-3+ RFC-Reference TinySCHEME permissive
+ii  gpg-wks-server                 2.2.27-3ubuntu2.1              amd64  GNU privacy guard - Web Key Service server                   BSD-3-clause CC0-1.0 Expat GPL-3+ GPL-3+ or BSD-3-clause LGPL-2.1+ LGPL-3+ RFC-Reference TinySCHEME permissive
+ii  gpgconf                        2.2.27-3ubuntu2.1              amd64  GNU privacy guard - core configuration utilities             BSD-3-clause CC0-1.0 Expat GPL-3+ GPL-3+ or BSD-3-clause LGPL-2.1+ LGPL-3+ RFC-Reference TinySCHEME permissive
+ii  gpgsm                          2.2.27-3ubuntu2.1              amd64  GNU privacy guard - S/MIME version                           BSD-3-clause CC0-1.0 Expat GPL-3+ GPL-3+ or BSD-3-clause LGPL-2.1+ LGPL-3+ RFC-Reference TinySCHEME permissive
+ii  gpgv                           2.2.27-3ubuntu2.1              amd64  GNU privacy guard - signature verification tool              BSD-3-clause CC0-1.0 Expat GPL-3+ GPL-3+ or BSD-3-clause LGPL-2.1+ LGPL-3+ RFC-Reference TinySCHEME permissive
+ii  grep                           3.7-1build1                    amd64  GNU grep, egrep and fgrep                                    GPL-3+
+ii  groff-base                     1.22.4-8build1                 amd64  GNU troff text-formatting system (base system components)    GFDL-1.3 GPL-3
+ii  gzip                           1.10-4ubuntu4.1                amd64  GNU compression utilities                                    FSF-manpages GFDL-1.3+-no-invariant GPL-3+
+ii  hostname                       3.23ubuntu2                    amd64  utility to set/show the host name or domain name             GPL-2
+ii  htop                           3.0.5-7build2                  amd64  interactive processes viewer                                 GPL-2+
+ii  hwloc                          2.7.0-2ubuntu1                 amd64  Hierarchical view of the machine - utilities                 GPL-3
+ii  ibacm                          46.0-1                         amd64  InfiniBand Communication Manager Assistant (ACM)             BSD-2-clause BSD-2-clause or GPL-2 BSD-3-clause BSD-3-clause or GPL-2 BSD-MIT BSD-MIT or GPL-2 CC0 CPL-1.0 CPL-1.0 or BSD-2-clause or GPL-2 GPL-2 GPL-2 or BSD-2-clause GPL-2 or BSD-3-clause GPL-2+ MIT
+ii  ibverbs-providers:amd64        46.0-1                         amd64  User space provider drivers for libibverbs                   BSD-2-clause BSD-2-clause or GPL-2 BSD-3-clause BSD-3-clause or GPL-2 BSD-MIT BSD-MIT or GPL-2 CC0 CPL-1.0 CPL-1.0 or BSD-2-clause or GPL-2 GPL-2 GPL-2 or BSD-2-clause GPL-2 or BSD-3-clause GPL-2+ MIT
+ii  ibverbs-utils                  46.0-1                         amd64  Examples for the libibverbs library                          BSD-2-clause BSD-2-clause or GPL-2 BSD-3-clause BSD-3-clause or GPL-2 BSD-MIT BSD-MIT or GPL-2 CC0 CPL-1.0 CPL-1.0 or BSD-2-clause or GPL-2 GPL-2 GPL-2 or BSD-2-clause GPL-2 or BSD-3-clause GPL-2+ MIT
+ii  iftop                          1.0~pre4-7                     amd64  displays bandwidth usage information on an network interface BSD-2-clause BSD-3-clause BSD-like GPL-2+
+ii  infiniband-diags               46.0-1                         amd64  InfiniBand diagnostic programs                               BSD-2-clause BSD-2-clause or GPL-2 BSD-3-clause BSD-3-clause or GPL-2 BSD-MIT BSD-MIT or GPL-2 CC0 CPL-1.0 CPL-1.0 or BSD-2-clause or GPL-2 GPL-2 GPL-2 or BSD-2-clause GPL-2 or BSD-3-clause GPL-2+ MIT
+ii  init-system-helpers            1.62                           all    helper tools for all init systems                            BSD-3-clause GPL-2+
+ii  intltool-debian                0.35.0+20060710.5              all    Help i18n of RFC822 compliant config files                   GPL-2 GPL-2+
+ii  ipcalc                         0.42-2                         all    parameter calculator for IPv4 addresses                      GPL-2+
+ii  iproute2                       5.15.0-1ubuntu2                amd64  networking and traffic control tools                         GPL-2
+ii  iso-codes                      4.9.0-1                        all    ISO language, territory, currency, script codes and their tr LGPL-2.1+
+ii  keyutils                       1.6.1-2ubuntu3                 amd64  Linux Key Management Utilities                               GPL-2+ LGPL-2+
+ii  kmod                           29-1ubuntu1                    amd64  tools for managing Linux kernel modules                      GPL-2 LGPL-2.1
+ii  less                           590-1ubuntu0.22.04.3           amd64  pager program similar to more                                GPL-3
+ii  libacl1:amd64                  2.3.1-1                        amd64  access control list - shared library                         GPL-2+ LGPL-2+
+ii  libaliased-perl                0.34-1.1                       all    Perl module to provide aliases of class names                Artistic Artistic or GPL-1+ GPL-1+
+ii  libapparmor1:amd64             3.0.4-2ubuntu2.3               amd64  changehat AppArmor library                                   BSD-3-clause BSD-3-clause or GPL-2+ GPL-2 GPL-2+ LGPL-2.1+
+ii  libapt-pkg-perl                0.1.40build2                   amd64  Perl interface to libapt-pkg                                 GPL-3+
+ii  libapt-pkg6.0:amd64            2.4.12                         amd64  package management runtime library                           GPL-2
+ii  libarchive-cpio-perl           0.10-1.1                       all    module for manipulations of cpio archives                    Artistic Artistic or GPL-1+ GPL-1+
+ii  libarchive-zip-perl            1.68-1                         all    Perl module for manipulation of ZIP archives                 Artistic Artistic or GPL-1+ GPL-1+ Info-ZIP
+ii  libarchive13:amd64             3.6.0-1ubuntu1                 amd64  Multi-format archive and compression library (shared library Apache-2.0 BSD-1-clause-UCB BSD-124-clause-UCB BSD-2-clause BSD-3-clause-UCB BSD-4-clause-UCB Expat PD
+ii  libargon2-1:amd64              0~20171227-0.3                 amd64  memory-hard hashing function - runtime library               Apache-2.0 CC0 CC0 or Apache-2.0
+ii  libarray-intspan-perl          2.004-1                        all    Handles arrays of scalars or objects using integer ranges as Artistic-2.0
+ii  libasan6:amd64                 11.4.0-1ubuntu1~22.04          amd64  AddressSanitizer -- a fast memory error detector             Artistic GFDL-1.2 GPL GPL-2 GPL-3 LGPL
+ii  libasan8:amd64                 12.3.0-1ubuntu1~22.04          amd64  AddressSanitizer -- a fast memory error detector             Artistic GFDL-1.2 GPL GPL-2 GPL-3 LGPL
+ii  libassuan0:amd64               2.5.5-1build1                  amd64  IPC library for the GnuPG components                         GAP GAP~FSF GPL-2+ GPL-2+ with libtool exception GPL-3+ LGPL-2.1+ LGPL-3+
+ii  libatm1:amd64                  1:2.5.1-4build2                amd64  shared library for ATM (Asynchronous Transfer Mode)          GPL-2
+ii  libatomic1:amd64               12.3.0-1ubuntu1~22.04          amd64  support library providing __atomic built-in functions        Artistic GFDL-1.2 GPL GPL-2 GPL-3 LGPL
+ii  libattr1:amd64                 1:2.5.1-1build1                amd64  extended attribute handling - shared library                 GPL-2+ LGPL-2+
+ii  libaudit-common                1:3.0.7-1build1                all    Dynamic library for security auditing - common files         GPL-2 LGPL-2.1
+ii  libaudit1:amd64                1:3.0.7-1build1                amd64  Dynamic library for security auditing                        GPL-2 LGPL-2.1
+ii  libauthen-sasl-perl            2.1600-1.1                     all    Authen::SASL - SASL Authentication framework                 Artistic Artistic or GPL-1+ GPL-1+
+ii  libb-hooks-endofscope-perl     0.25-1                         all    module for executing code after a scope finished compilation Artistic Artistic or GPL-1+ GPL-1+
+ii  libb-hooks-op-check-perl       0.22-1build5                   amd64  Perl wrapper for OP check callbacks                          Artistic Artistic or GPL-1+ GPL-1+
+ii  libbabeltrace1:amd64           1.5.8-2build1                  amd64  Babeltrace conversion libraries                              GPL-2 GPL-3+ LGPL-2.1 MIT
+ii  libbinutils:amd64              2.38-4ubuntu2.3                amd64  GNU binary utilities (private shared library)                GFDL GPL LGPL
+ii  libblas-dev:amd64              3.10.0-2ubuntu1                amd64  Basic Linear Algebra Subroutines 3, static library           BSD-3-clause BSD-3-clause-intel
+ii  libblas3:amd64                 3.10.0-2ubuntu1                amd64  Basic Linear Algebra Reference implementations, shared libra BSD-3-clause BSD-3-clause-intel
+ii  libblkid1:amd64                2.37.2-4ubuntu3                amd64  block device ID library                                      BSD-2-clause BSD-3-clause BSD-4-clause GPL-2 GPL-2+ GPL-3+ LGPL LGPL-2+ LGPL-2.1+ LGPL-3+ MIT public-domain
+ii  libboost-regex1.74.0:amd64     1.74.0-14ubuntu3               amd64  regular expression library for C++                           Apache-2.0 BSD2 BSD3_DEShaw BSD3_Google BSL-1.0 Caramel CrystalClear HP Jam Kempf MIT NIST OldBoost1 OldBoost2 OldBoost3 Python SGI Spencer Zlib
+ii  libbpf0:amd64                  1:0.5.0-1ubuntu22.04.1         amd64  eBPF helper library (shared library)                         BSD-2-Clause GPL-2 with Linux-syscall-note exception GPL-2+ GPL-2.0 LGPL-2.1 LGPL-2.1 or BSD-2-Clause
+ii  libbrotli1:amd64               1.0.9-2build6                  amd64  library implementing brotli encoder and decoder (shared libr MIT
+ii  libbsd0:amd64                  0.11.5-1                       amd64  utility functions from BSD systems - shared library          BSD-2-clause BSD-2-clause-NetBSD BSD-2-clause-author BSD-2-clause-verbatim BSD-3-clause BSD-3-clause-John-Birrell BSD-3-clause-Regents BSD-3-clause-author BSD-4-clause-Christopher-G-Demetriou BSD-4-clause-Niels-Provos BSD-5-clause-Peter-Wemm Beerware Expat ISC ISC-Original public-domain
+ii  libbz2-1.0:amd64               1.0.8-5build1                  amd64  high-quality block-sorting file compressor library - runtime BSD-variant GPL-2
+ii  libc-bin                       2.35-0ubuntu3.4                amd64  GNU C Library: Binaries                                      GFDL-1.3 GPL-2 LGPL-2.1
+ii  libc-dev-bin                   2.35-0ubuntu3.7                amd64  GNU C Library: Development binaries                          GFDL-1.3 GPL-2 LGPL-2.1
+ii  libc6:amd64                    2.35-0ubuntu3.7                amd64  GNU C Library: Shared libraries                              GFDL-1.3 GPL-2 LGPL-2.1
+ii  libc6-dbg:amd64                2.35-0ubuntu3.7                amd64  GNU C Library: detached debugging symbols                    GFDL-1.3 GPL-2 LGPL-2.1
+ii  libc6-dev:amd64                2.35-0ubuntu3.7                amd64  GNU C Library: Development Libraries and Header Files        GFDL-1.3 GPL-2 LGPL-2.1
+ii  libcairo2:amd64                1.16.0-5ubuntu2                amd64  Cairo 2D vector graphics library                             LGPL-2.1
+ii  libcap-ng0:amd64               0.7.9-2.2build3                amd64  An alternate POSIX capabilities library                      GPL-2 GPL-3 LGPL-2.1
+ii  libcap2:amd64                  1:2.44-1ubuntu0.22.04.1        amd64  POSIX 1003.1e capabilities (library)                         BSD-3-clause BSD-3-clause or GPL-2 BSD-3-clause or GPL-2+ GPL-2 GPL-2+
+ii  libcap2-bin                    1:2.44-1ubuntu0.22.04.1        amd64  POSIX 1003.1e capabilities (utilities)                       BSD-3-clause BSD-3-clause or GPL-2 BSD-3-clause or GPL-2+ GPL-2 GPL-2+
+ii  libcapture-tiny-perl           0.48-1                         all    module to capture STDOUT and STDERR                          Apache-2.0 Apache-2.0 or Artistic or GPL-1+ Artistic GPL-1+
+ii  libcbor0.8:amd64               0.8.0-2ubuntu1                 amd64  library for parsing and generating CBOR (RFC 7049)           Apache-2.0 Expat
+ii  libcc1-0:amd64                 12.3.0-1ubuntu1~22.04          amd64  GCC cc1 plugin for GDB                                       Artistic GFDL-1.2 GPL GPL-2 GPL-3 LGPL
+ii  libclass-data-inheritable-perl 0.08-3                         all    Perl module to create accessors to class data                Artistic Artistic or GPL-1+ GPL-1+
+ii  libclass-method-modifiers-perl 2.13-1                         all    Perl module providing method modifiers                       Artistic Artistic or GPL-1+ GPL-1+
+ii  libclass-xsaccessor-perl       1.19-3build9                   amd64  Perl module providing fast XS accessors                      Artistic Artistic or GPL-1+ GPL-1+
+ii  libclone-perl                  0.45-1build3                   amd64  module for recursively copying Perl datatypes                Artistic Artistic or GPL-1+ GPL-1+
+ii  libcom-err2:amd64              1.46.5-2ubuntu1.1              amd64  common error description library                             unknown
+ii  libcommon-sense-perl:amd64     3.75-2build1                   amd64  module that implements some sane defaults for Perl programs  Artistic Artistic or GPL-1+ GPL-1+
+ii  libconfig-tiny-perl            2.28-1                         all    Read/Write .ini style files with as little code as possible  Artistic Artistic or GPL-1+ GPL-1+
+ii  libconst-fast-perl             0.014-1.1                      all    facility for creating read-only scalars, arrays, and hashes  Artistic Artistic or GPL-1+ GPL-1+
+ii  libcontextual-return-perl      0.004014-2                     all    module for creating context-sensitive return values          Artistic Artistic or GPL-1+ GPL-1+
+ii  libcpanel-json-xs-perl:amd64   4.27-1ubuntu0.1                amd64  module for fast and correct serialising to JSON              Artistic Artistic or GPL-1+ GPL-1+
+ii  libcrypt-dev:amd64             1:4.4.27-1                     amd64  libcrypt development files                                   Public domain
+ii  libcrypt1:amd64                1:4.4.27-1                     amd64  libcrypt shared library                                      Public domain
+ii  libcryptsetup12:amd64          2:2.4.3-1ubuntu1.2             amd64  disk encryption support - shared library                     Apache-2.0 CC0 CC0 or Apache-2.0 GPL-2+ GPL-2+ with OpenSSL exception LGPL-2.1+ LGPL-2.1+ with OpenSSL exception public-domain
+ii  libctf-nobfd0:amd64            2.38-4ubuntu2.3                amd64  Compact C Type Format library (runtime, no BFD dependency)   GFDL GPL LGPL
+ii  libctf0:amd64                  2.38-4ubuntu2.3                amd64  Compact C Type Format library (runtime, BFD dependency)      GFDL GPL LGPL
+hi  libcublas-12-2                 12.2.1.16-1                    amd64  CUBLAS native runtime libraries                              "BSD" LICENCE "BSD" License Boost Software License MIT License MIT license bsd-license.php
+hi  libcublas-dev-12-2             12.2.1.16-1                    amd64  CUBLAS native dev links, headers                             "BSD" LICENCE "BSD" License Boost Software License MIT License MIT license bsd-license.php
+ii  libcufft-12-2                  11.0.8.103-1                   amd64  CUFFT native runtime libraries                               "BSD" LICENCE "BSD" License Boost Software License MIT License MIT license bsd-license.php
+ii  libcufft-dev-12-2              11.0.8.103-1                   amd64  CUFFT native dev links, headers                              "BSD" LICENCE "BSD" License Boost Software License MIT License MIT license bsd-license.php
+ii  libcufile-12-2                 1.7.2.10-1                     amd64  Library for GPU Direct Storage with CUDA 12.2                "BSD" LICENCE "BSD" License Boost Software License MIT License MIT license bsd-license.php
+ii  libcufile-dev-12-2             1.7.2.10-1                     amd64  Library for GPU Direct Storage native dev links, headers     unknown
+ii  libcurand-12-2                 10.3.3.141-1                   amd64  CURAND native runtime libraries                              "BSD" LICENCE "BSD" License Boost Software License MIT License MIT license bsd-license.php
+ii  libcurand-dev-12-2             10.3.3.141-1                   amd64  CURAND native dev links, headers                             "BSD" LICENCE "BSD" License Boost Software License MIT License MIT license bsd-license.php
+ii  libcurl3-gnutls:amd64          7.81.0-1ubuntu1.16             amd64  easy-to-use client-side URL transfer library (GnuTLS flavour BSD-3-Clause BSD-4-Clause ISC curl other public-domain
+ii  libcurl4:amd64                 7.81.0-1ubuntu1.16             amd64  easy-to-use client-side URL transfer library (OpenSSL flavou BSD-3-Clause BSD-4-Clause ISC curl other public-domain
+ii  libcusolver-12-2               11.5.2.141-1                   amd64  CUDA solver native runtime libraries                         "BSD" LICENCE "BSD" License Boost Software License MIT License MIT license bsd-license.php
+ii  libcusolver-dev-12-2           11.5.2.141-1                   amd64  CUDA solver native dev links, headers                        "BSD" LICENCE "BSD" License Boost Software License MIT License MIT license bsd-license.php
+ii  libcusparse-12-2               12.1.1.53-1                    amd64  CUSPARSE native runtime libraries                            "BSD" LICENCE "BSD" License Boost Software License MIT License MIT license bsd-license.php
+ii  libcusparse-dev-12-2           12.1.1.53-1                    amd64  CUSPARSE native dev links, headers                           "BSD" LICENCE "BSD" License Boost Software License MIT License MIT license bsd-license.php
+ii  libdata-dpath-perl             0.58-1                         all    DPath is like XPath but for Perl data structures             Artistic Artistic or GPL-1+ GPL-1+
+ii  libdata-dump-perl              1.25-1                         all    Perl module to help dump data structures                     Artistic Artistic or GPL-1+ GPL-1+
+ii  libdata-messagepack-perl       1.01-2build1                   amd64  MessagePack serializing/deserializing                        Artistic Artistic or GPL-1+ BSL-1.0 GPL-1+ GPL-3+
+ii  libdata-optlist-perl           0.112-1                        all    module to parse and validate simple name/value option pairs  Artistic Artistic or GPL-1+ GPL-1+
+ii  libdata-validate-domain-perl   0.10-1.1                       all    perl domain name validation functions                        Artistic GPL
+ii  libdata-validate-ip-perl       0.30-1                         all    Perl module for IP validation                                Artistic Artistic or GPL-1+ GPL-1+
+ii  libdata-validate-uri-perl      0.07-2                         all    common URI validation methods                                Artistic Artistic or GPL-1+ GPL-1+
+ii  libdb5.3:amd64                 5.3.28+dfsg1-0.8ubuntu3        amd64  Berkeley v5.3 Database Libraries [runtime]                   unknown
+ii  libdbus-1-3:amd64              1.12.20-2ubuntu4.1             amd64  simple interprocess messaging system (library)               AFL-2.1 BSD-3-clause BSD-3-clause-generic Expat GPL-2+ GPL-2+ or AFL-2.1 GPL-2+ or AFL-2.1, Tcl-BSDish g10-permissive
+ii  libdebconfclient0:amd64        0.261ubuntu1                   amd64  Debian Configuration Management System (C-implementation lib public domain
+ii  libdebhelper-perl              13.6ubuntu1                    all    debhelper perl modules                                       BSD-3-clause GPL-2+ GPL-3+ public-domain
+ii  libdebuginfod-common           0.186-1build1                  all    configuration to enable the Debian debug info server         GPL-2 GPL-3 LGPL-3
+ii  libdebuginfod1:amd64           0.186-1build1                  amd64  library to interact with debuginfod (development files)      GPL-2 GPL-3 LGPL-3
+ii  libdevel-callchecker-perl      0.008-1ubuntu4                 amd64  custom op checking attached to subroutines                   Artistic Artistic or GPL-1+ GPL-1+ GPL-3+
+ii  libdevel-size-perl             0.83-1build4                   amd64  Perl extension for finding the memory usage of Perl variable Artistic Artistic or GPL-1+ GPL-1+
+ii  libdevel-stacktrace-perl       2.0400-1                       all    Perl module containing stack trace and related objects       Artistic Artistic or GPL-1+ Artistic-2.0 GPL-1+
+ii  libdevmapper1.02.1:amd64       2:1.02.175-2.1ubuntu4          amd64  Linux Kernel Device Mapper userspace library                 BSD-2-Clause GPL-2.0 GPL-2.0+ LGPL-2.1
+ii  libdistro-info-perl            1.1ubuntu0.2                   all    information about distributions' releases (Perl module)      ISC
+ii  libdpkg-perl                   1.21.1ubuntu2.2                all    Dpkg perl modules                                            BSD-2-clause GPL-2 GPL-2+ public-domain-md5 public-domain-s-s-d
+ii  libdw1:amd64                   0.186-1build1                  amd64  library that provides access to the DWARF debug information  GPL-2 GPL-3 LGPL-3
+ii  libdynaloader-functions-perl   0.003-1.1                      all    deconstructed dynamic C library loading                      Artistic Artistic or GPL-1+ GPL-1+ GPL-3+
+ii  libedit2:amd64                 3.1-20210910-1build1           amd64  BSD editline and history libraries                           BSD-3-clause
+ii  libelf1:amd64                  0.186-1build1                  amd64  library to read and write ELF files                          GPL-2 GPL-3 LGPL-3
+ii  libemail-address-xs-perl       1.04-1build6                   amd64  Perl library for RFC 5322 address/group parsing and formatti Artistic Artistic or GPL-1+ Expat GPL-1+
+ii  libencode-locale-perl          1.05-1.1                       all    utility to determine the locale encoding                     Artistic Artistic or GPL-1+ GPL-1+
+ii  liberror-perl                  0.17029-1                      all    Perl module for error/exception handling in an OO-ish way    Artistic Artistic or GPL-1+ GPL-1+ MIT/X11
+ii  libevent-core-2.1-7:amd64      2.1.12-stable-1build3          amd64  Asynchronous event notification library (core)               BSD-2-clause BSD-3-Clause~Kitware BSD-3-clause BSL Expat FSFUL FSFULLR FSFULLR-No-Warranty GPL-2+ GPL-3+ ISC curl
+ii  libevent-pthreads-2.1-7:amd64  2.1.12-stable-1build3          amd64  Asynchronous event notification library (pthreads)           BSD-2-clause BSD-3-Clause~Kitware BSD-3-clause BSL Expat FSFUL FSFULLR FSFULLR-No-Warranty GPL-2+ GPL-3+ ISC curl
+ii  libexception-class-perl        1.45-1                         all    module that allows you to declare real exception classes in  Artistic Artistic or GPL-1+ GPL-1+
+ii  libexpat1:amd64                2.4.7-1ubuntu0.3               amd64  XML parsing C library - runtime library                      MIT
+ii  libexporter-tiny-perl          1.002002-1                     all    tiny exporter similar to Sub::Exporter                       Artistic Artistic or GPL-1+ GPL-1+ GPL-3+
+ii  libext2fs2:amd64               1.46.5-2ubuntu1.1              amd64  ext2/ext3/ext4 file system libraries                         GPL-2 LGPL-2
+ii  libfabric-aws-bin              1.19.0amzn2.0                  amd64  Diagnosis programs for the libfabric communication library   BSD-2-clause or GPL-2 Expat GPL-2+
+ii  libfabric-aws-dev              1.19.0amzn2.0                  amd64  Development files for libfabric1                             BSD-2-clause or GPL-2 Expat GPL-2+
+ii  libfabric1-aws                 1.19.0amzn2.0                  amd64  libfabric communication library                              BSD-2-clause or GPL-2 Expat GPL-2+
+ii  libfabric1-aws-dbg             1.19.0amzn2.0                  amd64  debugging symbols for libfabric1                             BSD-2-clause or GPL-2 Expat GPL-2+
+ii  libfakeroot:amd64              1.28-1ubuntu1                  amd64  tool for simulating superuser privileges - shared libraries  Artistic GPL-3
+ii  libffi8:amd64                  3.4.2-4                        amd64  Foreign Function Interface library runtime                   GPL
+ii  libfido2-1:amd64               1.10.0-1                       amd64  library for generating and verifying FIDO 2.0 objects        BSD-2-clause ISC public-domain
+ii  libfile-basedir-perl           0.09-1                         all    Perl module to use the freedesktop basedir specification     Artistic Artistic or GPL-1+ GPL-1+
+ii  libfile-chdir-perl             0.1008-1.1                     all    more sensible way to change directories                      Artistic GPL
+ii  libfile-dirlist-perl           0.05-2                         all    provide a sorted list of directory content                   Artistic Artistic or GPL-1+ GPL-1+
+ii  libfile-find-rule-perl         0.34-1                         all    module to search for files based on rules                    Artistic Artistic or GPL-1+ GPL-1+
+ii  libfile-homedir-perl           1.006-1                        all    Perl module for finding user directories across platforms    Artistic Artistic or GPL-1+ GPL-1+
+ii  libfile-listing-perl           6.14-1                         all    module to parse directory listings                           Artistic Artistic or GPL-1+ GPL-1+
+ii  libfile-stripnondeterminism-pe 1.13.0-1                       all    file non-deterministic information stripper — Perl module  GPL-3+
+ii  libfile-touch-perl             0.12-1                         all    Perl interface to touch-like functions                       Artistic Artistic or GPL-1+ GPL-1+
+ii  libfile-which-perl             1.23-1                         all    Perl module for searching paths for executable programs      Artistic GPL-1+ GPL-1+ or Artistic
+ii  libfont-afm-perl               1.20-3                         all    Perl interface to Adobe Font Metrics files                   Artistic Artistic or GPL-1+ GPL-1+
+ii  libfont-ttf-perl               1.06-1.1                       all    Perl module for TrueType font hacking                        Artistic-2.0 other
+ii  libfontconfig1:amd64           2.13.1-4.2ubuntu5              amd64  generic font configuration library - runtime                 unknown
+ii  libfreetype6:amd64             2.11.1+dfsg-1ubuntu0.2         amd64  FreeType 2 font engine, shared library files                 BSD-3-Clause BSL-1.0 FSFAP FTL GPL-2+ GPL-3+ MIT OpenGroup-BSD-like Public-Domain Zlib
+ii  libgcc-11-dev:amd64            11.4.0-1ubuntu1~22.04          amd64  GCC support library (development files)                      Artistic GFDL-1.2 GPL GPL-2 GPL-3 LGPL
+ii  libgcc-12-dev:amd64            12.3.0-1ubuntu1~22.04          amd64  GCC support library (development files)                      Artistic GFDL-1.2 GPL GPL-2 GPL-3 LGPL
+ii  libgcc-s1:amd64                12.3.0-1ubuntu1~22.04          amd64  GCC support library                                          Artistic GFDL-1.2 GPL GPL-2 GPL-3 LGPL
+ii  libgcrypt20:amd64              1.9.4-3ubuntu3                 amd64  LGPL Crypto library - runtime library                        GPL-2 LGPL
+ii  libgdbm-compat4:amd64          1.23-1                         amd64  GNU dbm database routines (legacy support runtime version)   GFDL-NIV-1.3+ GPL-2+ GPL-3+
+ii  libgdbm6:amd64                 1.23-1                         amd64  GNU dbm database routines (runtime version)                  GFDL-NIV-1.3+ GPL-2+ GPL-3+
+ii  libgfortran5:amd64             12.3.0-1ubuntu1~22.04          amd64  Runtime library for GNU Fortran applications                 Artistic GFDL-1.2 GPL GPL-2 GPL-3 LGPL
+ii  libgirepository-1.0-1:amd64    1.72.0-1                       amd64  Library for handling GObject introspection data (runtime lib BSD-2-clause GPL-2+ LGPL-2+ MIT
+ii  libgit-wrapper-perl            0.048-1                        all    Perl module to wrap git command-line interface               Artistic Artistic or GPL-1+ GPL-1+
+ii  libgitlab-api-v4-perl          0.26-1                         all    GitLab API v4 module and command-line client                 Artistic Artistic or GPL-1+ GPL-1+
+ii  libglib2.0-0:amd64             2.72.4-0ubuntu2.3              amd64  GLib library of C routines                                   LGPL
+ii  libglib2.0-data                2.72.4-0ubuntu2.3              all    Common files for GLib library                                LGPL
+ii  libgmp10:amd64                 2:6.2.1+dfsg-3ubuntu1          amd64  Multiprecision arithmetic library                            GPL GPL-2 GPL-3 LGPL-3
+ii  libgnutls30:amd64              3.7.3-4ubuntu1.2               amd64  GNU TLS library - main runtime library                       Apache-2.0 GFDL-1.3 GPL GPL-3 LGPL LGPL-3
+ii  libgomp1:amd64                 12.3.0-1ubuntu1~22.04          amd64  GCC OpenMP (GOMP) support library                            Artistic GFDL-1.2 GPL GPL-2 GPL-3 LGPL
+ii  libgpg-error0:amd64            1.43-3                         amd64  GnuPG development runtime library                            BSD-3-clause GPL-3+ LGPL-2.1+ LGPL-2.1+ or BSD-3-clause g10-permissive
+ii  libgpgme11:amd64               1.16.0-1.2ubuntu4.2            amd64  GPGME - GnuPG Made Easy (library)                            GPL-2+ GPL-3+ LGPL-2+ LGPL-2.1+ LGPL-3+ LGPL-3+ or GPL-2+
+ii  libgpm2:amd64                  1.20.7-10build1                amd64  General Purpose Mouse - shared library                       GPL-2.0+ GPL-3.0+
+ii  libgssapi-krb5-2:amd64         1.19.2-2ubuntu0.2              amd64  MIT Kerberos runtime libraries - krb5 GSS-API Mechanism      GPL-2
+ii  libhash-fieldhash-perl         0.15-1build5                   amd64  Perl module implementing a lightweight field hash            Artistic Artistic or GPL-1+ GPL-1+
+ii  libhogweed6:amd64              3.7.3-1build2                  amd64  low level cryptographic library (public-key cryptos)         Expat GAP GPL-2 GPL-2+ GPL-3+ GPL-3+ with Autoconf exception LGPL-2+ LGPL-3+ LGPL-3+ or GPL-2+ public-domain
+ii  libhtml-form-perl              6.07-1                         all    module that represents an HTML form element                  Artistic Artistic or GPL-1+ GPL-1+
+ii  libhtml-format-perl            2.12-1.1                       all    module for transforming HTML into various formats            Artistic Artistic or GPL-1+ GPL-1+
+ii  libhtml-html5-entities-perl    0.004-1.1                      all    module to encode and decode character entities defined in HT Artistic Artistic or GPL-1+ GPL-1+
+ii  libhtml-parser-perl:amd64      3.76-1build2                   amd64  collection of modules that parse HTML text documents         Artistic Artistic or GPL-1+ GPL-1+
+ii  libhtml-tagset-perl            3.20-4                         all    data tables pertaining to HTML                               Artistic Artistic or GPL-1+ GPL-1+
+ii  libhtml-tree-perl              5.07-2                         all    Perl module to represent and create HTML syntax trees        Artistic Artistic or GPL-1+ GPL-1+
+ii  libhttp-cookies-perl           6.10-1                         all    HTTP cookie jars                                             Artistic Artistic or GPL-1+ GPL-1+
+ii  libhttp-daemon-perl            6.13-1ubuntu0.1                all    simple http server class                                     Artistic Artistic or GPL-1+ GPL-1+
+ii  libhttp-date-perl              6.05-1                         all    module of date conversion routines                           Artistic Artistic or GPL-1+ GPL-1+
+ii  libhttp-message-perl           6.36-1                         all    perl interface to HTTP style messages                        Artistic Artistic or GPL-1+ GPL-1+
+ii  libhttp-negotiate-perl         6.01-1                         all    implementation of content negotiation                        Artistic Artistic or GPL-1+ GPL-1+
+ii  libhttp-tiny-multipart-perl    0.08-1.1                       all    module to add post_multipart method to HTTP::Tiny            Artistic Artistic or Artistic-2.0 or GPL-1+ Artistic-2.0 GPL-1+
+ii  libhwloc-dev:amd64             2.7.0-2ubuntu1                 amd64  Hierarchical view of the machine - static libs and headers   GPL-3
+ii  libhwloc-plugins:amd64         2.7.0-2ubuntu1                 amd64  Hierarchical view of the machine - plugins                   GPL-3
+ii  libhwloc15:amd64               2.7.0-2ubuntu1                 amd64  Hierarchical view of the machine - shared libs               GPL-3
+ii  libibmad-dev:amd64             46.0-1                         amd64  Development files for libibmad                               BSD-2-clause BSD-2-clause or GPL-2 BSD-3-clause BSD-3-clause or GPL-2 BSD-MIT BSD-MIT or GPL-2 CC0 CPL-1.0 CPL-1.0 or BSD-2-clause or GPL-2 GPL-2 GPL-2 or BSD-2-clause GPL-2 or BSD-3-clause GPL-2+ MIT
+ii  libibmad5:amd64                46.0-1                         amd64  Infiniband Management Datagram (MAD) library                 BSD-2-clause BSD-2-clause or GPL-2 BSD-3-clause BSD-3-clause or GPL-2 BSD-MIT BSD-MIT or GPL-2 CC0 CPL-1.0 CPL-1.0 or BSD-2-clause or GPL-2 GPL-2 GPL-2 or BSD-2-clause GPL-2 or BSD-3-clause GPL-2+ MIT
+ii  libibmad5-dbg                  46.0-1                         amd64  Debug symbols for Infiniband Management Datagram (MAD) libra BSD-2-clause BSD-2-clause or GPL-2 BSD-3-clause BSD-3-clause or GPL-2 BSD-MIT BSD-MIT or GPL-2 CC0 CPL-1.0 CPL-1.0 or BSD-2-clause or GPL-2 GPL-2 GPL-2 or BSD-2-clause GPL-2 or BSD-3-clause GPL-2+ MIT
+ii  libibnetdisc-dev:amd64         46.0-1                         amd64  InfiniBand diagnostics library headers                       BSD-2-clause BSD-2-clause or GPL-2 BSD-3-clause BSD-3-clause or GPL-2 BSD-MIT BSD-MIT or GPL-2 CC0 CPL-1.0 CPL-1.0 or BSD-2-clause or GPL-2 GPL-2 GPL-2 or BSD-2-clause GPL-2 or BSD-3-clause GPL-2+ MIT
+ii  libibnetdisc5:amd64            46.0-1                         amd64  InfiniBand diagnostics library                               BSD-2-clause BSD-2-clause or GPL-2 BSD-3-clause BSD-3-clause or GPL-2 BSD-MIT BSD-MIT or GPL-2 CC0 CPL-1.0 CPL-1.0 or BSD-2-clause or GPL-2 GPL-2 GPL-2 or BSD-2-clause GPL-2 or BSD-3-clause GPL-2+ MIT
+ii  libibnetdisc5-dbg:amd64        46.0-1                         amd64  Debug symbols for the libibnetdisc library                   BSD-2-clause BSD-2-clause or GPL-2 BSD-3-clause BSD-3-clause or GPL-2 BSD-MIT BSD-MIT or GPL-2 CC0 CPL-1.0 CPL-1.0 or BSD-2-clause or GPL-2 GPL-2 GPL-2 or BSD-2-clause GPL-2 or BSD-3-clause GPL-2+ MIT
+ii  libibumad-dev:amd64            46.0-1                         amd64  Development files for libibumad                              BSD-2-clause BSD-2-clause or GPL-2 BSD-3-clause BSD-3-clause or GPL-2 BSD-MIT BSD-MIT or GPL-2 CC0 CPL-1.0 CPL-1.0 or BSD-2-clause or GPL-2 GPL-2 GPL-2 or BSD-2-clause GPL-2 or BSD-3-clause GPL-2+ MIT
+ii  libibumad3:amd64               46.0-1                         amd64  InfiniBand Userspace Management Datagram (uMAD) library      BSD-2-clause BSD-2-clause or GPL-2 BSD-3-clause BSD-3-clause or GPL-2 BSD-MIT BSD-MIT or GPL-2 CC0 CPL-1.0 CPL-1.0 or BSD-2-clause or GPL-2 GPL-2 GPL-2 or BSD-2-clause GPL-2 or BSD-3-clause GPL-2+ MIT
+ii  libibumad3-dbg                 46.0-1                         amd64  Debug symbols for the libibumad3 library                     BSD-2-clause BSD-2-clause or GPL-2 BSD-3-clause BSD-3-clause or GPL-2 BSD-MIT BSD-MIT or GPL-2 CC0 CPL-1.0 CPL-1.0 or BSD-2-clause or GPL-2 GPL-2 GPL-2 or BSD-2-clause GPL-2 or BSD-3-clause GPL-2+ MIT
+ii  libibverbs-dev:amd64           46.0-1                         amd64  Development files for the libibverbs library                 BSD-2-clause BSD-2-clause or GPL-2 BSD-3-clause BSD-3-clause or GPL-2 BSD-MIT BSD-MIT or GPL-2 CC0 CPL-1.0 CPL-1.0 or BSD-2-clause or GPL-2 GPL-2 GPL-2 or BSD-2-clause GPL-2 or BSD-3-clause GPL-2+ MIT
+ii  libibverbs1:amd64              46.0-1                         amd64  Library for direct userspace use of RDMA (InfiniBand/iWARP)  BSD-2-clause BSD-2-clause or GPL-2 BSD-3-clause BSD-3-clause or GPL-2 BSD-MIT BSD-MIT or GPL-2 CC0 CPL-1.0 CPL-1.0 or BSD-2-clause or GPL-2 GPL-2 GPL-2 or BSD-2-clause GPL-2 or BSD-3-clause GPL-2+ MIT
+ii  libibverbs1-dbg:amd64          46.0-1                         amd64  Debug symbols for the libibverbs library                     BSD-2-clause BSD-2-clause or GPL-2 BSD-3-clause BSD-3-clause or GPL-2 BSD-MIT BSD-MIT or GPL-2 CC0 CPL-1.0 CPL-1.0 or BSD-2-clause or GPL-2 GPL-2 GPL-2 or BSD-2-clause GPL-2 or BSD-3-clause GPL-2+ MIT
+ii  libicu70:amd64                 70.1-2                         amd64  International Components for Unicode                         GPL-3 MIT
+ii  libidn2-0:amd64                2.3.2-2build1                  amd64  Internationalized domain names (IDNA2008/TR46) library       GPL-2+ GPL-3+ LGPL-3+ LGPL-3+ or GPL-2+ Unicode
+ii  libimport-into-perl            1.002005-1                     all    module for importing packages into other packages            Artistic Artistic or GPL-1+ GPL-1+
+ii  libio-html-perl                1.004-2                        all    open an HTML file with automatic charset detection           Artistic Artistic or GPL-1+ GPL-1+ GPL-3+
+ii  libio-interactive-perl         1.023-1                        all    utility module for interactive I/O                           Artistic Artistic or GPL-1+ GPL-1+
+ii  libio-prompt-tiny-perl         0.003-1                        all    module that prompts for user input with a default option     Apache-2.0 Apache-2.0 or Artistic or GPL-1+ Artistic GPL-1+
+ii  libio-prompter-perl            0.004015-1                     all    Perl module to prompt for input, read it, clean it, return i Artistic Artistic or GPL-1+ GPL-1+
+ii  libio-pty-perl                 1:1.15-2build2                 amd64  Perl module for pseudo tty IO                                Artistic Artistic or GPL-1+ Artistic or GPL-1+ or BSD-2-Clause BSD-2-Clause GPL-1+
+ii  libio-socket-ssl-perl          2.074-2                        all    Perl module implementing object oriented interface to SSL so Artistic Artistic or GPL-1+ GPL-1+
+ii  libio-string-perl              1.08-3.1                       all    Emulate IO::File interface for in-core strings               Artistic GPL-1
+ii  libip4tc2:amd64                1.8.7-1ubuntu5.2               amd64  netfilter libip4tc library                                   Artistic GPL-2 GPL-2+ custom
+ii  libipc-run-perl                20200505.0-1                   all    Perl module for running processes                            Artistic Artistic or GPL-1+ Artistic or GPL-2 GPL-1+ GPL-2
+ii  libipc-run3-perl               0.048-2                        all    run a subprocess with input/output redirection               Artistic BSD-3-clause BSD-3-clause or Artistic or GPL-1+ GPL-1+
+ii  libipc-system-simple-perl      1.30-1                         all    Perl module to run commands simply, with detailed diagnostic Artistic Artistic or GPL-1+ GPL-1+
+ii  libipt2                        2.0.5-1                        amd64  Intel Processor Trace Decoder Library                        Expat
+ii  libisl23:amd64                 0.24-2build1                   amd64  manipulating sets and relations of integer points bounded by BSD-2-clause LGPL-2.1+ MIT
+ii  libiterator-perl               0.03+ds1-1.1                   all    Perl implementation of iterators                             Artistic Artistic or GPL-1+ GPL-1+
+ii  libiterator-util-perl          0.02+ds1-1.1                   all    Useful functions for creating and manipulating iterator obje Artistic Artistic or GPL-1+ GPL-1+
+ii  libitm1:amd64                  12.3.0-1ubuntu1~22.04          amd64  GNU Transactional Memory Library                             Artistic GFDL-1.2 GPL GPL-2 GPL-3 LGPL
+ii  libjemalloc-dev                5.2.1-4ubuntu1                 amd64  development files and documentation for jemalloc             BSD-2-Clause BSD-2-Clause-Chemeris BSD-3-Clause BSD-3-Clause-Google BSD-3-Clause-Hiroshima-University Expat
+ii  libjemalloc2:amd64             5.2.1-4ubuntu1                 amd64  general-purpose scalable concurrent malloc(3) implementation BSD-2-Clause BSD-2-Clause-Chemeris BSD-3-Clause BSD-3-Clause-Google BSD-3-Clause-Hiroshima-University Expat
+ii  libjson-c5:amd64               0.15-3~ubuntu1.22.04.2         amd64  JSON manipulation library - shared library                   Expat
+ii  libjson-maybexs-perl           1.004003-1                     all    interface to the best available JSON module                  Artistic Artistic or GPL-1+ GPL-1+
+ii  libjson-perl                   4.04000-1                      all    module for manipulating JSON-formatted data                  Artistic Artistic or GPL-1+ GPL-1+
+ii  libjson-xs-perl                4.030-1build3                  amd64  module for manipulating JSON-formatted data (C/XS-accelerate Artistic Artistic or GPL-1+ GPL-1+
+ii  libjsoncpp25:amd64             1.9.5-3                        amd64  library for reading and writing JSON for C++                 Expat_or_PublicDomain_or_DualExpatPD GPL-3+
+ii  libk5crypto3:amd64             1.19.2-2ubuntu0.2              amd64  MIT Kerberos runtime libraries - Crypto Library              GPL-2
+ii  libkeyutils1:amd64             1.6.1-2ubuntu3                 amd64  Linux Key Management Utilities (library)                     GPL-2+ LGPL-2+
+ii  libkmod2:amd64                 29-1ubuntu1                    amd64  libkmod shared library                                       GPL-2 LGPL-2.1
+ii  libkrb5-3:amd64                1.19.2-2ubuntu0.2              amd64  MIT Kerberos runtime libraries                               GPL-2
+ii  libkrb5support0:amd64          1.19.2-2ubuntu0.2              amd64  MIT Kerberos runtime libraries - Support library             GPL-2
+ii  libksba8:amd64                 1.6.0-2ubuntu0.2               amd64  X.509 and CMS support library                                GPL-3
+ii  liblapack-dev:amd64            3.10.0-2ubuntu1                amd64  Library of linear algebra routines 3 - static version        BSD-3-clause BSD-3-clause-intel
+ii  liblapack3:amd64               3.10.0-2ubuntu1                amd64  Library of linear algebra routines 3 - shared version        BSD-3-clause BSD-3-clause-intel
+ii  libldap-2.5-0:amd64            2.5.16+dfsg-0ubuntu0.22.04.1   amd64  OpenLDAP libraries                                           unknown
+ii  liblist-compare-perl           0.55-1                         all    Perl module for comparing elements of two or more lists      Artistic Artistic or GPL-1+ GPL-1+
+ii  liblist-moreutils-perl         0.430-2                        all    Perl module with additional list functions not found in List Apache-2.0 Artistic Artistic or GPL-1+ Artistic or GPL-1+ or Apache-2.0 Artistic or GPL-1+, GPL-1+
+ii  liblist-moreutils-xs-perl      0.430-2build2                  amd64  Perl module providing compiled List::MoreUtils functions     Apache-2.0 Apache-2.0 or Artistic or GPL-1+ Artistic Artistic or GPL-1+ Artistic or GPL-1+, GPL-1+
+ii  liblist-someutils-perl         0.58-1                         all    module that provides the stuff missing in List::Util         Artistic Artistic or GPL-1+ GPL-1+
+ii  liblist-someutils-xs-perl      0.58-2build3                   amd64  module providing XS implementation for List::SomeUtils       Artistic Artistic or Artistic-2.0 or GPL-1+ Artistic or GPL-1+ Artistic-2.0 GPL-1+
+ii  liblist-utilsby-perl           0.11-1                         all    higher-order list utility functions                          Artistic Artistic or GPL-1+ GPL-1+
+ii  liblog-any-adapter-screen-perl 0.140-2                        all    send logs to screen, with colors and some other features     Artistic Artistic or GPL-1+ GPL-1+ GPL-3+
+ii  liblog-any-perl                1.710-1                        all    Perl module to log messages safely and efficiently           Artistic Artistic or GPL-1+ GPL-1+
+ii  liblsan0:amd64                 12.3.0-1ubuntu1~22.04          amd64  LeakSanitizer -- a memory leak detector (runtime)            Artistic GFDL-1.2 GPL GPL-2 GPL-3 LGPL
+ii  libltdl-dev:amd64              2.4.6-15build2                 amd64  System independent dlopen wrapper for GNU libtool            GFDL GPL
+ii  libltdl7:amd64                 2.4.6-15build2                 amd64  System independent dlopen wrapper for GNU libtool            GFDL GPL
+ii  liblwp-mediatypes-perl         6.04-1                         all    module to guess media type for a file or a URL               Artistic Artistic or GPL-1+ GPL-1+
+ii  liblwp-protocol-https-perl     6.10-1                         all    HTTPS driver for LWP::UserAgent                              Artistic Artistic or GPL-1+ GPL-1+
+ii  liblz4-1:amd64                 1.9.3-2build2                  amd64  Fast LZ compression algorithm library - runtime              BSD-2-clause GPL-2 GPL-2+
+ii  liblzma5:amd64                 5.2.5-2ubuntu1                 amd64  XZ-format compression library                                Autoconf GPL-2 GPL-2+ LGPL-2.1+ PD PD-debian config-h noderivs none permissive-fsf permissive-nowarranty probably-PD
+ii  liblzo2-2:amd64                2.10-2build3                   amd64  data compression library                                     GPL-2+
+ii  libmagic-mgc                   1:5.41-3ubuntu0.1              amd64  File type determination library using "magic" numbers (compi BSD-2-Clause-alike BSD-2-Clause-netbsd BSD-2-Clause-regents MIT-Old-Style-with-legal-disclaimer-2 public-domain
+ii  libmagic1:amd64                1:5.41-3ubuntu0.1              amd64  Recognize the type of data in a file using "magic" numbers - BSD-2-Clause-alike BSD-2-Clause-netbsd BSD-2-Clause-regents MIT-Old-Style-with-legal-disclaimer-2 public-domain
+ii  libmail-sendmail-perl          0.80-1.1                       all    simple way to send email from a perl script                  Artistic Artistic or GPL-1+ GPL-1+ public-domain
+ii  libmailtools-perl              2.21-1                         all    modules to manipulate email in perl programs                 Artistic Artistic or GPL-1+ GPL-1+
+ii  libmarkdown2:amd64             2.2.7-2                        amd64  implementation of the Markdown markup language in C (library BSD-3-clause-like BSD-3-clause-personal
+ii  libmath-base85-perl            0.5+dfsg-1                     all    Perl extension for base 85 numbers, as referenced by RFC 192 Artistic Artistic or GPL-1+ GPL-1+
+ii  libmd0:amd64                   1.0.4-1build1                  amd64  message digest functions from BSD systems - shared library   BSD-2-clause BSD-2-clause-NetBSD BSD-3-clause BSD-3-clause-Aaron-D-Gifford Beerware ISC public-domain-md4 public-domain-md5 public-domain-sha1
+ii  libmnl0:amd64                  1.0.4-3build2                  amd64  minimalistic Netlink communication library                   GPL-2+ LGPL-2.1
+ii  libmodule-implementation-perl  0.09-1.1                       all    module for loading one of several alternate implementations  Artistic Artistic or Artistic-2.0 or GPL-1+ Artistic-2.0 GPL-1+
+ii  libmodule-runtime-perl         0.016-1                        all    Perl module for runtime module handling                      Artistic Artistic or GPL-1+ GPL-1+
+ii  libmoo-perl                    2.005004-3                     all    Minimalist Object Orientation library (with Moose compatibil Artistic Artistic or GPL-1+ GPL-1+
+ii  libmoox-aliases-perl           0.001006-1.1                   all    easy aliasing of methods and attributes in Moo               Artistic Artistic or GPL-1+ GPL-1+ GPL-3+
+ii  libmoox-struct-perl            0.020-1                        all    simple lightweight record-like structures making sounds like Artistic Artistic or GPL-1+ GPL-1+ GPL-3+
+ii  libmount1:amd64                2.37.2-4ubuntu3                amd64  device mounting library                                      BSD-2-clause BSD-3-clause BSD-4-clause GPL-2 GPL-2+ GPL-3+ LGPL LGPL-2+ LGPL-2.1+ LGPL-3+ MIT public-domain
+ii  libmouse-perl                  2.5.10-1build4                 amd64  lightweight object framework for Perl                        Artistic Artistic or GPL-1+ GPL-1+
+ii  libmpc3:amd64                  1.2.1-2build1                  amd64  multiple precision complex floating-point library            LGPL-3
+ii  libmpdec3:amd64                2.5.1-2build2                  amd64  library for decimal floating point arithmetic (runtime libra BSD GPL-2+
+ii  libmpfr6:amd64                 4.1.0-3build3                  amd64  multiple precision floating-point computation                GFDL-1.2 LGPL-3
+ii  libnamespace-autoclean-perl    0.29-1                         all    module to remove imported symbols after compilation          Artistic Artistic or GPL-1+ GPL-1+
+ii  libnamespace-clean-perl        0.27-1                         all    module for keeping imports and functions out of the current  Artistic Artistic or GPL-1+ GPL-1+
+ii  libncurses6:amd64              6.3-2ubuntu0.1                 amd64  shared libraries for terminal handling                       BSD-3-clause MIT/X11 X11
+ii  libncursesw6:amd64             6.3-2ubuntu0.1                 amd64  shared libraries for terminal handling (wide character suppo BSD-3-clause MIT/X11 X11
+ii  libnet-domain-tld-perl         1.75-1.1                       all    list of currently available Top-level Domains (TLDs)         Artistic Artistic or GPL-1+ GPL-1+
+ii  libnet-http-perl               6.22-1                         all    module providing low-level HTTP connection client            Artistic Artistic or GPL-1+ GPL-1+
+ii  libnet-ipv6addr-perl           1.02-1                         all    module to validate/manipulate IPv6 addresses                 Artistic Artistic or GPL-1+ GPL-1+
+ii  libnet-netmask-perl            2.0001-1                       all    module to parse, manipulate and lookup IP network blocks     Artistic Artistic or GPL-1+ GPL-1+ GPL-3+
+ii  libnet-smtp-ssl-perl           1.04-1                         all    Perl module providing SSL support to Net::SMTP               Artistic Artistic or GPL-1+ GPL-1+
+ii  libnet-ssleay-perl:amd64       1.92-1build2                   amd64  Perl module for Secure Sockets Layer (SSL)                   Artistic Artistic or GPL-1+ Artistic-2.0 GPL-1+
+ii  libnetaddr-ip-perl             4.079+dfsg-1build7             amd64  IP address manipulation module                               Artistic Artistic or GPL-1+ Artistic or GPL-2+ GPL-1+ GPL-2+ GPL-3+
+ii  libnettle8:amd64               3.7.3-1build2                  amd64  low level cryptographic library (symmetric and one-way crypt Expat GAP GPL-2 GPL-2+ GPL-3+ GPL-3+ with Autoconf exception LGPL-2+ LGPL-3+ LGPL-3+ or GPL-2+ public-domain
+ii  libnfsidmap1:amd64             1:2.6.1-1ubuntu1.2             amd64  NFS idmapping library                                        GPL-2
+ii  libnghttp2-14:amd64            1.43.0-1ubuntu0.2              amd64  library implementing HTTP/2 protocol (shared library)        BSD-2-clause Expat GPL-3+ with autoconf exception MIT SIL-OFL-1.1 all-permissive
+ii  libnl-3-200:amd64              3.5.0-0.1                      amd64  library for dealing with netlink sockets                     GPL-2 LGPL-2.1
+ii  libnl-3-dev:amd64              3.5.0-0.1                      amd64  development library and headers for libnl-3                  GPL-2 LGPL-2.1
+ii  libnl-genl-3-200:amd64         3.5.0-0.1                      amd64  library for dealing with netlink sockets - generic netlink   GPL-2 LGPL-2.1
+ii  libnl-route-3-200:amd64        3.5.0-0.1                      amd64  library for dealing with netlink sockets - route interface   GPL-2 LGPL-2.1
+ii  libnl-route-3-dev:amd64        3.5.0-0.1                      amd64  development library and headers for libnl-route-3            GPL-2 LGPL-2.1
+ii  libnpp-12-2                    12.1.1.14-1                    amd64  NPP native runtime libraries                                 "BSD" LICENCE "BSD" License Boost Software License MIT License MIT license bsd-license.php
+ii  libnpp-dev-12-2                12.1.1.14-1                    amd64  NPP native dev links, headers                                "BSD" LICENCE "BSD" License Boost Software License MIT License MIT license bsd-license.php
+ii  libnpth0:amd64                 1.6-3build2                    amd64  replacement for GNU Pth using system threads                 LGPL-2.1+
+ii  libnsl-dev:amd64               1.3.0-2build2                  amd64  libnsl development files                                     BSD-3-clause GPL-2+-autoconf-exception GPL-2+-libtool-exception GPL-3+-autoconf-exception LGPL-2.1 LGPL-2.1+ MIT permissive-autoconf-m4 permissive-autoconf-m4-no-warranty permissive-configure permissive-fsf permissive-makefile-in
+ii  libnsl2:amd64                  1.3.0-2build2                  amd64  Public client interface for NIS(YP) and NIS+                 BSD-3-clause GPL-2+-autoconf-exception GPL-2+-libtool-exception GPL-3+-autoconf-exception LGPL-2.1 LGPL-2.1+ MIT permissive-autoconf-m4 permissive-autoconf-m4-no-warranty permissive-configure permissive-fsf permissive-makefile-in
+ii  libnss-systemd:amd64           249.11-0ubuntu3.12             amd64  nss module providing dynamic user and group name resolution  CC0-1.0 Expat GPL-2 GPL-2 with Linux-syscall-note exception GPL-2+ LGPL-2.1+ public-domain
+ii  libnuma-dev:amd64              2.0.14-3ubuntu2                amd64  Development files for libnuma                                GPL LGPL
+ii  libnuma1:amd64                 2.0.14-3ubuntu2                amd64  Libraries for controlling NUMA policy                        GPL LGPL
+ii  libnumber-compare-perl         0.03-2                         all    module for performing numeric comparisons in Perl            Artistic Artistic or GPL-1+ GPL-1+
+ii  libnvjitlink-12-2              12.2.140-1                     amd64  NVJIT link native runtime libraries                          "BSD" LICENCE "BSD" License Boost Software License MIT License MIT license bsd-license.php
+ii  libnvjitlink-dev-12-2          12.2.140-1                     amd64  NVJIT native dev links, headers                              "BSD" LICENCE "BSD" License Boost Software License MIT License MIT license bsd-license.php
+ii  libnvjpeg-12-2                 12.2.2.4-1                     amd64  NVJPEG native runtime libraries                              "BSD" LICENCE "BSD" License Boost Software License MIT License MIT license bsd-license.php
+ii  libnvjpeg-dev-12-2             12.2.2.4-1                     amd64  NVJPEG native dev links, headers                             "BSD" LICENCE "BSD" License Boost Software License MIT License MIT license bsd-license.php
+ii  libobject-id-perl              0.1.2-2.1ubuntu1               all    unique identifier for any object                             Artistic Artistic or GPL-1+ GPL-1+
+ii  libp11-kit0:amd64              0.24.0-6build1                 amd64  library for loading and coordinating access to PKCS#11 modul Apache-2.0 BSD-3-Clause ISC ISC+IBM LGPL-2.1+ permissive-like-automake-output same-as-rest-of-p11kit
+ii  libpackage-stash-perl          0.39-1                         all    module providing routines for manipulating stashes           Artistic Artistic or GPL-1+ GPL-1+
+ii  libpackage-stash-xs-perl       0.29-1build5                   amd64  Perl module providing routines for manipulating stashes (XS  Artistic Artistic or GPL-1+ GPL-1+
+ii  libpam-cap:amd64               1:2.44-1ubuntu0.22.04.1        amd64  POSIX 1003.1e capabilities (PAM module)                      BSD-3-clause BSD-3-clause or GPL-2 BSD-3-clause or GPL-2+ GPL-2 GPL-2+
+ii  libpam-modules:amd64           1.4.0-11ubuntu2.3              amd64  Pluggable Authentication Modules for PAM                     GPL
+ii  libpam-modules-bin             1.4.0-11ubuntu2.3              amd64  Pluggable Authentication Modules for PAM - helper binaries   GPL
+ii  libpam-runtime                 1.4.0-11ubuntu2.3              all    Runtime support for the PAM library                          GPL
+ii  libpam-systemd:amd64           249.11-0ubuntu3.12             amd64  system and service manager - PAM module                      CC0-1.0 Expat GPL-2 GPL-2 with Linux-syscall-note exception GPL-2+ LGPL-2.1+ public-domain
+ii  libpam0g:amd64                 1.4.0-11ubuntu2.3              amd64  Pluggable Authentication Modules library                     GPL
+ii  libparams-classify-perl        0.015-1build5                  amd64  Perl module for argument type classification                 Artistic Artistic or GPL-1+ GPL-1+
+ii  libparams-util-perl            1.102-1build3                  amd64  Perl extension for simple stand-alone param checking functio Apache-2.0 Artistic Artistic or GPL-1+ GPL-1+
+ii  libpath-iterator-rule-perl     1.015-1                        all    iterative, recursive file finder                             Apache-2.0 GPL-3+
+ii  libpath-tiny-perl              0.122-1                        all    file path utility                                            Apache-2.0 GPL-3+
+ii  libpcap0.8:amd64               1.10.1-4build1                 amd64  system interface for user-level packet capture               BSD license
+ii  libpci3:amd64                  1:3.7.0-6                      amd64  PCI utilities (shared library)                               GPL-2+
+ii  libpciaccess0:amd64            0.16-3                         amd64  Generic PCI access library for X                             GPL
+ii  libpcre2-8-0:amd64             10.39-3ubuntu0.1               amd64  New Perl Compatible Regular Expression Library- 8 bit runtim "BSD" LICENCE "BSD" License public domain
+ii  libpcre3:amd64                 2:8.39-13ubuntu0.22.04.1       amd64  Old Perl 5 Compatible Regular Expression Library - runtime f "BSD" LICENCE "BSD" License
+ii  libperl5.34:amd64              5.34.0-3ubuntu1.2              amd64  shared Perl library                                          Artistic Artistic or GPL-1+ or Artistic-dist Artistic-2 Artistic-dist BSD-3-clause BSD-3-clause-GENERIC BSD-3-clause-with-weird-numbering BSD-4-clause-POWERDOG BZIP CC0-1.0 DONT-CHANGE-THE-GPL Expat Expat or GPL-1+ or Artistic GPL-1+ GPL-1+ or Artistic GPL-1+ or Artistic or Artistic-dist GPL-1+ or Artistic, GPL-2+ GPL-2+ or Artistic GPL-3+-WITH-BISON-EXCEPTION HSIEH-BSD HSIEH-DERIVATIVE LGPL-2.1 REGCOMP REGCOMP, RRA-KEEP-THIS-NOTICE SDBM-PUBLIC-DOMAIN TEXT-TABS Unicode ZLIB
+ii  libperlio-gzip-perl            0.19-1build8                   amd64  module providing a PerlIO layer to gzip/gunzip               Artistic Artistic or GPL-1+ GPL-1+
+ii  libperlio-utf8-strict-perl     0.009-1build1                  amd64  fast and correct UTF-8 Perl IO module                        Artistic Artistic or GPL-1+ GPL-1+ mgk-short-license
+ii  libpipeline1:amd64             1.5.5-1                        amd64  Unix process pipeline manipulation library                   GPL-2+ GPL-3+
+ii  libpixman-1-0:amd64            0.40.0-1ubuntu0.22.04.1        amd64  pixel-manipulation library for X and cairo                   MIT license
+ii  libpng16-16:amd64              1.6.37-3build5                 amd64  PNG library - runtime (version 1.6)                          Apache-2.0 BSD-3-clause BSD-like-with-advertising-clause GPL-2+ GPL-2+ or BSD-like-with-advertising-clause expat libpng libpng OR Apache-2.0 OR BSD-3-clause
+ii  libpod-constants-perl          0.19-2                         all    module for including constants from POD                      Artistic-2.0 Artistic-2.0 or GPL-3+ GPL-3+
+ii  libpod-parser-perl             1.63-2                         all    modules for parsing/translating POD format documents         Artistic Artistic or GPL-1+ GPL-1+
+ii  libproc-processtable-perl:amd6 0.634-1build1                  amd64  Perl library for accessing process table information         Artistic Artistic or GPL-1+ GPL-1+ GPL-2 LGPL-2.1+ other
+ii  libprocps8:amd64               2:3.3.17-6ubuntu2              amd64  library for accessing process information from /proc         GPL-2.0+ LGPL-2.0+ LGPL-2.1+
+ii  libpsl5:amd64                  0.21.0-1.2build2               amd64  Library for Public Suffix List (shared libraries)            Chromium MIT
+ii  libpython3-stdlib:amd64        3.10.6-1~22.04                 amd64  interactive high-level object-oriented language (default pyt GPL-compatible GPL-compatible licenses
+ii  libpython3.10:amd64            3.10.12-1~22.04.3              amd64  Shared Python runtime library (version 3.10)                 GPL-2
+ii  libpython3.10-minimal:amd64    3.10.12-1~22.04.3              amd64  Minimal subset of the Python language (version 3.10)         GPL-2
+ii  libpython3.10-stdlib:amd64     3.10.12-1~22.04.3              amd64  Interactive high-level object-oriented language (standard li GPL-2
+ii  libquadmath0:amd64             12.3.0-1ubuntu1~22.04          amd64  GCC Quad-Precision Math Library                              Artistic GFDL-1.2 GPL GPL-2 GPL-3 LGPL
+ii  librdmacm-dev:amd64            46.0-1                         amd64  Development files for the librdmacm library                  BSD-2-clause BSD-2-clause or GPL-2 BSD-3-clause BSD-3-clause or GPL-2 BSD-MIT BSD-MIT or GPL-2 CC0 CPL-1.0 CPL-1.0 or BSD-2-clause or GPL-2 GPL-2 GPL-2 or BSD-2-clause GPL-2 or BSD-3-clause GPL-2+ MIT
+ii  librdmacm1:amd64               46.0-1                         amd64  Library for managing RDMA connections                        BSD-2-clause BSD-2-clause or GPL-2 BSD-3-clause BSD-3-clause or GPL-2 BSD-MIT BSD-MIT or GPL-2 CC0 CPL-1.0 CPL-1.0 or BSD-2-clause or GPL-2 GPL-2 GPL-2 or BSD-2-clause GPL-2 or BSD-3-clause GPL-2+ MIT
+ii  librdmacm1-dbg                 46.0-1                         amd64  Debug symbols for the librdmacm library                      BSD-2-clause BSD-2-clause or GPL-2 BSD-3-clause BSD-3-clause or GPL-2 BSD-MIT BSD-MIT or GPL-2 CC0 CPL-1.0 CPL-1.0 or BSD-2-clause or GPL-2 GPL-2 GPL-2 or BSD-2-clause GPL-2 or BSD-3-clause GPL-2+ MIT
+ii  libre-engine-re2-perl:amd64    0.14-1build2                   amd64  RE2 regex engine                                             Artistic Artistic or GPL-1+ GPL-1+ GPL-3+
+ii  libre2-9:amd64                 20220201+dfsg-1                amd64  efficient, principled regular expression library             Apache-2.0 with LLVM exception BSD-3-google Lucent
+ii  libreadline8:amd64             8.1.2-1                        amd64  GNU readline and history libraries, run-time libraries       GFDL GPL-3
+ii  libreadonly-perl               2.050-3                        all    facility for creating read-only scalars, arrays and hashes   Artistic Artistic or GPL-1+ GPL-1+
+ii  libref-util-perl               0.204-1                        all    set of utility functions for checking references             Artistic Artistic or GPL-1+ Expat GPL-1+
+ii  libref-util-xs-perl            0.117-1build5                  amd64  XS implementation for Ref::Util                              Artistic Artistic or GPL-1+ Expat GPL-1+
+ii  libregexp-pattern-license-perl 3.9.3-1                        all    regular expressions for legal licenses                       Artistic Artistic or GPL-1+ GPL-1+ GPL-3+
+ii  libregexp-pattern-perl         0.2.14-1                       all    convention/framework for modules that contain collection of  Artistic Artistic or GPL-1+ GPL-1+ GPL-3+
+ii  librhash0:amd64                1.4.2-1ubuntu1                 amd64  shared library for hash functions computing                  0BSD
+ii  librole-tiny-perl              2.002004-1                     all    Perl module for minimalist role composition                  Artistic Artistic or GPL-1+ GPL-1+
+ii  librtmp1:amd64                 2.4+20151223.gitfa8646d.1-2bui amd64  toolkit for RTMP streams (shared library)                    GPL-2 LGPL-2.1
+ii  libsasl2-2:amd64               2.1.27+dfsg2-3ubuntu1.2        amd64  Cyrus SASL - authentication abstraction library              BSD-2-clause BSD-2.2-clause BSD-3-clause BSD-3-clause-JANET BSD-3-clause-PADL BSD-4-clause BSD-4-clause-UC FSFULLR GPL-3+ IBM-as-is MIT-CMU MIT-Export MIT-OpenVision OpenLDAP OpenSSL RSA-MD SSLeay
+ii  libsasl2-modules-db:amd64      2.1.27+dfsg2-3ubuntu1.2        amd64  Cyrus SASL - pluggable authentication modules (DB)           BSD-2-clause BSD-2.2-clause BSD-3-clause BSD-3-clause-JANET BSD-3-clause-PADL BSD-4-clause BSD-4-clause-UC FSFULLR GPL-3+ IBM-as-is MIT-CMU MIT-Export MIT-OpenVision OpenLDAP OpenSSL RSA-MD SSLeay
+ii  libseccomp2:amd64              2.5.3-2ubuntu2                 amd64  high level interface to Linux seccomp filter                 LGPL-2.1
+ii  libselinux1:amd64              3.3-1build2                    amd64  SELinux runtime shared libraries                             GPL-2 LGPL-2.1
+ii  libsemanage-common             3.3-1build2                    all    Common files for SELinux policy management libraries         GPL LGPL
+ii  libsemanage2:amd64             3.3-1build2                    amd64  SELinux policy management library                            GPL LGPL
+ii  libsensors-config              1:3.6.0-7ubuntu1               all    lm-sensors configuration files                               GPL-2 LGPL-2.1
+ii  libsensors5:amd64              1:3.6.0-7ubuntu1               amd64  library to read temperature/voltage/fan sensors              GPL-2 LGPL-2.1
+ii  libsepol2:amd64                3.3-1build1                    amd64  SELinux library for manipulating binary security policies    GPL LGPL
+ii  libsereal-decoder-perl         4.023+ds-1                     amd64  fast, compact, powerful binary deserialization module        Artistic Artistic or GPL-1+ BSD-3-clause Expat GPL-1+ other-miniz other-typemap
+ii  libsereal-encoder-perl:amd64   4.023+ds-1                     amd64  fast, compact, powerful binary serialization module          Artistic Artistic or GPL-1+ BSD-3-clause Expat GPL-1+ other-miniz other-typemap
+ii  libset-intspan-perl            1.19-2                         all    module to manage sets of integers                            Artistic Artistic or GPL-1+ GPL-1+
+ii  libsigsegv2:amd64              2.13-1ubuntu3                  amd64  Library for handling page faults in a portable way           GPL-2+ GPL-2+ with Autoconf exception permissive-fsf permissive-other
+ii  libsmartcols1:amd64            2.37.2-4ubuntu3                amd64  smart column output alignment library                        BSD-2-clause BSD-3-clause BSD-4-clause GPL-2 GPL-2+ GPL-3+ LGPL LGPL-2+ LGPL-2.1+ LGPL-3+ MIT public-domain
+ii  libsocket6-perl                0.29-1build4                   amd64  Perl extensions for IPv6                                     BSD-3-Clause ISC
+ii  libsodium23:amd64              1.0.18-1build2                 amd64  Network communication, cryptography and signaturing library  BSD-2-clause CC0 GPL-2+ ISC MIT public-domain
+ii  libsort-versions-perl          1.62-1                         all    Perl module for sorting of revision (and similar) numbers    Artistic Artistic or GPL-1+ GPL-1+
+ii  libsource-highlight-common     3.1.9-4.1build2                all    architecture-independent files for source highlighting libra Expat GPL-3+
+ii  libsource-highlight4v5         3.1.9-4.1build2                amd64  source highlighting library                                  Expat GPL-3+
+ii  libsqlite3-0:amd64             3.37.2-2ubuntu0.1              amd64  SQLite 3 shared library                                      GPL-2+ public-domain
+ii  libss2:amd64                   1.46.5-2ubuntu1.1              amd64  command-line interface parsing library                       unknown
+ii  libssh-4:amd64                 0.9.6-2ubuntu0.22.04.3         amd64  tiny C SSH library (OpenSSL flavor)                          BSD-2-clause BSD-3-clause LGPL-2.1 LGPL-2.1+~OpenSSL LGPL-2.1+~OpenSSL or BSD-2-clause or BSD-3-clause public-domain
+ii  libssl3:amd64                  3.0.2-0ubuntu1.10              amd64  Secure Sockets Layer toolkit - shared libraries              Apache-2.0 Artistic Artistic or GPL-1+ GPL-1+
+ii  libstdc++-11-dev:amd64         11.4.0-1ubuntu1~22.04          amd64  GNU Standard C++ Library v3 (development files)              Artistic GFDL-1.2 GPL GPL-2 GPL-3 LGPL
+ii  libstdc++6:amd64               12.3.0-1ubuntu1~22.04          amd64  GNU Standard C++ Library v3                                  Artistic GFDL-1.2 GPL GPL-2 GPL-3 LGPL
+ii  libstrictures-perl             2.000006-1                     all    Perl module to turn on strict and make all warnings fatal    Artistic Artistic or GPL-1+ GPL-1+
+ii  libstring-copyright-perl       0.003012-1                     all    representation of text-based copyright statements            AGPL-3+ Artistic Artistic or GPL-1+ GPL-1+
+ii  libstring-escape-perl          2010.002-2                     all    module for manipulating escaped strings                      Artistic Artistic or GPL-1+ GPL-1+
+ii  libstring-shellquote-perl      1.04-1                         all    module to quote strings for passing through the shell        Artistic Artistic or GPL-1+ GPL-1+
+ii  libsub-exporter-perl           0.988-1                        all    sophisticated exporter for custom-built routines             Artistic Artistic or GPL-1+ GPL-1+
+ii  libsub-exporter-progressive-pe 0.001013-1                     all    module for using Sub::Exporter only if needed                Artistic Artistic or GPL-1+ GPL-1+
+ii  libsub-identify-perl           0.14-1build5                   amd64  module to retrieve names of code references                  Artistic Artistic or GPL-1+ GPL-1+
+ii  libsub-install-perl            0.928-1.1                      all    module for installing subroutines into packages easily       Artistic Artistic or GPL-1+ GPL-1+
+ii  libsub-name-perl               0.26-1build3                   amd64  module for assigning a new name to referenced sub            Artistic Artistic or GPL-1+ GPL-1+
+ii  libsub-override-perl           0.09-2                         all    Perl module used to temporarily override subroutines         Artistic Artistic or GPL-1+ GPL-1+
+ii  libsub-quote-perl              2.006006-1                     all    helper modules for subroutines                               Artistic Artistic or GPL-1+ GPL-1+
+ii  libsubunit-dev:amd64           1.4.0-3                        amd64  Unit testing protocol - Development headers and static libra Apache-2-or-BSD-3-clause Expat
+ii  libsubunit0:amd64              1.4.0-3                        amd64  Unit testing protocol - C/C++ shared library                 Apache-2-or-BSD-3-clause Expat
+ii  libsyntax-keyword-try-perl     0.26-1build1                   amd64  try/catch/finally syntax for perl                            Artistic Artistic or GPL-1+ GPL-1+
+ii  libsys-hostname-long-perl      1.5-2                          all    module tp determine the long (fully-qualified) hostname      Artistic Artistic or GPL-1+ GPL-1+
+ii  libsystemd0:amd64              249.11-0ubuntu3.12             amd64  systemd utility library                                      CC0-1.0 Expat GPL-2 GPL-2 with Linux-syscall-note exception GPL-2+ LGPL-2.1+ public-domain
+ii  libtasn1-6:amd64               4.18.0-4build1                 amd64  Manage ASN.1 structures (runtime)                            GFDL-1.3 GPL-3 LGPL LGPL-2.1
+ii  libtcl8.6:amd64                8.6.12+dfsg-1build1            amd64  Tcl (the Tool Command Language) v8.6 - run-time library file unknown
+ii  libterm-readkey-perl           2.38-1build4                   amd64  perl module for simple terminal control                      Artistic Artistic or GPL-1+ GPL-1+ termreadkey termreadkey or Artistic or GPL-1+
+ii  libtext-glob-perl              0.11-2                         all    Perl module for matching globbing patterns against text      Artistic Artistic or GPL-1+ GPL-1+
+ii  libtext-levenshteinxs-perl     0.03-4build10                  amd64  XS implementation of the Levenshtein edit distance           Artistic Artistic or GPL-1+ GPL-1+
+ii  libtext-markdown-discount-perl 0.13-1build1                   amd64  Perl interface to Discount, an implementation of Markdown    Artistic Artistic or GPL-1+ BSD-3-clause BSD-3-clause-discount GPL-1+
+ii  libtext-xslate-perl:amd64      3.5.9-1build1                  amd64  scalable template engine for Perl 5 (C/XS accelerated)       Artistic Artistic or GPL-1+ GPL-1+
+ii  libtime-duration-perl          1.21-1                         all    module for rounded or exact English expression of durations  Artistic Artistic or GPL-1+ GPL-1+
+ii  libtime-moment-perl            0.44-1build6                   amd64  Perl C/XS module representing date and time of day with UTC  Artistic Artistic or GPL-1+ BSD-2-Clause GPL-1+
+ii  libtimedate-perl               2.3300-2                       all    collection of modules to manipulate date/time information    Artistic Artistic or GPL-1+ GPL-1+
+ii  libtinfo6:amd64                6.3-2ubuntu0.1                 amd64  shared low-level terminfo library for terminal handling      BSD-3-clause MIT/X11 X11
+ii  libtirpc-common                1.3.2-2ubuntu0.1               all    transport-independent RPC library - common files             BSD-2-Clause BSD-3-Clause BSD-4-Clause GPL-2 LGPL-2.1+ PERMISSIVE __AUTO_PERMISSIVE__
+ii  libtirpc-dev:amd64             1.3.2-2ubuntu0.1               amd64  transport-independent RPC library - development files        BSD-2-Clause BSD-3-Clause BSD-4-Clause GPL-2 LGPL-2.1+ PERMISSIVE __AUTO_PERMISSIVE__
+ii  libtirpc3:amd64                1.3.2-2ubuntu0.1               amd64  transport-independent RPC library                            BSD-2-Clause BSD-3-Clause BSD-4-Clause GPL-2 LGPL-2.1+ PERMISSIVE __AUTO_PERMISSIVE__
+ii  libtool                        2.4.6-15build2                 all    Generic library support script                               GFDL GPL
+ii  libtry-tiny-perl               0.31-1                         all    module providing minimalistic try/catch                      Expat
+ii  libtsan0:amd64                 11.4.0-1ubuntu1~22.04          amd64  ThreadSanitizer -- a Valgrind-based detector of data races ( Artistic GFDL-1.2 GPL GPL-2 GPL-3 LGPL
+ii  libtsan2:amd64                 12.3.0-1ubuntu1~22.04          amd64  ThreadSanitizer -- a Valgrind-based detector of data races ( Artistic GFDL-1.2 GPL GPL-2 GPL-3 LGPL
+ii  libtype-tiny-perl              1.012004-1                     all    tiny, yet Moo(se)-compatible type constraint                 Artistic Artistic or GPL-1+ GPL-1+ GPL-3+
+ii  libtype-tiny-xs-perl           0.022-1build2                  amd64  boost for some of Type::Tiny's built-in type constraints     Artistic Artistic or GPL-1+ GPL-1+ GPL-3+
+ii  libtypes-serialiser-perl       1.01-1                         all    module providing simple data types for common serialisation  Artistic Artistic or GPL-1+ GPL-1+
+ii  libubsan1:amd64                12.3.0-1ubuntu1~22.04          amd64  UBSan -- undefined behaviour sanitizer (runtime)             Artistic GFDL-1.2 GPL GPL-2 GPL-3 LGPL
+ii  libuchardet0:amd64             0.0.7-1build2                  amd64  universal charset detection library - shared library         GPL-2+ LGPL-2.1+ MPL-1.1 MPL-1.1 or GPL-2+ or LGPL-2.1+
+ii  libudev1:amd64                 249.11-0ubuntu3.12             amd64  libudev shared library                                       CC0-1.0 Expat GPL-2 GPL-2 with Linux-syscall-note exception GPL-2+ LGPL-2.1+ public-domain
+ii  libunicode-utf8-perl           0.62-1build4                   amd64  encoding and decoding of UTF-8 encoding form                 Artistic Artistic or GPL-1+ GPL-1+ GPL-3+ None
+ii  libunistring2:amd64            1.0-1                          amd64  Unicode string library for C                                 FreeSoftware GFDL-1.2+ GPL-2+ GPL-2+ with distribution exception GPL-3+ GPL-3+ or GFDL-1.2+ LGPL-3+ LGPL-3+ or GPL-2+ MIT
+ii  libunwind8:amd64               1.3.2-2build2.1                amd64  library to determine the call-chain of a program - runtime   Expat GPL-2+
+ii  liburi-perl                    5.10-1                         all    module to manipulate and access URI strings                  Artistic Artistic or GPL-1+ GPL-1+
+ii  libuuid1:amd64                 2.37.2-4ubuntu3                amd64  Universally Unique ID library                                BSD-2-clause BSD-3-clause BSD-4-clause GPL-2 GPL-2+ GPL-3+ LGPL LGPL-2+ LGPL-2.1+ LGPL-3+ MIT public-domain
+ii  libuv1:amd64                   1.43.0-1ubuntu0.1              amd64  asynchronous event notification library - runtime library    Apache-2.0 BSD-1-clause BSD-2-clause BSD-3-clause CC-BY-4.0 Expat GPL3+ with autoconf exception ISC
+ii  libvariable-magic-perl         0.62-1build5                   amd64  module to associate user-defined magic to variables from Per Artistic Artistic or GPL-1+ GPL-1+
+ii  libwant-perl                   0.29-1build7                   amd64  generalisation of wantarray                                  Artistic Artistic or GPL-1+ GPL-1+
+ii  libwrap0:amd64                 7.6.q-31build2                 amd64  Wietse Venema's TCP wrappers library                         unknown
+ii  libwww-perl                    6.61-1                         all    simple and consistent interface to the world-wide web        Artistic Artistic or GPL-1+ GPL-1+
+ii  libwww-robotrules-perl         6.02-1                         all    database of robots.txt-derived permissions                   Artistic Artistic or GPL-1+ GPL-1+
+ii  libx11-6:amd64                 2:1.7.5-1ubuntu0.3             amd64  X11 client-side library                                      MIT license
+ii  libx11-data                    2:1.7.5-1ubuntu0.3             all    X11 client-side library                                      MIT license
+ii  libxau6:amd64                  1:1.0.9-1build5                amd64  X11 authorisation library                                    unknown
+ii  libxcb-render0:amd64           1.14-3ubuntu3                  amd64  X C Binding, render extension                                unknown
+ii  libxcb-shm0:amd64              1.14-3ubuntu3                  amd64  X C Binding, shm extension                                   unknown
+ii  libxcb1:amd64                  1.14-3ubuntu3                  amd64  X C Binding                                                  unknown
+ii  libxdmcp6:amd64                1:1.1.3-0ubuntu5               amd64  X11 Display Manager Control Protocol library                 unknown
+ii  libxext6:amd64                 2:1.3.4-1build1                amd64  X11 miscellaneous extension library                          unknown
+ii  libxml-libxml-perl             2.0207+dfsg+really+2.0134-1    amd64  Perl interface to the libxml2 library                        Artistic Artistic or GPL-1+ Expat GPL-1+
+ii  libxml-namespacesupport-perl   1.12-1.1                       all    Perl module for supporting simple generic namespaces         Artistic Artistic or GPL-1+ GPL-1+
+ii  libxml-parser-perl:amd64       2.46-3build1                   amd64  Perl module for parsing XML files                            Artistic Artistic or GPL-1+ GPL-1+
+ii  libxml-sax-base-perl           1.09-1.1                       all    base class for SAX drivers and filters                       Artistic Artistic or GPL-1+ GPL-1+
+ii  libxml-sax-expat-perl          0.51-1                         all    Perl module for a SAX2 driver for Expat (XML::Parser)        Artistic Artistic or GPL-1+ GPL-1+
+ii  libxml-sax-perl                1.02+dfsg-3                    all    Perl module for using and building Perl SAX2 XML processors  Artistic Artistic or GPL-1+ GPL-1+
+ii  libxml2:amd64                  2.9.13+dfsg-1ubuntu0.4         amd64  GNOME XML library                                            ISC MIT-1
+ii  libxmuu1:amd64                 2:1.1.3-3                      amd64  X11 miscellaneous micro-utility library                      unknown
+ii  libxnvctrl0:amd64              555.42.02-0ubuntu1             amd64  NV-CONTROL X extension (runtime library)                     Expat Expat-NVIDIA Expat-Precision Expat-RedHat GPL-2 other-MetroLink other-Metrolink other-XFree
+ii  libxrender1:amd64              1:0.9.10-1build4               amd64  X Rendering Extension client library                         unknown
+ii  libxs-parse-keyword-perl       0.21-1build1                   amd64  XS functions to assist in parsing keyword syntax             Artistic Artistic or GPL-1+ GPL-1+
+ii  libxtables12:amd64             1.8.7-1ubuntu5.2               amd64  netfilter xtables library                                    Artistic GPL-2 GPL-2+ custom
+ii  libxxhash0:amd64               0.8.1-1                        amd64  shared library for xxhash                                    BSD-2-clause GPL-2
+ii  libyaml-0-2:amd64              0.2.2-1build2                  amd64  Fast YAML 1.1 parser and emitter library                     Expat permissive
+ii  libyaml-libyaml-perl           0.83+ds-1build1                amd64  Perl interface to libyaml, a YAML implementation             Artistic Artistic or GPL-1+ GPL-1+
+ii  libzstd1:amd64                 1.4.8+dfsg-3build1             amd64  fast lossless compression algorithm                          BSD-3-clause Expat GPL-2 zlib
+ii  licensecheck                   3.2.14-2                       all    simple license checker for source files                      AGPL-3+ Artistic Artistic or GPL-1+ Artistic-2.0 CC-BY-4.0 Expat GPL-1+ GPL-2+ GPL-3+ ISC
+ii  lintian                        2.114.0ubuntu1.4               all    Debian package checker                                       GPL-2+
+ii  linux-headers-5.15.0-107       5.15.0-107.117                 all    Header files related to Linux kernel version 5.15.0          GPL-2
+ii  linux-headers-5.15.0-107-gener 5.15.0-107.117                 amd64  Linux kernel headers for version 5.15.0 on 64 bit x86 SMP    GPL-2
+ii  linux-headers-generic          5.15.0.107.107                 amd64  Generic Linux kernel headers                                 GPL
+ii  linux-libc-dev:amd64           5.15.0-88.98                   amd64  Linux Kernel Headers for development                         GPL-2
+ii  login                          1:4.8.1-2ubuntu2.1             amd64  system login tools                                           GPL-2
+ii  logsave                        1.46.5-2ubuntu1.1              amd64  save the output of a command in a log file                   GPL-2 LGPL-2
+ii  lsb-base                       11.1.0ubuntu4                  all    Linux Standard Base init script functionality                BSD-3-clause GPL-2
+ii  lsb-release                    11.1.0ubuntu4                  all    Linux Standard Base version reporting utility                BSD-3-clause GPL-2
+ii  lto-disabled-list              24                             all    list of packages not to build with LTO                       GPL-2+
+ii  lzip                           1.23-1                         amd64  lossless data compressor based on the LZMA algorithm         GPL-2+ GPL-2+ with Library exception
+ii  lzop                           1.04-2build2                   amd64  fast compression program                                     GPL-2+
+ii  m4                             1.4.18-5ubuntu2                amd64  macro processing language                                    GFDL GPL
+ii  make                           4.3-4.1build1                  amd64  utility for directing compilation                            GPL-3+
+ii  man-db                         2.10.2-1                       amd64  tools for reading manual pages                               GPL-2+ GPL-3+
+ii  mawk                           1.3.4.20200120-3               amd64  Pattern scanning and text processing language                GPL-2
+ii  media-types                    7.0.0                          all    List of standard media types and their usual file extension  ad-hoc
+ii  mount                          2.37.2-4ubuntu3                amd64  tools for mounting and manipulating filesystems              BSD-2-clause BSD-3-clause BSD-4-clause GPL-2 GPL-2+ GPL-3+ LGPL LGPL-2+ LGPL-2.1+ LGPL-3+ MIT public-domain
+ii  nasm                           2.15.05-1                      amd64  General-purpose x86 assembler                                GPL-2
+ii  ncurses-base                   6.3-2ubuntu0.1                 all    basic terminal type definitions                              BSD-3-clause MIT/X11 X11
+ii  ncurses-bin                    6.3-2ubuntu0.1                 amd64  terminal-related programs and man pages                      BSD-3-clause MIT/X11 X11
+ii  ncurses-term                   6.3-2ubuntu0.1                 all    additional terminal type definitions                         BSD-3-clause MIT/X11 X11
+ii  netbase                        6.3                            all    Basic TCP/IP networking system                               GPL-2
+ii  networkd-dispatcher            2.1-2ubuntu0.22.04.2           all    Dispatcher service for systemd-networkd connection status ch GPL-3+
+ii  nfs-common                     1:2.6.1-1ubuntu1.2             amd64  NFS support files common to client and server                GPL-2
+ii  nsight-compute-2023.2.0        2023.2.0.16-1                  amd64  NVIDIA Nsight Compute                                        "BSD" LICENCE "BSD" License Boost Software License MIT License MIT license bsd-license.php
+ii  numactl                        2.0.14-3ubuntu2                amd64  NUMA scheduling and memory placement tool                    GPL LGPL
+ii  ocl-icd-libopencl1:amd64       2.2.14-3                       amd64  Generic OpenCL ICD Loader                                    BSD-2-Clause
+ii  openmpi40-aws                  4.1.6-1                        amd64  high performance message passing library -- binaries         unknown
+ii  openssh-client                 1:8.9p1-3ubuntu0.7             amd64  secure shell (SSH) client, for secure access to remote machi BSD-2-clause BSD-3-clause Expat-with-advertising-restriction Mazieres-BSD-style OpenSSH Powell-BSD-style public-domain
+ii  openssh-server                 1:8.9p1-3ubuntu0.7             amd64  secure shell (SSH) server, for secure access from remote mac BSD-2-clause BSD-3-clause Expat-with-advertising-restriction Mazieres-BSD-style OpenSSH Powell-BSD-style public-domain
+ii  openssh-sftp-server            1:8.9p1-3ubuntu0.7             amd64  secure shell (SSH) sftp server module, for SFTP access from  BSD-2-clause BSD-3-clause Expat-with-advertising-restriction Mazieres-BSD-style OpenSSH Powell-BSD-style public-domain
+ii  openssl                        3.0.2-0ubuntu1.12              amd64  Secure Sockets Layer toolkit - cryptographic utility         Apache-2.0 Artistic Artistic or GPL-1+ GPL-1+
+ii  parallel                       20210822+ds-2                  all    build and execute command lines from standard input in paral GPL-3+
+ii  passwd                         1:4.8.1-2ubuntu2.1             amd64  change and administer password and group data                GPL-2
+ii  patch                          2.7.6-7build2                  amd64  Apply a diff file to an original                             GPL
+ii  patchutils                     0.4.2-1build2                  amd64  Utilities to work with patches                               GPL-2+
+ii  pci.ids                        0.0~2022.01.22-1               all    PCI ID Repository                                            BSD-3-clause GPL-2+ GPL-2+ or BSD-3-clause
+ii  pciutils                       1:3.7.0-6                      amd64  PCI utilities                                                GPL-2+
+ii  perl                           5.34.0-3ubuntu1.2              amd64  Larry Wall's Practical Extraction and Report Language        Artistic Artistic or GPL-1+ or Artistic-dist Artistic-2 Artistic-dist BSD-3-clause BSD-3-clause-GENERIC BSD-3-clause-with-weird-numbering BSD-4-clause-POWERDOG BZIP CC0-1.0 DONT-CHANGE-THE-GPL Expat Expat or GPL-1+ or Artistic GPL-1+ GPL-1+ or Artistic GPL-1+ or Artistic or Artistic-dist GPL-1+ or Artistic, GPL-2+ GPL-2+ or Artistic GPL-3+-WITH-BISON-EXCEPTION HSIEH-BSD HSIEH-DERIVATIVE LGPL-2.1 REGCOMP REGCOMP, RRA-KEEP-THIS-NOTICE SDBM-PUBLIC-DOMAIN TEXT-TABS Unicode ZLIB
+ii  perl-base                      5.34.0-3ubuntu1.2              amd64  minimal Perl system                                          Artistic Artistic or GPL-1+ or Artistic-dist Artistic-2 Artistic-dist BSD-3-clause BSD-3-clause-GENERIC BSD-3-clause-with-weird-numbering BSD-4-clause-POWERDOG BZIP CC0-1.0 DONT-CHANGE-THE-GPL Expat Expat or GPL-1+ or Artistic GPL-1+ GPL-1+ or Artistic GPL-1+ or Artistic or Artistic-dist GPL-1+ or Artistic, GPL-2+ GPL-2+ or Artistic GPL-3+-WITH-BISON-EXCEPTION HSIEH-BSD HSIEH-DERIVATIVE LGPL-2.1 REGCOMP REGCOMP, RRA-KEEP-THIS-NOTICE SDBM-PUBLIC-DOMAIN TEXT-TABS Unicode ZLIB
+ii  perl-modules-5.34              5.34.0-3ubuntu1.2              all    Core Perl modules                                            Artistic Artistic or GPL-1+ or Artistic-dist Artistic-2 Artistic-dist BSD-3-clause BSD-3-clause-GENERIC BSD-3-clause-with-weird-numbering BSD-4-clause-POWERDOG BZIP CC0-1.0 DONT-CHANGE-THE-GPL Expat Expat or GPL-1+ or Artistic GPL-1+ GPL-1+ or Artistic GPL-1+ or Artistic or Artistic-dist GPL-1+ or Artistic, GPL-2+ GPL-2+ or Artistic GPL-3+-WITH-BISON-EXCEPTION HSIEH-BSD HSIEH-DERIVATIVE LGPL-2.1 REGCOMP REGCOMP, RRA-KEEP-THIS-NOTICE SDBM-PUBLIC-DOMAIN TEXT-TABS Unicode ZLIB
+ii  perl-openssl-defaults:amd64    5build2                        amd64  version compatibility baseline for Perl OpenSSL packages     Artistic Artistic or GPL-1+ GPL-1+
+ii  pigz                           2.6-1                          amd64  Parallel Implementation of GZip                              GPL
+ii  pinentry-curses                1.1.1-1build2                  amd64  curses-based PIN or pass-phrase entry dialog for GnuPG       GPL-2 GPL-2+ LGPL-3+ LGPL-3+ or GPL-2+ X11
+ii  pkg-config                     0.29.2-1ubuntu3                amd64  manage compile and link flags for libraries                  GPL
+ii  po-debconf                     1.0.21+nmu1                    all    tool for managing templates file translations with gettext   GPL-2 GPL-2 or GPL-2+ GPL-2+
+ii  preload                        0.6.4-5                        amd64  adaptive readahead daemon                                    GPL
+ii  procps                         2:3.3.17-6ubuntu2              amd64  /proc file system utilities                                  GPL-2.0+ LGPL-2.0+ LGPL-2.1+
+ii  publicsuffix                   20211207.1025-1                all    accurate, machine-readable list of domain name suffixes      CC0 MPL-2.0
+ii  python-apt-common              2.4.0ubuntu3                   all    Python interface to libapt-pkg (locales)                     GPL-2+ Permissive
+ii  python3                        3.10.6-1~22.04                 amd64  interactive high-level object-oriented language (default pyt GPL-compatible GPL-compatible licenses
+ii  python3-apt                    2.4.0ubuntu3                   amd64  Python 3 interface to libapt-pkg                             GPL-2+ Permissive
+ii  python3-certifi                2020.6.20-1                    all    root certificates for validating SSL certs and verifying TLS GPL-2 MPL-2
+ii  python3-chardet                4.0.0-1                        all    universal character encoding detector for Python3            LGPL-2.1+
+ii  python3-dbus                   1.2.18-3build1                 amd64  simple interprocess messaging system (Python 3 interface)    AFL-2.1 Expat GPL-2+ GPL-2+ or AFL-2.1
+ii  python3-debian                 0.1.43ubuntu1.1                all    Python 3 modules to work with Debian-related data formats    GPL-2+ GPL-3+
+ii  python3-distro                 1.7.0-1                        all    Linux OS platform information API                            Apache-2.0
+ii  python3-distutils              3.10.8-1~22.04                 all    distutils package for Python 3.x                             GPL-compatible GPL-compatible licenses
+ii  python3-gi                     3.42.1-0ubuntu1                amd64  Python 3 bindings for gobject-introspection libraries        Expat LGPL-2.1+
+ii  python3-gpg                    1.16.0-1.2ubuntu4.2            amd64  Python interface to the GPGME GnuPG encryption library (Pyth GPL-2+ GPL-3+ LGPL-2+ LGPL-2.1+ LGPL-3+ LGPL-3+ or GPL-2+
+ii  python3-idna                   3.3-1ubuntu0.1                 all    Python IDNA2008 (RFC 5891) handling (Python 3)               BSD-3-clause PSF-2 Unicode
+ii  python3-lib2to3                3.10.8-1~22.04                 all    Interactive high-level object-oriented language (lib2to3)    GPL-compatible GPL-compatible licenses
+ii  python3-magic                  2:0.4.24-2                     all    python3 interface to the libmagic file type identification l BSD-2-Clause-alike MIT
+ii  python3-minimal                3.10.6-1~22.04                 amd64  minimal subset of the Python language (default python3 versi GPL-compatible GPL-compatible licenses
+ii  python3-pkg-resources          59.6.0-1.2ubuntu0.22.04.1      all    Package Discovery and Resource Access using pkg_resources    Apache-2.0
+ii  python3-requests               2.25.1+dfsg-2ubuntu0.1         all    elegant and simple HTTP library for Python3, built for human Apache other
+ii  python3-six                    1.16.0-3ubuntu1                all    Python 2 and 3 compatibility library (Python 3 interface)    Expat
+ii  python3-unidiff                0.5.5-2                        all    Unified diff Python parsing/metadata extraction library (Pyt Expat
+ii  python3-urllib3                1.26.5-1~exp1ubuntu0.1         all    HTTP library with thread-safe connection pooling for Python3 Expat PSF-2
+ii  python3-xdg                    0.27-2                         all    Python 3 library to access freedesktop.org standards         LGPL-2
+ii  python3.10                     3.10.12-1~22.04.3              amd64  Interactive high-level object-oriented language (version 3.1 GPL-2
+ii  python3.10-minimal             3.10.12-1~22.04.3              amd64  Minimal subset of the Python language (version 3.10)         GPL-2
+ii  rdma-core                      46.0-1                         amd64  RDMA core userspace infrastructure and documentation         BSD-2-clause BSD-2-clause or GPL-2 BSD-3-clause BSD-3-clause or GPL-2 BSD-MIT BSD-MIT or GPL-2 CC0 CPL-1.0 CPL-1.0 or BSD-2-clause or GPL-2 GPL-2 GPL-2 or BSD-2-clause GPL-2 or BSD-3-clause GPL-2+ MIT
+ii  rdmacm-utils                   46.0-1                         amd64  Examples for the librdmacm library                           BSD-2-clause BSD-2-clause or GPL-2 BSD-3-clause BSD-3-clause or GPL-2 BSD-MIT BSD-MIT or GPL-2 CC0 CPL-1.0 CPL-1.0 or BSD-2-clause or GPL-2 GPL-2 GPL-2 or BSD-2-clause GPL-2 or BSD-3-clause GPL-2+ MIT
+ii  readline-common                8.1.2-1                        all    GNU readline and history libraries, common files             GFDL GPL-3
+ii  rpcbind                        1.2.6-2build1                  amd64  converts RPC program numbers into universal addresses        BSD-3-Clause BSD-4-Clause BSD-4-clause GPL-2.0+ GPL-3 MIT PERMISSIVE
+ii  rpcsvc-proto                   1.4.2-0ubuntu6                 amd64  RPC protocol compiler and definitions                        BSD-3-clause GPL-2+-autoconf-exception GPL-3+-autoconf-exception MIT permissive-autoconf-m4 permissive-autoconf-m4-no-warranty permissive-configure permissive-fsf permissive-makefile-in
+ii  sed                            4.8-1ubuntu2                   amd64  GNU stream editor for filtering/transforming text            GPL-3
+ii  sensible-utils                 0.0.17                         all    Utilities for sensible alternative selection                 All-permissive GPL-2+ configure installsh
+ii  shared-mime-info               2.1-2                          amd64  FreeDesktop.org shared MIME database and spec                GPL
+ii  ssh-import-id                  5.11-0ubuntu1                  all    securely retrieve an SSH public key and install it locally   GPL-3
+ii  strace                         5.16-0ubuntu3                  amd64  System call tracer                                           unknown
+ii  sudo                           1.9.9-1ubuntu2.4               amd64  Provide limited super user privileges to specific users      BSD-2-Clause BSD-3-Clause ISC Zlib other
+ii  sysstat                        12.5.2-2ubuntu0.2              amd64  system performance tools for Linux                           GPL-2+
+ii  systemd                        249.11-0ubuntu3.12             amd64  system and service manager                                   CC0-1.0 Expat GPL-2 GPL-2 with Linux-syscall-note exception GPL-2+ LGPL-2.1+ public-domain
+ii  systemd-hwe-hwdb               249.11.5                       all    udev rules for hardware enablement (HWE)                     GPL-2.0+
+ii  systemd-sysv                   249.11-0ubuntu3.12             amd64  system and service manager - SysV links                      CC0-1.0 Expat GPL-2 GPL-2 with Linux-syscall-note exception GPL-2+ LGPL-2.1+ public-domain
+ii  systemd-timesyncd              249.11-0ubuntu3.12             amd64  minimalistic service to synchronize local time with NTP serv CC0-1.0 Expat GPL-2 GPL-2 with Linux-syscall-note exception GPL-2+ LGPL-2.1+ public-domain
+ii  sysvinit-utils                 3.01-1ubuntu1                  amd64  System-V-like utilities                                      GPL-2+
+ii  t1utils                        1.41-4build2                   amd64  Collection of simple Type 1 font manipulation programs       MIT license
+ii  tar                            1.34+dfsg-1ubuntu0.1.22.04.1   amd64  GNU version of the tar archiving utility                     GPL-2 GPL-3
+ii  tcl                            8.6.11+1build2                 amd64  Tool Command Language (default version) - shell              GPL
+ii  tcl8.6                         8.6.12+dfsg-1build1            amd64  Tcl (the Tool Command Language) v8.6 - shell                 unknown
+ii  tzdata                         2024a-0ubuntu0.22.04           all    time zone and daylight-saving time data                      public domain
+ii  ubuntu-keyring                 2021.03.26                     all    GnuPG keys of the Ubuntu archive                             GPL
+ii  ucf                            3.0043                         all    Update Configuration File(s): preserve user changes to confi GPL-2
+ii  udev                           249.11-0ubuntu3.12             amd64  /dev/ and hotplug management daemon                          CC0-1.0 Expat GPL-2 GPL-2 with Linux-syscall-note exception GPL-2+ LGPL-2.1+ public-domain
+ii  unzip                          6.0-26ubuntu3.2                amd64  De-archiver for .zip files                                   unknown
+ii  usrmerge                       25ubuntu2                      all    Convert the system to the merged /usr directories scheme     GPL-2
+ii  util-linux                     2.37.2-4ubuntu3                amd64  miscellaneous system utilities                               BSD-2-clause BSD-3-clause BSD-4-clause GPL-2 GPL-2+ GPL-3+ LGPL LGPL-2+ LGPL-2.1+ LGPL-3+ MIT public-domain
+ii  vim                            2:8.2.3995-1ubuntu2.16         amd64  Vi IMproved - enhanced vi editor                             Apache Apache or Expat Artistic-1 BSD-2-clause BSD-3-clause Compaq EDL-1 Expat Expat or GPL-2 Expat or Vim GPL-1+ GPL-1+ or Artistic-1 GPL-2 GPL-2+ GPL-3+ LGPL-2.1+ OPL-1+ SRA UC Vim Vim-Regexp X11 XPM public-domain
+ii  vim-common                     2:8.2.3995-1ubuntu2.16         all    Vi IMproved - Common files                                   Apache Apache or Expat Artistic-1 BSD-2-clause BSD-3-clause Compaq EDL-1 Expat Expat or GPL-2 Expat or Vim GPL-1+ GPL-1+ or Artistic-1 GPL-2 GPL-2+ GPL-3+ LGPL-2.1+ OPL-1+ SRA UC Vim Vim-Regexp X11 XPM public-domain
+ii  vim-runtime                    2:8.2.3995-1ubuntu2.16         all    Vi IMproved - Runtime files                                  Apache Apache or Expat Artistic-1 BSD-2-clause BSD-3-clause Compaq EDL-1 Expat Expat or GPL-2 Expat or Vim GPL-1+ GPL-1+ or Artistic-1 GPL-2 GPL-2+ GPL-3+ LGPL-2.1+ OPL-1+ SRA UC Vim Vim-Regexp X11 XPM public-domain
+ii  wdiff                          1.2.2-2build3                  amd64  Compares two files word by word                              GPL
+ii  wget                           1.21.2-2ubuntu1                amd64  retrieves files from the web                                 GFDL-1.2 GPL-3
+ii  xauth                          1:1.1-1build2                  amd64  X authentication utility                                     unknown
+ii  xdg-user-dirs                  0.17-2ubuntu4                  amd64  tool to manage well known user directories                   GPL-2
+ii  xxd                            2:8.2.3995-1ubuntu2.16         amd64  tool to make (or reverse) a hex dump                         Apache Apache or Expat Artistic-1 BSD-2-clause BSD-3-clause Compaq EDL-1 Expat Expat or GPL-2 Expat or Vim GPL-1+ GPL-1+ or Artistic-1 GPL-2 GPL-2+ GPL-3+ LGPL-2.1+ OPL-1+ SRA UC Vim Vim-Regexp X11 XPM public-domain
+ii  xz-utils                       5.2.5-2ubuntu1                 amd64  XZ-format compression utilities                              Autoconf GPL-2 GPL-2+ LGPL-2.1+ PD PD-debian config-h noderivs none permissive-fsf permissive-nowarranty probably-PD
+ii  zlib1g:amd64                   1:1.2.11.dfsg-2ubuntu9.2       amd64  compression library - runtime                                Zlib
+ii  zstd                           1.4.8+dfsg-3build1             amd64  fast lossless compression algorithm -- CLI tool              BSD-3-clause Expat GPL-2 zlib
+
+An up-to-date Software Bill of Materials is also available in the container at /SBOM.txt
+

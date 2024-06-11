@@ -1,6 +1,8 @@
 #!/bin/bash
 
-source ../../eks.conf
+pushd ../..
+export CLUSTER_NAME=$(./eks-name.sh)
+popd
 
 #Get account id
 account=$(aws sts get-caller-identity | jq -r '.Account')

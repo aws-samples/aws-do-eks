@@ -1,0 +1,110 @@
+apiVersion: kubeflow.org/v2beta1
+kind: MPIJob
+metadata:
+  name: ${MPI_JOB_NAME}
+spec:
+  runPolicy:
+    cleanPodPolicy: Running
+    backoffLimit: 20
+  slotsPerWorker: ${GPU_PER_WORKER}
+  mpiReplicaSpecs:
+    Launcher:
+      replicas: 1
+      template:
+         spec:
+          imagePullPolicy: IfNotPresent
+          restartPolicy: OnFailure
+          containers:
+          - image: ${IMAGE_URI}
+            name: ${MPI_JOB_NAME}-launcher
+            env:
+            - name: LD_LIBRARY_PATH
+              value: /opt/amazon/openmpi/lib:/opt/nccl/build/lib:/opt/amazon/efa/lib:/opt/aws-ofi-nccl/install/lib:/usr/local/nvidia/lib:$LD_LIBRARY_PATH
+            - name: PATH
+              value: $PATH:/opt/amazon/efa/bin:/usr/bin
+             - name: XLA_FLAGS
+               value: "--xla_gpu_cuda_data_dir=/usr/local/cuda"
+             - name: TF_XLA_FLAGS
+               value: "--tf_xla_cpu_global_jit"
+             - name: NCCL_DEBUG
+               value: INFO
+            command:
+            - /opt/amazon/openmpi/bin/mpirun
+            - --allow-run-as-root
+            - --tag-output
+            - -np
+            - "${TOTAL_GPUS}"
+            - -bind-to
+            - none
+            - -map-by
+            - slot
+            - -x
+            - PATH
+            - -x
+            - LD_LIBRARY_PATH
+            - -x
+            - NCCL_DEBUG=INFO
+            - -x
+            - NCCL_ALGO=Ring
+            - -x
+            - FI_PROVIDER=efa
+            - -x
+            - FI_EFA_USE_DEVICE_RDMA=1
+            - -x
+            - RDMAV_FORK_SAFE=1
+            - -x
+            - NCCL_SHM_DISABLE=0
+            - --mca
+            - pml
+            - ^cm
+            - --oversubscribe
+            - /opt/nccl-tests/build/all_reduce_perf
+            - -b
+            - "1"
+            - -e
+            - 1G
+            - -f
+            - "2"
+            - -t
+            - "1"
+            - -g
+            - "1"
+            - -c
+            - "1"
+            - -n
+            - "100"
+    Worker:
+      replicas: 2
+      template:
+        spec:
+          nodeSelector:
+            node.kubernetes.io/instance-type: "${INSTANCE_TYPE}"
+          imagePullPolicy: Always
+          containers:
+          - image: ${IMAGE_URI}
+            name: ${MPI_JOB_NAME}-worker
+            volumeMounts:
+            - name: shmem
+              mountPath: /dev/shm
+            - name: efa-vol
+              mountPath: "/dev/infiniband"
+            securityContext:
+              privileged: true
+            resources:
+              limits:
+                nvidia.com/gpu: ${GPU_PER_WORKER}
+                #hugepages-2Mi: ${HUGEPAGES_2MI}
+                #vpc.amazonaws.com/efa: ${EFA_PER_WORKER}
+                memory: ${MEMORY}
+              requests:
+                nvidia.com/gpu: ${GPU_PER_WORKER}
+                #hugepages-2Mi: ${HUGEPAGES_2MI}
+                #vpc.amazonaws.com/efa: ${EFA_PER_WORKER}
+                memory: ${MEMORY}
+          volumes:
+          - name: shmem
+            hostPath:
+              path: /dev/shm
+          - name: efa-vol
+            hostPath:
+              path: "/dev/infiniband"

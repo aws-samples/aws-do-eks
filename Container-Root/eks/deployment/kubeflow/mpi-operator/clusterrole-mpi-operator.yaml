@@ -103,3 +103,14 @@ rules:
   - create
   - delete
   - update
+- apiGroups:
+  - scheduling.k8s.io
+  resources:
+  - priorityclasses
+  verbs:
+  - list
+  - watch
+  - get
+  - create
+  - delete
+  - update

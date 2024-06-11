@@ -4,24 +4,34 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt update && apt install -y git vim curl htop
 
-RUN pip3 install python-etcd
-
 RUN mkdir -p /workspace/
 
 WORKDIR /workspace
 
-RUN git clone -b flop_counter https://github.com/facebookresearch/llama-recipes.git
-#RUN git clone https://github.com/facebookresearch/llama-recipes.git
+RUN git clone -b aws-do-fsdp https://github.com/meta-llama/llama-recipes.git
 
 WORKDIR /workspace/llama-recipes
 
-RUN pip install -U pip setuptools
-RUN pip install --extra-index-url https://download.pytorch.org/whl/test/cu118 -e .
+RUN pip3 install -U pip setuptools
 
-RUN pip install tabulate
+RUN pip3 install fsspec==2023.1.0
+RUN pip3 install huggingface_hub==0.17.0
+RUN pip3 install -r requirements.txt
 
-RUN pip3 uninstall -y torch
+RUN pip3 instal -e .
 
-RUN pip3 install --pre torch --index-url https://download.pytorch.org/whl/nightly/cu118
+RUN pip3 install tabulate
+
+# The following two lines can be used to switch to the nighhtly pytorch build if needed
+#RUN pip3 uninstall -y torch
+#RUN pip3 install --pre torch --index-url https://download.pytorch.org/whl/nightly/cu121
+
+RUN pip3 install protobuf
+
+RUN rm -rf /root/.cache
+RUN apt-get clean
 
 ENV PYTHONPATH="${PYTHONPATH}:/workspace/llama-recipes/src"
+
+RUN pip3 install awscli pynvml python-etcd
+

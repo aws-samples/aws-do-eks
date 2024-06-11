@@ -117,13 +117,83 @@ The [`ops`](Container-Root/eks/ops) folder contains scripts for management and o
 
 ### Container
 The project home folder offers a number of additional scripts for management of the aws-do-eks container.
-* [`./login.sh`](./login.sh) - use the currently configured node aws settings to authenticate with the configured registry
+* [`./login.sh`](./login.sh) - use the currently configured aws settings to authenticate with the configured registry
 * [`./push.sh`](./push.sh) - push aws-do-eks container image to configured registry
 * [`./pull.sh`](./pull.sh) - pull aws-do-eks container image from a configured existing registry
 * [`./status.sh`](./status.sh) - show current status of aws-do-eks container
 * [`./start.sh`](./status.sh) - start the aws-do-eks container if is currently in "Exited" status
 * [`./stop.sh`](./stop.sh) - stop and remove the aws-do-eks container
 * [`./test.sh`](./test.sh) - run container unit tests
+
+## Examples
+
+These examples assume that you have opened the `aws-do-eks` shell and the current working directory is `/eks`. 
+
+### 1. Create EKS Cluster with P4de nodegroup and EFA networking using eksctl and on-demand capacity reservation
+
+#### 1.1. Configure environment
+
+```bash
+./env-config.sh
+```
+
+Set:
+
+```bash
+export IMPL=impl/eksctl/yaml
+export CONF=conf/eksctl/yaml/eks-gpu-p4de-odcr.yaml
+```
+
+#### 1.2. Configure cluster
+
+```bash
+./eks-config.sh
+```
+
+Set:
+
+```yaml
+    capacityReservation:
+      capacityReservationTarget:
+        capacityReservationID: "cr-xxxxxxxxxxxxxxxxx"
+```
+
+Use the actual `capacityReservaationID` of your ODCR. Also ensure the `availabilityZones` reflect the one from the capacity reservation.
+
+#### 1.3. Create cluster
+
+```bash
+./eks-create.sh
+```
+
+### 2. Create EKS Cluster with P5 nodegroup and EFA networking using Terraform and on-demand capacity reservation
+
+#### 2.1. Configure environment
+
+```bash
+./env-config.sh
+```
+
+Set:
+
+```bash
+export IMPL=impl/terraform
+export CONF=conf/terraform/eks-p5/variables.tf
+```
+
+#### 2.2. Configure cluster
+
+```bash
+./eks-config.sh
+```
+
+Set `odcr_id`. Set other variables as needed.
+
+#### 2.3. Create cluster
+
+```bash
+./eks-create.sh
+```
 
 ## Troubleshooting
 * eksctl authentication errors - execute "aws configure --profile <profile_name>" and provide access key id and secret access key to configure access.
@@ -168,6 +238,10 @@ See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more inform
 ## License
 
 This project is licensed under the MIT-0 License. See the [LICENSE](LICENSE) file.
+
+## Disclaimer
+
+This sample code should not be used in production accounts, on production workloads, or on production or other critical data. You are responsible for testing, securing, and optimizing the sample code as appropriate for production-grade use based on your specific quality control practice and standards.
 
 ## References
 

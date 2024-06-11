@@ -64,7 +64,7 @@ Please refer to <a href='https://github.com/TachibanaYoshino/AnimeGANv3#license'
 """
 gr.Interface(
     inference, [
-        gr.inputs.Image(type="filepath", label="Input"),
+        gr.Image(type="filepath", label="Input"),
         gr.Dropdown([
             'AnimeGANv3_Hayao',
             'AnimeGANv3_Shinkai',
@@ -78,16 +78,16 @@ gr.Interface(
             type="value",
             value='AnimeGANv3_Hayao',
             label='AnimeGANv3 Style'),
-        gr.inputs.Radio(['Yes', 'No'], type="value", default='No', label='Extract face'),
+        gr.Radio(['Yes', 'No'], type="value", value='No', label='Extract face'),
     ], [
-        gr.outputs.Image(type="numpy", label="Output (The whole image)"),
-        gr.outputs.File(label="Download the output image")
+        gr.Image(type="numpy", label="Output (The whole image)"),
+        gr.File(label="Download the output image")
     ],
     title=title,
     description=description,
     article=article,
     allow_flagging="never"
-   ).launch(enable_queue=True)
+   ).launch()
 
 #  examples=[[]]
     #examples=[['samples/7_out.jpg', 'AnimeGANv3_Arcane', "Yes"], ['samples/15566.jpg', 'AnimeGANv3_USA', "Yes"],['samples/23034.jpg', 'AnimeGANv3_Trump v1.0', "Yes"], ['samples/jp_13.jpg', 'AnimeGANv3_Hayao', "No"],

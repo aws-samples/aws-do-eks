@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: etcd-service
+  name: etcd
   #namespace: elastic-job
 spec:
   ports:
@@ -43,6 +43,16 @@ spec:
             - "http://0.0.0.0:2379"
             - "--initial-cluster-state"
             - "new"
+            #- "--heartbeat-interval"
+            #- "300"
+            #- "--election-timeout"
+            #- "3000"
+            #- "--raft-read-timeout"
+            #- "15s"
+            #- "--raft-write-timeout"
+            #- "15s"
+            #- "--log-level"
+            #- "debug"
           image: quay.io/coreos/etcd:latest
           ports:
             - containerPort: 2379

@@ -42,6 +42,6 @@ This demo is inspired by:
 
 """
 
-gr.Interface(inference, [gr.inputs.Image(type="pil"),gr.inputs.Radio(['version 1 (🔺 stylization, 🔻 robustness)','version 2 (🔺 robustness,🔻 stylization)'], type="value", default='version 2 (🔺 robustness,🔻 stylization)', label='version')
-], gr.outputs.Image(type="pil"),title=title,description=description,article=article,allow_flagging='auto').launch()
+gr.Interface(inference, [gr.Image(type="pil"),gr.Radio(['version 1 (🔺 stylization, 🔻 robustness)','version 2 (🔺 robustness,🔻 stylization)'], type="value", value='version 2 (🔺 robustness,🔻 stylization)', label='version')
+], gr.Image(type="pil"),title=title,description=description,article=article,allow_flagging='auto').launch()
 
