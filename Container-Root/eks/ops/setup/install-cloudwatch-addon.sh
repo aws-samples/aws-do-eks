@@ -1,4 +1,5 @@
-echo "Creating IAM service role for CloudWatch..add-on"
+echo "Creating IAM service role for CloudWatch add-on...."
+export AWS_DEFAULT_REGION=us-west-2
 eksctl create iamserviceaccount \
   --name cloudwatch-agent \
   --namespace amazon-cloudwatch --cluster eks-inference-workshop \
@@ -7,5 +8,8 @@ eksctl create iamserviceaccount \
   --role-only \
   --approve
 echo "... IAM role created"
-#echo "Creating Add-on..."
-#aws eks create-addon --addon-name amazon-cloudwatch-observability --cluster-name eks-inference-workshop  --service-account-role-arn arn:aws:iam::133776528597:role/cloudwatch-addon-role
+sleep 30
+ROLE=$(aws iam list-roles --query "Roles[?RoleName=='cloudwatch-addon-role'].Arn" --output text)
+echo "Creating CloudWatch Add-on using role ARN: $ROLE..."
+aws eks create-addon --addon-name amazon-cloudwatch-observability --cluster-name eks-inference-workshop  --service-account-role-arn $ROLE
+echo "CloudWatch add-on installed!"
