@@ -59,6 +59,8 @@ spec:
                       - trn1.32xlarge
                       - trn1n.32xlarge
                       - p5.48xlarge
+                      - g5.8xlarge
+                      - ml.g5.8xlarge
               - matchExpressions:
                   - key: "node.kubernetes.io/instance-type"
                     operator: In
@@ -83,6 +85,8 @@ spec:
                       - trn1.32xlarge
                       - trn1n.32xlarge
                       - p5.48xlarge
+                      - g5.8xlarge
+                      - ml.g5.8xlarge
       hostNetwork: true
       containers:
         - image: 602401143452.dkr.ecr.us-west-2.amazonaws.com/eks/aws-efa-k8s-device-plugin:v0.3.6
