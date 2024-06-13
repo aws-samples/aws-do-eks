@@ -1,7 +1,7 @@
 {
 	"AWSTemplateFormatVersion": "2010-09-09",
 
-	"Description": "Large scale inference on EKS using Graviton and Inferentia2",
+	"Description": "Large scale inference on EKS using AWS Graviton, Inferentia2 and GPU",
 	"Mappings": {
 		"AWSRegion2AMI": {
 			"us-east-1": {
@@ -53,8 +53,6 @@
 							"sudo bash -c '/home/ec2-user/aws-do-eks/Container-Root/eks/ops/setup/install-kubeps1.sh | sudo tee -a /tmp/bootstrap.log' \n",
 							"sudo bash -c '/home/ec2-user/aws-do-eks/Container-Root/eks/ops/setup/install-docker-yum.sh | sudo tee -a /tmp/bootstrap.log' \n",
 							"sudo bash -c 'ln -s /usr/bin/python3 /usr/bin/python | sudo tee -a /tmp/bootstrap.log' \n",
-							"#bash -c '/home/ec2-user/aws-do-eks/Container-Root/eks/ops/setup/install-python2.sh | sudo tee -a /tmp/bootstrap.log' \n",
-							"#sudo su ec2-user bash -c '/home/ec2-user/aws-do-eks/Container-Root/eks/ops/setup/install-cloud9.sh | sudo tee -a /tmp/bootstrap.log' \n",
 							"sudo su ec2-user bash -c '/home/ec2-user/aws-do-eks/Container-Root/eks/ops/setup/install-envsubst.sh | sudo tee -a /tmp/bootstrap.log' \n",
 							"sudo su ec2-user bash -c 'source /home/ec2-user/aws-do-eks/wd/cfn/inference-workshop/.env; cat /home/ec2-user/aws-do-eks/wd/conf/eksctl/yaml/eks-inference-workshop.yaml-template | envsubst | sudo tee /home/ec2-user/aws-do-eks/wd/conf/eksctl/yaml/eks-inference-workshop.yaml' \n", 
 							"sudo su ec2-user bash -c 'cat /home/ec2-user/aws-do-eks/wd/conf/eksctl/yaml/eks-inference-workshop.yaml | sudo tee -a /tmp/bootstrap.log' \n",
