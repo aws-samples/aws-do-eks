@@ -14,3 +14,6 @@ aws ecr get-login-password | docker login --username AWS --password-stdin $REGIS
 
 docker image push ${REGISTRY}${IMAGE}${TAG}
 
+docker tag ${REGISTRY}${IMAGE}${TAG} ${REGISTRY}${IMAGE}:latest
+
+docker image push ${REGISTRY}${IMAGE}:latest
