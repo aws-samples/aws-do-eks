@@ -12,7 +12,8 @@ if [ -d /etc/apt ]; then
 fi
 
 # Install basic tools
-apt-get update && apt-get install -y curl jq vim nano less unzip git gettext-base groff sudo htop bash-completion wget bc
+apt-get update -y && apt-get upgrade -y
+apt-get install -y curl jq vim nano less unzip git gettext-base groff sudo htop bash-completion wget bc
 
 # Install yq
 ./eks/ops/setup/install-yq.sh
