@@ -8,12 +8,11 @@ if [ "$CLUSTER_NAME" == "" ]; then
 	echo "Could not determine cluster name. Please check ./karpenter.conf"
 	echo ""
 else
-	# Reference: https://karpenter.sh/v0.32/getting-started/getting-started-with-karpenter/
-	
+	# Reference: https://karpenter.sh/v0.37/getting-started/getting-started-with-karpenter/	
 	echo ""
 	echo "Creating Karpenter NodeRole, ControllerPolicy, InterruptionQueue, InterruptionQueuePolicy, and Rules using CloudFormation ..."
 	# Create Karpenter NodeRole, ControllerPolicy, InterruptionQueue, InterruptionQueuePolicy, and Rules
-	curl -fsSL https://raw.githubusercontent.com/aws/karpenter-provider-aws/"${KARPENTER_VERSION}"/website/content/en/preview/getting-started/getting-started-with-karpenter/cloudformation.yaml  > $TEMPOUT \
+	curl -fsSL https://raw.githubusercontent.com/aws/karpenter-provider-aws/"v${KARPENTER_VERSION}"/website/content/en/preview/getting-started/getting-started-with-karpenter/cloudformation.yaml  > $TEMPOUT \
 	&& aws cloudformation deploy \
   	--stack-name "Karpenter-${CLUSTER_NAME}" \
   	--template-file "${TEMPOUT}" \
@@ -35,14 +34,14 @@ else
 	# Create KarpenterController IAM Service Account and IAM Role
 	eksctl create iamserviceaccount \
   	--cluster "${CLUSTER_NAME}" --name karpenter --namespace karpenter \
-  	--role-name "${CLUSTER_NAME}-karpenter" \
+  	--role-name "${CLUSTER_NAME}-karpenter-role" \
   	--attach-policy-arn "arn:${AWS_PARTITION}:iam::${AWS_ACCOUNT_ID}:policy/KarpenterControllerPolicy-${CLUSTER_NAME}" \
 	--role-only \
   	--approve
   	
 
 	export CLUSTER_ENDPOINT="$(aws eks describe-cluster --name ${CLUSTER_NAME} --query "cluster.endpoint" --output text)"
-	export KARPENTER_IAM_ROLE_ARN="arn:${AWS_PARTITION}:iam::${AWS_ACCOUNT_ID}:role/${CLUSTER_NAME}-karpenter"
+	export KARPENTER_IAM_ROLE_ARN="arn:${AWS_PARTITION}:iam::${AWS_ACCOUNT_ID}:role/${CLUSTER_NAME}-karpenter-role"
 
 	echo ""
 	echo "CLUSTER_ENDPOINT=$CLUSTER_ENDPOINT"
@@ -74,6 +73,7 @@ else
 	  --set controller.resources.limits.memory=1Gi \
 	  --wait
 
+	echo "done installing Karpenter..."
 	kubectl -n $KARPENTER_NAMESPACE get pods
 fi
 
