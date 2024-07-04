@@ -40,6 +40,7 @@ alias ke='pod-exec.sh'
 alias pe='pod-exec.sh'
 alias kl='pod-logs.sh'
 alias pl='pod-logs.sh'
+alias pln='pod-logs-ns.sh'
 alias tf='terraform'
 alias t='terraform'
 
