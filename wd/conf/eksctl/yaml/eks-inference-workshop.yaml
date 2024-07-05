@@ -3,7 +3,7 @@ kind: ClusterConfig
 
 metadata:
   name: eks-inference-workshop
-  version: "1.28"
+  version: "1.29"
   region: "us-west-2"
 
 availabilityZones:
