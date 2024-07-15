@@ -40,12 +40,13 @@
 					"Fn::Base64": {
 						"Fn::Join": ["", [
 							"#!/bin/bash \n",
-							"echo 'Executing userdata script ...' | sudo tee -a /tmp/bootstrap.log \n",
+							"echo 'Executing userdata script to install EKS Cluster with add-ons...' | sudo tee -a /tmp/bootstrap.log \n",
 							"#sudo chmod 666 /tmp/bootstrap.log; sudo chown ec2-user:ec2-user /tmp/bootstrap.log \n",
 							"date | sudo tee -a /tmp/bootstrap.log \n",
 							"sudo yum update | sudo tee -a /tmp/bootstrap.log \n",
 						        "sudo yum install -y aws-cfn-bootstrap git | sudo tee -a /tmp/bootstrap.log \n",
 							"sudo su ec2-user bash -c 'cd /home/ec2-user; git clone https://github.com/aws-samples/aws-do-eks.git | sudo tee -a /tmp/bootstrap.log' \n",
+							"sudo su ec2-user bash -c 'cd /home/ec2-user; git clone https://github.com/aws-solutions-library-samples/guidance-for-machine-learning-inference-on-aws.git | sudo tee -a /tmp/bootstrap.log' \n",
 							"sudo bash -c '/home/ec2-user/aws-do-eks/Container-Root/eks/ops/setup/install-aws-cli.sh | sudo tee -a /tmp/bootstrap.log' \n",
 							"sudo bash -c '/home/ec2-user/aws-do-eks/Container-Root/eks/ops/setup/install-eksctl.sh | sudo tee -a /tmp/bootstrap.log' \n",
 							"sudo bash -c '/home/ec2-user/aws-do-eks/Container-Root/eks/ops/setup/install-kubectl.sh | sudo tee -a /tmp/bootstrap.log' \n",
@@ -65,6 +66,7 @@
 							"sudo su ec2-user bash -c '/home/ec2-user/aws-do-eks/Container-Root/eks/deployment/neuron-device-plugin/deploy.sh | sudo tee -a /tmp/bootstrap.log' \n",
 							"sudo su ec2-user bash -c 'chmod +x /home/ec2-user/aws-do-eks/Container-Root/eks/ops/setup/install-cloudwatch-addon.sh; /home/ec2-user/aws-do-eks/Container-Root/eks/ops/setup/install-cloudwatch-addon.sh | sudo tee -a /tmp/bootstrap.log' \n",
 							"sudo su ec2-user bash -c 'cd /home/ec2-user/aws-do-eks/Container-Root/eks/deployment/karpenter/; ./deploy.sh; source ./karpenter.conf; ./provisioner-deploy-v1beta1.sh | sudo tee -a /tmp/bootstrap.log' \n", 
+							"sudo su ec2-user bash -c 'cd /home/ec2-user/guidance-for-machine-learning-inference-on-aws/0-provision; ./prepull-workshop.sh | sudo tee -a /tmp/bootstrap.log' \n",
 							"date | sudo tee -a /tmp/bootstrap.log \n",
 							"echo 'Done executing userdata script.' | sudo tee -a /tmp/bootstrap.log \n"
 						]]
