@@ -1,6 +1,7 @@
 # NCCL Tests on EKS
 
 Configurable NCCL tests on EKS.
+These tests are designed to work on any of the [EFA-enabled](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/efa.html#efa-instance-types) GPU instance types.
 
 ## Deploy kubeflow mpi-operator
 

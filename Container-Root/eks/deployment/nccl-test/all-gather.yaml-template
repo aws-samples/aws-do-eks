@@ -6,7 +6,7 @@ spec:
   runPolicy:
     cleanPodPolicy: Running
     backoffLimit: 20
-  slotsPerWorker: 8
+  slotsPerWorker: ${GPU_PER_WORKER}
   mpiImplementation: "OpenMPI"
   mpiReplicaSpecs:
     Launcher:
@@ -72,6 +72,9 @@ spec:
             - --mca
             - plm_rsh_agent
             - ssh
+            - --mca
+            - btl_tcp_if_exclude
+            - lo,docker0,veth_def_agent
             - /opt/nccl-tests/build/all_gather_perf
             - -b
             - "1"

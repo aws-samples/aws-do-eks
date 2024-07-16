@@ -6,7 +6,7 @@ spec:
   runPolicy:
     cleanPodPolicy: Running
     backoffLimit: 20
-  slotsPerWorker: 8
+  slotsPerWorker: ${GPU_PER_WORKER}
   mpiImplementation: "OpenMPI"
   mpiReplicaSpecs:
     Launcher:
