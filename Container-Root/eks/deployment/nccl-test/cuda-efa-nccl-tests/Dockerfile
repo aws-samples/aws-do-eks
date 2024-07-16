@@ -73,7 +73,7 @@ RUN cd $HOME \
 RUN git clone https://github.com/NVIDIA/nccl -b v${NCCL_VERSION}-1 /opt/nccl \
     && cd /opt/nccl \
     && make -j $(nproc) src.build CUDA_HOME=/usr/local/cuda \
-    NVCC_GENCODE="-gencode=arch=compute_80,code=sm_80 -gencode=arch=compute_86,code=sm_86 -gencode=arch=compute_90,code=sm_90"
+    NVCC_GENCODE="-gencode=arch=compute_75,code=sm_75 -gencode=arch=compute_80,code=sm_80 -gencode=arch=compute_86,code=sm_86 -gencode=arch=compute_90,code=sm_90"
 
 ###################################################
 ## Install AWS-OFI-NCCL plugin
