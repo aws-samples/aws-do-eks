@@ -5,7 +5,7 @@ if [ "$1" == "" ]; then
 	TEST_NAME="all-reduce"
 fi
 
-./generate.sh $1
+./generate.sh ${TEST_NAME}
 
 CMD="kubectl apply -f ./${TEST_NAME}.yaml"
 

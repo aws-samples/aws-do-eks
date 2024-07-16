@@ -1,7 +1,7 @@
 apiVersion: kubeflow.org/v2beta1
 kind: MPIJob
 metadata:
-  name: ${MPI_JOB_NAME}
+  name: ${TEST_NAME}
 spec:
   runPolicy:
     cleanPodPolicy: Running
@@ -16,7 +16,7 @@ spec:
           restartPolicy: OnFailure
           containers:
           - image: ${IMAGE_URI}
-            name: ${MPI_JOB_NAME}-launcher
+            name: ${TEST_NAME}-launcher
             imagePullPolicy: Always
             env:
              - name: LD_LIBRARY_PATH
@@ -63,7 +63,7 @@ spec:
             #- -x
             #- FI_EFA_USE_DEVICE_RDMA=${FI_EFA_USE_DEVICE_RDMA}
             #- -x
-            #- RDMAV_FORK_SAFE=${RDMAV_FORK_SAFE}
+            #- FI_EFA_FORK_SAFE=${FI_EFA_FORK_SAFE}
             #- -x
             #- NCCL_SHM_DISABLE=${NCCL_SHM_DISABLE}
             - --mca
@@ -72,6 +72,9 @@ spec:
             - --mca
             - plm_rsh_agent
             - ssh
+            - --mca
+            - btl_tcp_if_exclude
+            - lo,docker0,veth_def_agent
             - /opt/nccl-tests/build/all_reduce_perf
             - -b
             - "1"
@@ -95,7 +98,7 @@ spec:
             node.kubernetes.io/instance-type: "${INSTANCE_TYPE}"
           containers:
           - image: ${IMAGE_URI}
-            name: ${MPI_JOB_NAME}-worker
+            name: ${TEST_NAME}-worker
             imagePullPolicy: Always
             volumeMounts:
             - name: shmem
