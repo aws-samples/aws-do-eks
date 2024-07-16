@@ -135,3 +135,8 @@ ENV PMIX_MCA_gds=hash
 
 ## Set LD_PRELOAD for NCCL library
 ENV LD_PRELOAD /opt/nccl/build/lib/libnccl.so
+
+## Add SBOM info
+ADD Container-Root /
+RUN /setup-sbom-utils.sh
+
