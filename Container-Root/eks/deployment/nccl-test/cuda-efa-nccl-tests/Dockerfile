@@ -140,4 +140,5 @@ ENV LD_PRELOAD /opt/nccl/build/lib/libnccl.so
 ## Add SBOM info
 ADD Container-Root /
 RUN /setup-sbom-utils.sh
+RUN /sbom.sh
 
