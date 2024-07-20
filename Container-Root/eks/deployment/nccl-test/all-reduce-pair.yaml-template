@@ -1,7 +1,7 @@
 apiVersion: kubeflow.org/v2beta1
 kind: MPIJob
 metadata:
-  name: ${TEST_NAME}
+  name: ${MPI_PAIR_JOB_NAME}
 spec:
   runPolicy:
     cleanPodPolicy: Running
@@ -16,26 +16,25 @@ spec:
           restartPolicy: OnFailure
           containers:
           - image: ${IMAGE_URI}
-            name: ${TEST_NAME}-launcher
+            name: ${MPI_PAIR_JOB_NAME}-launcher
             imagePullPolicy: Always
             env:
              - name: LD_LIBRARY_PATH
-               value: "/opt/amazon/openmpi/lib:/opt/nccl/build/lib:/opt/amazon/efa/lib:/opt/aws-ofi-nccl/install/lib:/usr/local/nvidia/lib"
+               value: "/opt/amazon/openmpi/lib:/opt/nccl/build/lib:/opt/amazon/efa/lib:/opt/aws-ofi-nccl/install/lib:/usr/local/nvidia/lib:${DOLLAR}LD_LIBRARY_PATH"
              - name: PATH
-               value: "/opt/amazon/efa/bin:/usr/bin"
+               value: "${DOLLAR}PATH:/opt/amazon/efa/bin:/usr/bin"
              - name: XLA_FLAGS
                value: "--xla_gpu_cuda_data_dir=/usr/local/cuda"
              - name: TF_XLA_FLAGS
                value: "--tf_xla_cpu_global_jit"
              - name: NCCL_DEBUG
-               value: INFO
+               value: ${NCCL_DEBUG}
             command:
             - /opt/amazon/openmpi/bin/mpirun
             - --allow-run-as-root
-            - --oversubscribe
             - --tag-output
-            #- -N
-            #- "8"
+            #- -npernode
+            #- "${GPU_PER_NODE}"
             - -np
             - "${TOTAL_GPUS}"
             - -bind-to
@@ -51,36 +50,44 @@ spec:
             - -x
             - TF_XLA_FLAGS
             - -x
-            - NCCL_DEBUG=INFO
+            - NCCL_DEBUG
+            - -x
+            - NCCL_BUFFSIZE=8388608
+            - -x
+            - NCCL_P2P_NET_CHUNKSIZE=524288
             #- -x
             #- NCCL_NVLS_ENABLE=${NCCL_NVLS_ENABLE}
             #- -x
             #- NCCL_PROTO=${NCCL_PROTO}
             #- -x
             #- NCCL_ALGO=${NCCL_ALGO}
-            #- -x
-            #- FI_PROVIDER=${FI_PROVIDER}
-            #- -x
-            #- FI_EFA_USE_DEVICE_RDMA=${FI_EFA_USE_DEVICE_RDMA}
-            #- -x
-            #- FI_EFA_FORK_SAFE=${FI_EFA_FORK_SAFE}
+            - -x
+            - FI_PROVIDER=${FI_PROVIDER}
+            - -x
+            - FI_EFA_USE_DEVICE_RDMA=${FI_EFA_USE_DEVICE_RDMA}
+            - -x
+            - FI_EFA_FORK_SAFE=${FI_EFA_FORK_SAFE}
             #- -x
             #- NCCL_SHM_DISABLE=${NCCL_SHM_DISABLE}
             - --mca
             - pml
-            - ^cm
+            - ^cm,ucx
+            #- --mca
+            #- plm_rsh_agent
+            #- ssh
             - --mca
-            - plm_rsh_agent
-            - ssh
+            - btl
+            - tcp,self
+            - --mca
+            - btl_tcp_if_exclude
+            - lo,docker0,veth_def_agent
             - /opt/nccl-tests/build/all_reduce_perf
             - -b
-            - "1"
+            - "8"
             - -e
-            - 2G
+            - "16G"
             - -f
             - "2"
-            - -t
-            - "1"
             - -g
             - "1"
             - -c
@@ -105,7 +112,7 @@ spec:
                     - ${HOSTNAME_2}
           containers:
           - image: ${IMAGE_URI}
-            name: ${TEST_NAME}-worker
+            name: ${MPI_PAIR_JOB_NAME}-worker
             imagePullPolicy: Always
             volumeMounts:
             - name: shmem

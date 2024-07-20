@@ -2,8 +2,8 @@
 
 . .env
 
-TEST_NAME=$1
-if [ "$1" == "" ]; then
+export TEST_NAME=$1
+if [ "${TEST_NAME}" == "" ]; then
 	TEST_NAME="all-reduce-pair"
 fi
 
