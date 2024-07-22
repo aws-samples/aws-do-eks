@@ -11,6 +11,8 @@ ARG NCCL_TESTS_VERSION=v2.13.9
 
 FROM nvcr.io/nvidia/cuda:${CUDA_VERSION}-devel-ubuntu22.04
 
+RUN echo "Versions: CUDA=${CUDA_VERSION} GDDRCOPY=${GDRCOPY_VERSION} EFA=${EFA_INSTALLER_VERSION} OFI=${AWS_OFI_NCCL_VERSION} NCCL=${NCCL_VERSION} TESTS=${NCCL_TESTS_VERSION}"
+
 RUN apt-get update -y && apt-get upgrade -y
 RUN apt-get remove -y --allow-change-held-packages \
     ibverbs-utils \
