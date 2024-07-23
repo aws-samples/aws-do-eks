@@ -263,3 +263,10 @@ Note:
 ```sh
 terraform destroy -auto-approve
 ```
+
+# References
+
+* [terraform](https://www.terraform.io/)
+* [terraform-aws-eks-blueprints](https://github.com/aws-ia/terraform-aws-eks-blueprints)
+* [nvidia-gpu-efa](https://github.com/aws-ia/terraform-aws-eks-blueprints/tree/main/patterns/nvidia-gpu-efa) pattern
+
