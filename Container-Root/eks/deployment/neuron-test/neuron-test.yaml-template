@@ -1,0 +1,29 @@
+kind: Deployment
+apiVersion: apps/v1
+metadata:
+  name: neuron-test
+  labels:
+    app: neuron-test
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: neuron-test
+  template:
+    metadata:
+      labels:
+        app: neuron-test
+    spec:
+      #nodeSelector:
+      #  node.kubernetes.io/instance-type: "${INSTANCE_TYPE}"
+      containers:
+      - name: neuron-test
+        image: "${REGISTRY}${IMAGE}${TAG}"
+        imagePullPolicy: Always
+        command: ["bash", "-c"]
+        args: ['/startup.sh']
+        resources:
+          limits:
+            aws.amazon.com/neuron: ${NUM_ND}
+          requests:
+            aws.amazon.com/neuron: ${NUM_ND}
