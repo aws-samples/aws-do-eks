@@ -6,7 +6,7 @@ metadata:
 spec:
   elasticPolicy:
     rdzvBackend: etcd
-    rdzvHost: etcd-service
+    rdzvHost: etcd
     rdzvPort: 2379
     minReplicas: 2
     maxReplicas: 24

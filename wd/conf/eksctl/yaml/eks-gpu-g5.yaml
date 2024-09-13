@@ -3,14 +3,13 @@ kind: ClusterConfig
 
 metadata:
   name: do-eks-yaml-g5
-  version: "1.25"
+  version: "1.29"
   region: us-east-1
 
 availabilityZones:
   - us-east-1a
   - us-east-1b
   - us-east-1c
-  - us-east-1d
 
 managedNodeGroups:
 
@@ -24,12 +23,12 @@ managedNodeGroups:
         cloudWatch: true
  
   - name: g5
-    instanceType: g5.2xlarge
+    instanceType: g5.8xlarge
     instancePrefix: g5-2xl
     privateNetworking: true
-    efaEnabled: false
+    efaEnabled: true
     minSize: 0
-    desiredCapacity: 1
+    desiredCapacity: 2
     maxSize: 10
     volumeSize: 80
     iam:

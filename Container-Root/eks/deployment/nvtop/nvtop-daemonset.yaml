@@ -13,6 +13,6 @@ spec:
     spec:
       containers:
         - name: nvtop
-          image: morosow/nvtop
-          command: ["/bin/sh"]
+          image: iankoulski/do-nvtop:latest
+          command: ["/bin/bash"]
           args: ["-c", "while true; do date; sleep 10; done"]

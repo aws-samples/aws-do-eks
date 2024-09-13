@@ -26,9 +26,9 @@ ii  diffutils                      1:3.7-3                        amd64  File co
 ii  dirmngr                        2.2.19-3ubuntu2.2              amd64  GNU privacy guard - network certificate management service   BSD-3-clause CC0-1.0 Expat GPL-3+ GPL-3+ or BSD-3-clause LGPL-2.1+ LGPL-3+ RFC-Reference TinySCHEME permissive
 ii  distro-info-data               0.43ubuntu1.16                 all    information about the distributions' releases (data files)   ISC
 ii  dmsetup                        2:1.02.167-1ubuntu1            amd64  Linux Kernel Device Mapper userspace library                 BSD-2-Clause GPL-2.0 GPL-2.0+ LGPL-2.1
-ii  docker-buildx-plugin           0.14.0-1~ubuntu.20.04~focal    amd64  Docker Buildx cli plugin.                                    unknown
-ii  docker-ce-cli                  5:26.1.3-1~ubuntu.20.04~focal  amd64  Docker CLI: the open-source application container engine     unknown
-ii  docker-compose-plugin          2.27.0-1~ubuntu.20.04~focal    amd64  Docker Compose (V2) plugin for the Docker CLI.               unknown
+ii  docker-buildx-plugin           0.15.1-1~ubuntu.20.04~focal    amd64  Docker Buildx cli plugin.                                    unknown
+ii  docker-ce-cli                  5:27.0.3-1~ubuntu.20.04~focal  amd64  Docker CLI: the open-source application container engine     unknown
+ii  docker-compose-plugin          2.28.1-1~ubuntu.20.04~focal    amd64  Docker Compose (V2) plugin for the Docker CLI.               unknown
 ii  dpkg                           1.19.7ubuntu3.2                amd64  Debian package management system                             BSD-2-clause GPL-2 GPL-2+ public-domain-md5 public-domain-s-s-d
 ii  e2fsprogs                      1.45.5-2ubuntu1.1              amd64  ext2/ext3/ext4 file system utilities                         GPL-2 LGPL-2
 ii  fdisk                          2.34-0.1ubuntu9.6              amd64  collection of partitioning utilities                         BSD-2-clause BSD-3-clause BSD-4-clause GPL-2 GPL-2+ GPL-3+ LGPL LGPL-2+ LGPL-2.1+ LGPL-3+ MIT public-domain
@@ -42,11 +42,11 @@ ii  fonts-noto-mono                20200323-1build1~ubuntu20.04.1 all    "No Tof
 ii  fonts-urw-base35               20170801.1-3                   all    font set metric-compatible with the 35 PostScript Level 2 Ba AGPL-3 AGPL-3 with Font exception GPL-2+
 ii  gcc-10-base:amd64              10.5.0-1ubuntu1~20.04          amd64  GCC, the GNU Compiler Collection (base package)              Artistic GFDL-1.2 GPL GPL-2 GPL-3 LGPL
 ii  gettext-base                   0.19.8.1-10build1              amd64  GNU Internationalization utilities for the base system       GFDL GPL LGPL
-ii  ghostscript                    9.50~dfsg-5ubuntu4.11          amd64  interpreter for the PostScript language and for PDF          AGPL-3 AGPL-3+ AGPL-3+ with font exception Apache-2.0 BSD-3-Clause BSD-3-Clause~Adobe Expat Expat~Ghostgum Expat~SunSoft Expat~SunSoft with SunSoft exception FTL GAP~configure GPL GPL-2 GPL-2+ GPL-3+ ISC LGPL-2.1 NTP~Lucent NTP~Open NTP~WSU ZLIB other public-domain
+ii  ghostscript                    9.50~dfsg-5ubuntu4.13          amd64  interpreter for the PostScript language and for PDF          AGPL-3 AGPL-3+ AGPL-3+ with font exception Apache-2.0 BSD-3-Clause BSD-3-Clause~Adobe Expat Expat~Ghostgum Expat~SunSoft Expat~SunSoft with SunSoft exception FTL GAP~configure GPL GPL-2 GPL-2+ GPL-3+ ISC LGPL-2.1 NTP~Lucent NTP~Open NTP~WSU ZLIB other public-domain
 ii  gir1.2-glib-2.0:amd64          1.64.1-1~ubuntu20.04.1         amd64  Introspection data for GLib, GObject, Gio and GModule        BSD-2-clause GPL-2+ LGPL-2+ MIT
 ii  gir1.2-packagekitglib-1.0      1.1.13-2ubuntu1.1              amd64  GObject introspection data for the PackageKit GLib library   GPL-2+ LGPL-2.1+
-ii  git                            1:2.25.1-1ubuntu3.11           amd64  fast, scalable, distributed revision control system          Apache-2.0 BSD-2-clause Boost EDL-1.0 Expat GPL-1+ or Artistic-1 GPL-2 GPL-2+ ISC LGPL-2+ LGPL-2.1+ dlmalloc mingw-runtime
-ii  git-man                        1:2.25.1-1ubuntu3.11           all    fast, scalable, distributed revision control system (manual  Apache-2.0 BSD-2-clause Boost EDL-1.0 Expat GPL-1+ or Artistic-1 GPL-2 GPL-2+ ISC LGPL-2+ LGPL-2.1+ dlmalloc mingw-runtime
+ii  git                            1:2.25.1-1ubuntu3.13           amd64  fast, scalable, distributed revision control system          Apache-2.0 BSD-2-clause Boost EDL-1.0 Expat GPL-1+ or Artistic-1 GPL-2 GPL-2+ ISC LGPL-2+ LGPL-2.1+ dlmalloc mingw-runtime
+ii  git-man                        1:2.25.1-1ubuntu3.13           all    fast, scalable, distributed revision control system (manual  Apache-2.0 BSD-2-clause Boost EDL-1.0 Expat GPL-1+ or Artistic-1 GPL-2 GPL-2+ ISC LGPL-2+ LGPL-2.1+ dlmalloc mingw-runtime
 ii  glib-networking:amd64          2.64.2-1ubuntu0.1              amd64  network-related giomodules for GLib                          LGPL-2+ LGPL-2.1+ OpenSSL
 ii  glib-networking-common         2.64.2-1ubuntu0.1              all    network-related giomodules for GLib - data files             LGPL-2+ LGPL-2.1+ OpenSSL
 ii  glib-networking-services       2.64.2-1ubuntu0.1              amd64  network-related giomodules for GLib - D-Bus services         LGPL-2+ LGPL-2.1+ OpenSSL
@@ -99,8 +99,8 @@ ii  libblkid1:amd64                2.34-0.1ubuntu9.6              amd64  block d
 ii  libbrotli1:amd64               1.0.7-6ubuntu0.1               amd64  library implementing brotli encoder and decoder (shared libr MIT
 ii  libbsd0:amd64                  0.10.0-1                       amd64  utility functions from BSD systems - shared library          BSD-2-clause BSD-2-clause-NetBSD BSD-2-clause-author BSD-2-clause-verbatim BSD-3-clause BSD-3-clause-John-Birrell BSD-3-clause-Regents BSD-3-clause-author BSD-4-clause-Christopher-G-Demetriou BSD-4-clause-Niels-Provos BSD-5-clause-Peter-Wemm Beerware Expat ISC ISC-Original public-domain public-domain-Colin-Plumb
 ii  libbz2-1.0:amd64               1.0.8-2                        amd64  high-quality block-sorting file compressor library - runtime BSD-variant GPL-2
-ii  libc-bin                       2.31-0ubuntu9.15               amd64  GNU C Library: Binaries                                      GPL-2 LGPL-2.1
-ii  libc6:amd64                    2.31-0ubuntu9.15               amd64  GNU C Library: Shared libraries                              GPL-2 LGPL-2.1
+ii  libc-bin                       2.31-0ubuntu9.16               amd64  GNU C Library: Binaries                                      GPL-2 LGPL-2.1
+ii  libc6:amd64                    2.31-0ubuntu9.16               amd64  GNU C Library: Shared libraries                              GPL-2 LGPL-2.1
 ii  libcairo2:amd64                1.16.0-4ubuntu1                amd64  Cairo 2D vector graphics library                             LGPL-2.1
 ii  libcanberra0:amd64             0.30-7ubuntu1                  amd64  simple abstract interface for playing event sounds           LGPL-2 LGPL-2.1
 ii  libcap-ng0:amd64               0.7.9-2.1build1                amd64  An alternate POSIX capabilities library                      GPL-2 GPL-3 LGPL-2.1
@@ -110,7 +110,7 @@ ii  libcbor0.6:amd64               0.6.0-0ubuntu1                 amd64  library
 ii  libcom-err2:amd64              1.45.5-2ubuntu1.1              amd64  common error description library                             unknown
 ii  libcrypt1:amd64                1:4.4.10-10ubuntu4             amd64  libcrypt shared library                                      Public domain
 ii  libcryptsetup12:amd64          2:2.2.2-3ubuntu2.4             amd64  disk encryption support - shared library                     Apache-2.0 CC0 CC0 or Apache-2.0 GPL-2+ GPL-2+ with OpenSSL exception LGPL-2.1+ LGPL-2.1+ with OpenSSL exception public-domain
-ii  libcups2:amd64                 2.3.1-9ubuntu1.6               amd64  Common UNIX Printing System(tm) - Core library               Apache-2.0 Apache-2.0-with-GPL2-LGPL2-Exception Apache-2.0-with-GPL2-LGPL2-Exception or BSD-2-clause BSD-3-clause FSFUL Zlib
+ii  libcups2:amd64                 2.3.1-9ubuntu1.8               amd64  Common UNIX Printing System(tm) - Core library               Apache-2.0 Apache-2.0-with-GPL2-LGPL2-Exception Apache-2.0-with-GPL2-LGPL2-Exception or BSD-2-clause BSD-3-clause FSFUL Zlib
 ii  libcurl3-gnutls:amd64          7.68.0-1ubuntu2.22             amd64  easy-to-use client-side URL transfer library (GnuTLS flavour BSD-3-Clause BSD-4-Clause ISC curl other public-domain
 ii  libcurl4:amd64                 7.68.0-1ubuntu2.22             amd64  easy-to-use client-side URL transfer library (OpenSSL flavou BSD-3-Clause BSD-4-Clause ISC curl other public-domain
 ii  libdatrie1:amd64               0.2.12-3                       amd64  Double-array trie library                                    GPL-2+ LGPL-2.1+
@@ -147,8 +147,8 @@ ii  libgomp1:amd64                 10.5.0-1ubuntu1~20.04          amd64  GCC Ope
 ii  libgpg-error0:amd64            1.37-1                         amd64  GnuPG development runtime library                            BSD-3-clause GPL-3+ LGPL-2.1+ LGPL-2.1+ or BSD-3-clause g10-permissive
 ii  libgpm2:amd64                  1.20.7-5                       amd64  General Purpose Mouse - shared library                       GPL-2.0+ GPL-3.0+
 ii  libgraphite2-3:amd64           1.3.13-11build1                amd64  Font rendering engine for Complex Scripts -- library         Artistic Artistic or GPL-1+ GPL-1+ GPL-2+ LGPL-2.1+ LGPL-2.1+ or GPL-2+ or MPL-1.1 LGPL-2.1+ or MPL-1.1 or GPL-2+ MPL-1.1 custom-sil-open-font-license public-domain
-ii  libgs9:amd64                   9.50~dfsg-5ubuntu4.11          amd64  interpreter for the PostScript language and for PDF - Librar AGPL-3 AGPL-3+ AGPL-3+ with font exception Apache-2.0 BSD-3-Clause BSD-3-Clause~Adobe Expat Expat~Ghostgum Expat~SunSoft Expat~SunSoft with SunSoft exception FTL GAP~configure GPL GPL-2 GPL-2+ GPL-3+ ISC LGPL-2.1 NTP~Lucent NTP~Open NTP~WSU ZLIB other public-domain
-ii  libgs9-common                  9.50~dfsg-5ubuntu4.11          all    interpreter for the PostScript language and for PDF - common AGPL-3 AGPL-3+ AGPL-3+ with font exception Apache-2.0 BSD-3-Clause BSD-3-Clause~Adobe Expat Expat~Ghostgum Expat~SunSoft Expat~SunSoft with SunSoft exception FTL GAP~configure GPL GPL-2 GPL-2+ GPL-3+ ISC LGPL-2.1 NTP~Lucent NTP~Open NTP~WSU ZLIB other public-domain
+ii  libgs9:amd64                   9.50~dfsg-5ubuntu4.13          amd64  interpreter for the PostScript language and for PDF - Librar AGPL-3 AGPL-3+ AGPL-3+ with font exception Apache-2.0 BSD-3-Clause BSD-3-Clause~Adobe Expat Expat~Ghostgum Expat~SunSoft Expat~SunSoft with SunSoft exception FTL GAP~configure GPL GPL-2 GPL-2+ GPL-3+ ISC LGPL-2.1 NTP~Lucent NTP~Open NTP~WSU ZLIB other public-domain
+ii  libgs9-common                  9.50~dfsg-5ubuntu4.13          all    interpreter for the PostScript language and for PDF - common AGPL-3 AGPL-3+ AGPL-3+ with font exception Apache-2.0 BSD-3-Clause BSD-3-Clause~Adobe Expat Expat~Ghostgum Expat~SunSoft Expat~SunSoft with SunSoft exception FTL GAP~configure GPL GPL-2 GPL-2+ GPL-3+ ISC LGPL-2.1 NTP~Lucent NTP~Open NTP~WSU ZLIB other public-domain
 ii  libgssapi-krb5-2:amd64         1.17-6ubuntu4.4                amd64  MIT Kerberos runtime libraries - krb5 GSS-API Mechanism      GPL-2
 ii  libgssapi3-heimdal:amd64       7.7.0+dfsg-1ubuntu1.4          amd64  Heimdal Kerberos - GSSAPI support library                    BSD-3-clause GPL-2+ custom none
 ii  libgstreamer1.0-0:amd64        1.16.3-0ubuntu1.1              amd64  Core GStreamer libraries and elements                        LGPL
@@ -229,9 +229,9 @@ ii  libprocps8:amd64               2:3.3.16-1ubuntu2.4            amd64  library
 ii  libproxy1v5:amd64              0.4.15-10ubuntu1.2             amd64  automatic proxy configuration management library (shared)    GPL LGPL-2.1
 ii  libpsl5:amd64                  0.21.0-1ubuntu1                amd64  Library for Public Suffix List (shared libraries)            Chromium MIT
 ii  libpython3-stdlib:amd64        3.8.2-0ubuntu2                 amd64  interactive high-level object-oriented language (default pyt GPL-compatible GPL-compatible licenses
-ii  libpython3.8:amd64             3.8.10-0ubuntu1~20.04.9        amd64  Shared Python runtime library (version 3.8)                  GPL-2
-ii  libpython3.8-minimal:amd64     3.8.10-0ubuntu1~20.04.9        amd64  Minimal subset of the Python language (version 3.8)          GPL-2
-ii  libpython3.8-stdlib:amd64      3.8.10-0ubuntu1~20.04.9        amd64  Interactive high-level object-oriented language (standard li GPL-2
+ii  libpython3.8:amd64             3.8.10-0ubuntu1~20.04.10       amd64  Shared Python runtime library (version 3.8)                  GPL-2
+ii  libpython3.8-minimal:amd64     3.8.10-0ubuntu1~20.04.10       amd64  Minimal subset of the Python language (version 3.8)          GPL-2
+ii  libpython3.8-stdlib:amd64      3.8.10-0ubuntu1~20.04.10       amd64  Interactive high-level object-oriented language (standard li GPL-2
 ii  libpython3.9-minimal:amd64     3.9.19-1+focal1                amd64  Minimal subset of the Python language (version 3.9)          GPL-2
 ii  libpython3.9-stdlib:amd64      3.9.19-1+focal1                amd64  Interactive high-level object-oriented language (standard li GPL-2
 ii  libreadline8:amd64             8.0-4                          amd64  GNU readline and history libraries, run-time libraries       GFDL GPL-3
@@ -335,8 +335,8 @@ ii  python3-requests-unixsocket    0.2.0-2                        all    Use req
 ii  python3-six                    1.14.0-2                       all    Python 2 and 3 compatibility library (Python 3 interface)    Expat
 ii  python3-software-properties    0.99.9.12                      all    manage the repositories that you install software from       GPL-2+ GPL-3 LGPL-3
 ii  python3-urllib3                1.25.8-2ubuntu0.3              all    HTTP library with thread-safe connection pooling for Python3 Expat PSF-2
-ii  python3.8                      3.8.10-0ubuntu1~20.04.9        amd64  Interactive high-level object-oriented language (version 3.8 GPL-2
-ii  python3.8-minimal              3.8.10-0ubuntu1~20.04.9        amd64  Minimal subset of the Python language (version 3.8)          GPL-2
+ii  python3.8                      3.8.10-0ubuntu1~20.04.10       amd64  Interactive high-level object-oriented language (version 3.8 GPL-2
+ii  python3.8-minimal              3.8.10-0ubuntu1~20.04.10       amd64  Minimal subset of the Python language (version 3.8)          GPL-2
 ii  python3.9                      3.9.19-1+focal1                amd64  Interactive high-level object-oriented language (version 3.9 GPL-2
 ii  python3.9-minimal              3.9.19-1+focal1                amd64  Minimal subset of the Python language (version 3.9)          GPL-2
 ii  readline-common                8.0-4                          all    GNU readline and history libraries, common files             GFDL GPL-3
@@ -351,21 +351,21 @@ ii  systemd-sysv                   245.4-4ubuntu3.23              amd64  system 
 ii  systemd-timesyncd              245.4-4ubuntu3.23              amd64  minimalistic service to synchronize local time with NTP serv CC0-1.0 Expat GPL-2 GPL-2 with Linux-syscall-note exception GPL-2+ LGPL-2.1+ public-domain
 ii  sysvinit-utils                 2.96-2.1ubuntu1                amd64  System-V-like utilities                                      GPL-2+
 ii  tar                            1.30+dfsg-7ubuntu0.20.04.4     amd64  GNU version of the tar archiving utility                     GPL-2 GPL-3
-ii  terraform                      1.8.4-1                        amd64  Terraform enables you to safely and predictably create, chan unknown
-ii  tzdata                         2024a-0ubuntu0.20.04           all    time zone and daylight-saving time data                      public domain
+ii  terraform                      1.9.2-1                        amd64  Terraform enables you to safely and predictably create, chan unknown
+ii  tzdata                         2024a-0ubuntu0.20.04.1         all    time zone and daylight-saving time data                      public domain
 ii  ubuntu-keyring                 2020.02.11.4                   all    GnuPG keys of the Ubuntu archive                             GPL
 ii  ucf                            3.0038+nmu1                    all    Update Configuration File(s): preserve user changes to confi GPL-2
 ii  unattended-upgrades            2.3ubuntu0.3                   all    automatic installation of security upgrades                  GPL-2+
 ii  unzip                          6.0-25ubuntu1.2                amd64  De-archiver for .zip files                                   unknown
 ii  util-linux                     2.34-0.1ubuntu9.6              amd64  miscellaneous system utilities                               BSD-2-clause BSD-3-clause BSD-4-clause GPL-2 GPL-2+ GPL-3+ LGPL LGPL-2+ LGPL-2.1+ LGPL-3+ MIT public-domain
-ii  vim                            2:8.1.2269-1ubuntu5.22         amd64  Vi IMproved - enhanced vi editor                             Apache Apache or Expat Artistic-1 BSD-2-clause BSD-3-clause Compaq EDL-1 Expat Expat or GPL-2 Expat or Vim GPL-1+ GPL-1+ or Artistic-1 GPL-2 GPL-2+ LGPL-2.1+ OPL-1+ SRA UC Vim Vim-Regexp X11 XPM public-domain
-ii  vim-common                     2:8.1.2269-1ubuntu5.22         all    Vi IMproved - Common files                                   Apache Apache or Expat Artistic-1 BSD-2-clause BSD-3-clause Compaq EDL-1 Expat Expat or GPL-2 Expat or Vim GPL-1+ GPL-1+ or Artistic-1 GPL-2 GPL-2+ LGPL-2.1+ OPL-1+ SRA UC Vim Vim-Regexp X11 XPM public-domain
-ii  vim-runtime                    2:8.1.2269-1ubuntu5.22         all    Vi IMproved - Runtime files                                  Apache Apache or Expat Artistic-1 BSD-2-clause BSD-3-clause Compaq EDL-1 Expat Expat or GPL-2 Expat or Vim GPL-1+ GPL-1+ or Artistic-1 GPL-2 GPL-2+ LGPL-2.1+ OPL-1+ SRA UC Vim Vim-Regexp X11 XPM public-domain
-ii  wget                           1.20.3-1ubuntu2                amd64  retrieves files from the web                                 GFDL-1.2 GPL-3
+ii  vim                            2:8.1.2269-1ubuntu5.23         amd64  Vi IMproved - enhanced vi editor                             Apache Apache or Expat Artistic-1 BSD-2-clause BSD-3-clause Compaq EDL-1 Expat Expat or GPL-2 Expat or Vim GPL-1+ GPL-1+ or Artistic-1 GPL-2 GPL-2+ LGPL-2.1+ OPL-1+ SRA UC Vim Vim-Regexp X11 XPM public-domain
+ii  vim-common                     2:8.1.2269-1ubuntu5.23         all    Vi IMproved - Common files                                   Apache Apache or Expat Artistic-1 BSD-2-clause BSD-3-clause Compaq EDL-1 Expat Expat or GPL-2 Expat or Vim GPL-1+ GPL-1+ or Artistic-1 GPL-2 GPL-2+ LGPL-2.1+ OPL-1+ SRA UC Vim Vim-Regexp X11 XPM public-domain
+ii  vim-runtime                    2:8.1.2269-1ubuntu5.23         all    Vi IMproved - Runtime files                                  Apache Apache or Expat Artistic-1 BSD-2-clause BSD-3-clause Compaq EDL-1 Expat Expat or GPL-2 Expat or Vim GPL-1+ GPL-1+ or Artistic-1 GPL-2 GPL-2+ LGPL-2.1+ OPL-1+ SRA UC Vim Vim-Regexp X11 XPM public-domain
+ii  wget                           1.20.3-1ubuntu2.1              amd64  retrieves files from the web                                 GFDL-1.2 GPL-3
 ii  x11-common                     1:7.7+19ubuntu14               all    X Window System (X.Org) infrastructure                       GPL
 ii  xauth                          1:1.1-0ubuntu1                 amd64  X authentication utility                                     unknown
 ii  xdg-user-dirs                  0.17-2ubuntu1                  amd64  tool to manage well known user directories                   GPL-2
-ii  xxd                            2:8.1.2269-1ubuntu5.22         amd64  tool to make (or reverse) a hex dump                         Apache Apache or Expat Artistic-1 BSD-2-clause BSD-3-clause Compaq EDL-1 Expat Expat or GPL-2 Expat or Vim GPL-1+ GPL-1+ or Artistic-1 GPL-2 GPL-2+ LGPL-2.1+ OPL-1+ SRA UC Vim Vim-Regexp X11 XPM public-domain
+ii  xxd                            2:8.1.2269-1ubuntu5.23         amd64  tool to make (or reverse) a hex dump                         Apache Apache or Expat Artistic-1 BSD-2-clause BSD-3-clause Compaq EDL-1 Expat Expat or GPL-2 Expat or Vim GPL-1+ GPL-1+ or Artistic-1 GPL-2 GPL-2+ LGPL-2.1+ OPL-1+ SRA UC Vim Vim-Regexp X11 XPM public-domain
 ii  xz-utils                       5.2.4-1ubuntu1.1               amd64  XZ-format compression utilities                              Autoconf GPL-2 GPL-2+ LGPL-2.1+ PD PD-debian config-h noderivs none permissive-fsf permissive-nowarranty probably-PD
 ii  zlib1g:amd64                   1:1.2.11.dfsg-2ubuntu1.5       amd64  compression library - runtime                                Zlib
 

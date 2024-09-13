@@ -4,13 +4,9 @@ metadata:
   name: pod
 spec:
   #nodeSelector:
-    #node.kubernetes.io/instance-type: "m5.xlarge"
+  #  kubernetes.io/hostname: "${NODE_NAME}"
   containers:
   - name: pod
-    image: ubuntu:20.04
+    image: ${REGISTRY}${IMAGE}${TAG}
     command: ["/bin/sh"]
     args: ["-c", "while true; do date; sleep 10; done"]
-    securityContext:
-      privileged: true
-      runAsNonRoot: false
-      runAsUser: 0

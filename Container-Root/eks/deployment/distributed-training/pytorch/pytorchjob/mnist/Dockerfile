@@ -1,4 +1,5 @@
-FROM pytorch/pytorch:1.8.1-cuda10.2-cudnn7-runtime
+FROM pytorch/pytorch:2.4.0-cuda12.1-cudnn9-runtime
+#FROM pytorch/pytorch:1.8.1-cuda10.2-cudnn7-runtime
 
 RUN pip install tensorboardX==1.6.0 protobuf==3.19.0 && pip cache remove *
 RUN mkdir -p /opt/mnist

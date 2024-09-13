@@ -6,7 +6,7 @@ metadata:
 spec:
   elasticPolicy:
     rdzvBackend: etcd
-    rdzvHost: etcd-service
+    rdzvHost: etcd
     rdzvPort: 2379
     minReplicas: 2
     maxReplicas: 36
@@ -20,7 +20,7 @@ spec:
             averageUtilization: 80
   pytorchReplicaSpecs:
     Worker:
-      replicas: 36
+      replicas: 2
       restartPolicy: OnFailure
       template:
         metadata:
