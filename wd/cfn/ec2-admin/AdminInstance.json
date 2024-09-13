@@ -1,158 +1,158 @@
 {
-	"AWSTemplateFormatVersion": "2010-09-09",
+        "AWSTemplateFormatVersion": "2010-09-09",
 
-	"Description": "Admin instance with Docker",
-	"Mappings": {
-		"AWSRegion2AMI": {
-			"us-east-1": {
-				"ami": "ami-0a5c3558529277641"
-			},
-			"us-east-2": {
-				"ami": "ami-0453ce6279422709a"
-			},
-			"us-west-1": {
-				"ami": "ami-0731b5a29c85c1f0c"
-			},
-			"us-west-2": {
-				"ami": "ami-0c00d3cdac3e96ae2"
-			}
-		}
-	},
+        "Description": "Admin instance with Docker",
+        "Mappings": {
+                "AWSRegion2AMI": {
+                        "us-east-1": {
+                                "ami": "ami-0a5c3558529277641"
+                        },
+                        "us-east-2": {
+                                "ami": "ami-0453ce6279422709a"
+                        },
+                        "us-west-1": {
+                                "ami": "ami-0731b5a29c85c1f0c"
+                        },
+                        "us-west-2": {
+                                "ami": "ami-0c00d3cdac3e96ae2"
+                        }
+                }
+        },
 
-	"Resources": {
+        "Resources": {
 
-		"ManagementInstance": {
-			"Type": "AWS::EC2::Instance",
-			"Properties": {
-				"ImageId": {
-					"Fn::FindInMap": ["AWSRegion2AMI", {
-						"Ref": "AWS::Region"
-					}, "ami"]
-				},
-				"InstanceType": "m5.4xlarge",
-				"IamInstanceProfile": {
-					"Ref": "RootInstanceProfile"
-				},
-				"SecurityGroups": [{
-					"Ref": "ManagementInstanceSecurityGroup"
-				}],
-				"UserData": {
-					"Fn::Base64": {
-						"Fn::Join": ["", [
-							"#!/bin/bash \n",
-							"echo 'Executing userdata script to install selected utilities ...' | sudo tee -a /tmp/bootstrap.log \n",
-							"sudo chmod 666 /tmp/bootstrap.log; sudo chown ec2-user:ec2-user /tmp/bootstrap.log \n",
-							"date | sudo tee -a /tmp/bootstrap.log \n",
-							"sudo yum update | sudo tee -a /tmp/bootstrap.log \n",
-						        "sudo yum install -y aws-cfn-bootstrap git | sudo tee -a /tmp/bootstrap.log \n",
-							"sudo su ec2-user bash -c 'cd /home/ec2-user; git clone https://github.com/aws-samples/aws-do-eks.git | sudo tee -a /tmp/bootstrap.log' \n",
-							"sudo bash -c '/home/ec2-user/aws-do-eks/Container-Root/eks/ops/setup/install-aws-cli.sh | sudo tee -a /tmp/bootstrap.log' \n",
-							"sudo bash -c '/home/ec2-user/aws-do-eks/Container-Root/eks/ops/setup/install-eksctl.sh | sudo tee -a /tmp/bootstrap.log' \n",
-							"sudo bash -c '/home/ec2-user/aws-do-eks/Container-Root/eks/ops/setup/install-kubectl.sh | sudo tee -a /tmp/bootstrap.log' \n",
-							"sudo bash -c '/home/ec2-user/aws-do-eks/Container-Root/eks/ops/setup/install-kubectx.sh | sudo tee -a /tmp/bootstrap.log' \n",
-							"sudo bash -c '/home/ec2-user/aws-do-eks/Container-Root/eks/ops/setup/install-kubeps1.sh | sudo tee -a /tmp/bootstrap.log' \n",
-							"sudo bash -c '/home/ec2-user/aws-do-eks/Container-Root/eks/ops/setup/install-docker-yum.sh | sudo tee -a /tmp/bootstrap.log' \n",
-							"sudo bash -c '/home/ec2-user/aws-do-eks/Container-Root/eks/ops/setup/install-helm.sh | sudo tee -a /tmp/bootstrap.log' \n",
-							"sudo bash -c 'ln -s /usr/bin/python3 /usr/bin/python | sudo tee -a /tmp/bootstrap.log' \n",
-							"sudo su ec2-user bash -c '/home/ec2-user/aws-do-eks/Container-Root/eks/ops/setup/install-envsubst.sh | sudo tee -a /tmp/bootstrap.log' \n",
-							"date | sudo tee -a /tmp/bootstrap.log \n",
-							"echo 'Done executing userdata script.' | sudo tee -a /tmp/bootstrap.log \n"
-						]]
-					}
-				}
-			},
-			"CreationPolicy": {}
-		},
+                "ManagementInstance": {
+                        "Type": "AWS::EC2::Instance",
+                        "Properties": {
+                                "ImageId": {
+                                        "Fn::FindInMap": ["AWSRegion2AMI", {
+                                                "Ref": "AWS::Region"
+                                        }, "ami"]
+                                },
+                                "InstanceType": "m5.4xlarge",
+                                "IamInstanceProfile": {
+                                        "Ref": "RootInstanceProfile"
+                                },
+                                "SecurityGroups": [{
+                                        "Ref": "ManagementInstanceSecurityGroup"
+                                }],
+                                "UserData": {
+                                        "Fn::Base64": {
+                                                "Fn::Join": ["", [
+                                                        "#!/bin/bash \n",
+                                                        "echo 'Executing userdata script to install selected utilities ...' | sudo tee -a /tmp/bootstrap.log \n",
+                                                        "sudo chmod 666 /tmp/bootstrap.log; sudo chown ec2-user:ec2-user /tmp/bootstrap.log \n",
+                                                        "date | sudo tee -a /tmp/bootstrap.log \n",
+                                                        "sudo yum update | sudo tee -a /tmp/bootstrap.log \n",
+                                                        "sudo yum install -y aws-cfn-bootstrap git | sudo tee -a /tmp/bootstrap.log \n",
+                                                        "sudo su ec2-user bash -c 'cd /home/ec2-user; git clone https://github.com/aws-samples/aws-do-eks.git | sudo tee -a /tmp/bootstrap.log' \n",
+                                                        "sudo bash -c '/home/ec2-user/aws-do-eks/Container-Root/eks/ops/setup/install-aws-cli.sh | sudo tee -a /tmp/bootstrap.log' \n",
+                                                        "sudo bash -c '/home/ec2-user/aws-do-eks/Container-Root/eks/ops/setup/install-eksctl.sh | sudo tee -a /tmp/bootstrap.log' \n",
+                                                        "sudo bash -c '/home/ec2-user/aws-do-eks/Container-Root/eks/ops/setup/install-kubectl.sh | sudo tee -a /tmp/bootstrap.log' \n",
+                                                        "sudo bash -c '/home/ec2-user/aws-do-eks/Container-Root/eks/ops/setup/install-kubectx.sh | sudo tee -a /tmp/bootstrap.log' \n",
+                                                        "sudo bash -c '/home/ec2-user/aws-do-eks/Container-Root/eks/ops/setup/install-kubeps1.sh | sudo tee -a /tmp/bootstrap.log' \n",
+                                                        "sudo bash -c '/home/ec2-user/aws-do-eks/Container-Root/eks/ops/setup/install-docker-yum.sh | sudo tee -a /tmp/bootstrap.log' \n",
+                                                        "sudo bash -c '/home/ec2-user/aws-do-eks/Container-Root/eks/ops/setup/install-helm.sh | sudo tee -a /tmp/bootstrap.log' \n",
+                                                        "sudo bash -c 'ln -s /usr/bin/python3 /usr/bin/python | sudo tee -a /tmp/bootstrap.log' \n",
+                                                        "sudo su ec2-user bash -c '/home/ec2-user/aws-do-eks/Container-Root/eks/ops/setup/install-envsubst.sh | sudo tee -a /tmp/bootstrap.log' \n",
+                                                        "date | sudo tee -a /tmp/bootstrap.log \n",
+                                                        "echo 'Done executing userdata script.' | sudo tee -a /tmp/bootstrap.log \n"
+                                                ]]
+                                        }
+                                }
+                        },
+                        "CreationPolicy": {}
+                },
 
-		"RootRole": {
-			"Type": "AWS::IAM::Role",
-			"Properties": {
-				"AssumeRolePolicyDocument": {
-					"Version": "2012-10-17",
-					"Statement": [{
-						"Effect": "Allow",
-						"Principal": {
-							"Service": ["ec2.amazonaws.com"]
-						},
-						"Action": ["sts:AssumeRole"]
-					}]
-				},
-				"Path": "/"
-			}
-		},
+                "RootRole": {
+                        "Type": "AWS::IAM::Role",
+                        "Properties": {
+                                "AssumeRolePolicyDocument": {
+                                        "Version": "2012-10-17",
+                                        "Statement": [{
+                                                "Effect": "Allow",
+                                                "Principal": {
+                                                        "Service": ["ec2.amazonaws.com"]
+                                                },
+                                                "Action": ["sts:AssumeRole"]
+                                        }]
+                                },
+                                "Path": "/"
+                        }
+                },
 
-		"RolePolicies": {
-			"Type": "AWS::IAM::Policy",
-			"Properties": {
-				"PolicyName": "root",
-				"PolicyDocument": {
-					"Version": "2012-10-17",
-					"Statement": [{
-						"Effect": "Allow",
-						"Action": "*",
-						"Resource": "*"
-					}]
-				},
-				"Roles": [{
-					"Ref": "RootRole"
-				}]
-			}
-		},
+                "RolePolicies": {
+                        "Type": "AWS::IAM::Policy",
+                        "Properties": {
+                                "PolicyName": "root",
+                                "PolicyDocument": {
+                                        "Version": "2012-10-17",
+                                        "Statement": [{
+                                                "Effect": "Allow",
+                                                "Action": "*",
+                                                "Resource": "*"
+                                        }]
+                                },
+                                "Roles": [{
+                                        "Ref": "RootRole"
+                                }]
+                        }
+                },
 
-		"RootInstanceProfile": {
-			"Type": "AWS::IAM::InstanceProfile",
-			"Properties": {
-				"Path": "/",
-				"Roles": [{
-					"Ref": "RootRole"
-				}]
-			}
-		},
+                "RootInstanceProfile": {
+                        "Type": "AWS::IAM::InstanceProfile",
+                        "Properties": {
+                                "Path": "/",
+                                "Roles": [{
+                                        "Ref": "RootRole"
+                                }]
+                        }
+                },
 
-		"ManagementInstanceSecurityGroup": {
-			"Type": "AWS::EC2::SecurityGroup",
-			"Properties": {
-				"GroupDescription": "Enable access to Management Instance",
-				"SecurityGroupIngress": [{
-						"IpProtocol": "tcp",
-						"FromPort": "443",
-						"ToPort": "443",
-						"CidrIp": "0.0.0.0/0"
-					},
-					{
-						"IpProtocol": "tcp",
-						"FromPort": "22",
-						"ToPort": "22",
-						"CidrIp": "0.0.0.0/0"
-					}
-				]
-			}
-		}
+                "ManagementInstanceSecurityGroup": {
+                        "Type": "AWS::EC2::SecurityGroup",
+                        "Properties": {
+                                "GroupDescription": "Enable access to Management Instance",
+                                "SecurityGroupIngress": [{
+                                                "IpProtocol": "tcp",
+                                                "FromPort": "443",
+                                                "ToPort": "443",
+                                                "CidrIp": "0.0.0.0/0"
+                                        },
+                                        {
+                                                "IpProtocol": "tcp",
+                                                "FromPort": "22",
+                                                "ToPort": "22",
+                                                "CidrIp": "0.0.0.0/0"
+                                        }
+                                ]
+                        }
+                }
 
-	},
+        },
 
-	"Outputs": {
-		"ManagementInstanceDNSName": {
-			"Description": "Management Instance",
-			"Value": {
-				"Fn::Join": ["", ["", {
-					"Fn::GetAtt": ["ManagementInstance", "PublicDnsName"]
-				}]]
-			}
-		},
-		"ManagementInstanceSMLogin": {
-			"Description": "Session Manager Login",
-			"Value": {
-				"Fn::Join": ["",  [
-						"https://",
-						{ "Ref": "AWS::Region" },
-						".console.aws.amazon.com/systems-manager/session-manager/",
-						{ "Ref": "ManagementInstance" },
-						"?region=",
-						{"Ref": "AWS::Region"}
-					]
-				]
-			}
-		}
-	}
+        "Outputs": {
+                "ManagementInstanceDNSName": {
+                        "Description": "Management Instance",
+                        "Value": {
+                                "Fn::Join": ["", ["", {
+                                        "Fn::GetAtt": ["ManagementInstance", "PublicDnsName"]
+                                }]]
+                        }
+                },
+                "ManagementInstanceSMLogin": {
+                        "Description": "Session Manager Login",
+                        "Value": {
+                                "Fn::Join": ["",  [
+                                                "https://",
+                                                { "Ref": "AWS::Region" },
+                                                ".console.aws.amazon.com/systems-manager/session-manager/",
+                                                { "Ref": "ManagementInstance" },
+                                                "?region=",
+                                                {"Ref": "AWS::Region"}
+                                        ]
+                                ]
+                        }
+                }
+        }
 }
