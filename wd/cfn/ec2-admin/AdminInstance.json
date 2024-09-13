@@ -5,16 +5,16 @@
 	"Mappings": {
 		"AWSRegion2AMI": {
 			"us-east-1": {
-				"ami": "ami-03f6c2c562b3df715"
+				"ami": "ami-0a5c3558529277641"
 			},
 			"us-east-2": {
-				"ami": "ami-0485ca4b2b7cb275d"
+				"ami": "ami-0453ce6279422709a"
 			},
 			"us-west-1": {
-				"ami": "ami-06800a9f539283f43"
+				"ami": "ami-0731b5a29c85c1f0c"
 			},
 			"us-west-2": {
-				"ami": "ami-093e5f43b11508e3e"
+				"ami": "ami-0c00d3cdac3e96ae2"
 			}
 		}
 	},
