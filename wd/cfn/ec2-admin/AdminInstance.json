@@ -29,7 +29,7 @@
 						"Ref": "AWS::Region"
 					}, "ami"]
 				},
-				"InstanceType": "c7g.4xlarge",
+				"InstanceType": "m5.4xlarge",
 				"IamInstanceProfile": {
 					"Ref": "RootInstanceProfile"
 				},
