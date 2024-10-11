@@ -12,7 +12,7 @@ source ./nodegroup.conf
 echo ""
 echo "Listing AMI ..."
 echo ""
-CMD="aws ssm get-parameter --name /aws/service/eks/optimized-ami/1.28/amazon-linux-2-gpu/recommended/image_id --region $REGION --query 'Parameter.Value' --output text"
+CMD="aws ssm get-parameter --name /aws/service/eks/optimized-ami/${EKS_VERSION}/amazon-linux-2-gpu/recommended/image_id --region $REGION --query 'Parameter.Value' --output text"
 echo "$CMD"
 eval "$CMD"
 

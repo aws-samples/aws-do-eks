@@ -1,0 +1,22 @@
+{
+    "BlockDeviceMappings": [{"DeviceName": "/dev/xvda","Ebs": {"DeleteOnTermination": true,"VolumeSize": 500,"VolumeType": "gp3"}}],
+    "NetworkInterfaces":[
+        {"DeviceIndex": 0, "NetworkCardIndex": 0, "Groups":["$SG"], "DeleteOnTermination":true, "InterfaceType": "efa"},
+        {"DeviceIndex": 1, "NetworkCardIndex": 1, "Groups":["$SG"], "DeleteOnTermination":true, "InterfaceType": "efa"}
+    ],
+    "ImageId":"$AMI",
+    "InstanceType":"${INSTANCE_TYPE}",
+    "KeyName": "$SSH_KEY_NAME",
+    "UserData":"${USERDATA}",
+    "InstanceMarketOptions": {
+        "MarketType": "capacity-block"
+    },
+    "CapacityReservationSpecification": {
+        "CapacityReservationTarget": {
+            "CapacityReservationId": "$CAPACITY_RESERVATION_ID"
+        }
+    },
+    "Placement": {
+        "GroupName": "$PLACEMENT_GROUP_NAME"
+    }
+}
