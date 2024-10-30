@@ -1,0 +1,75 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: neuronburn
+  labels:
+    app: neuronburn
+spec:
+  selector:
+    matchLabels:
+      app: neuronburn
+  template:
+    metadata:
+      labels:
+        app: neuronburn
+    spec:
+      affinity:
+        # make sure your node type is contained in the lists below
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: "node.kubernetes.io/instance-type"
+                    operator: In
+                    values:
+                      - inf2.48xlarge
+                      - trn1.32xlarge
+      containers:
+      - name: neuronburn
+        image: 763104351884.dkr.ecr.us-east-2.amazonaws.com/huggingface-pytorch-inference-neuronx:2.1.2-transformers4.41.1-neuronx-py310-sdk2.19.1-ubuntu20.04
+        command: ["/bin/bash"]
+        args:
+          - "-c"
+          - |
+            export FI_EFA_FORK_SAFE=1
+            git clone https://github.com/huggingface/optimum-neuron.git
+            pip3 install evaluate
+            while true; do
+              torchrun --nproc_per_node=32 \
+                optimum-neuron/examples/language-modeling/run_mlm.py \
+                --model_name_or_path prajjwal1/bert-tiny \
+                --dataset_name wikitext \
+                --dataset_config_name wikitext-2-raw-v1 \
+                --per_device_train_batch_size 32 \
+                --do_train \
+                --bf16 \
+                --max_seq_length 512 \
+                --save_strategy no \
+                --num_train_epochs 100 \
+                --output_dir /tmp/bert_training
+              rm -fr /tmp/bert_training
+              sleep 5
+            done
+        securityContext:
+          privileged: true
+          runAsUser: 0
+        resources:
+          limits:
+            # change to the number of devices on your nodes
+            aws.amazon.com/neurondevice: 16
+        volumeMounts:
+        # container will write results to /var/log on the node
+        - name: log-volume
+          mountPath: /var/log
+        - name: dshm
+          mountPath: /dev/shm
+      volumes:
+      - name: log-volume
+        hostPath:
+          path: /var/log
+          type: DirectoryOrCreate
+      # k8s equivalent of docker run --shm-size 50G
+      - name: dshm
+        emptyDir:
+          medium: Memory
+          sizeLimit: "50Gi"

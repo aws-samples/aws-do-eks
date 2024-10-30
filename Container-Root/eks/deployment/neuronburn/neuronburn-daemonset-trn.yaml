@@ -1,0 +1,88 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: neuronburn
+  labels:
+    app: neuronburn
+spec:
+  selector:
+    matchLabels:
+      app: neuronburn
+  template:
+    metadata:
+      labels:
+        app: neuronburn
+    spec:
+      affinity:
+        # make sure your node type is contained in the lists below
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: "node.kubernetes.io/instance-type"
+                    operator: In
+                    values:
+                      - inf2.48xlarge
+                      - trn1.32xlarge
+      containers:
+      - name: neuronburn
+        image: 763104351884.dkr.ecr.us-east-2.amazonaws.com/pytorch-training-neuronx:2.1.2-neuronx-py310-sdk2.20.1-ubuntu20.04
+        command: ["/bin/bash"]
+        args:
+          - "-c"
+          - |
+            export FI_EFA_FORK_SAFE=1
+            export WANDB_DISABLED=true
+            export NEURON_CC_FLAGS="--model-type transformer -O1"
+            git clone https://github.com/huggingface/optimum-neuron.git
+            pip3 install optimum-neuron==0.0.25 evaluate
+            cat << EOF | python3
+            print("➤➤➤ Pre-fetching tokenizer & dataset and creating local random model weights to avoid unnecessary downloads")
+            from datasets import load_dataset
+            d = load_dataset("wikitext","wikitext-103-raw-v1")
+            from transformers import AutoModelForCausalLM, AutoConfig, AutoTokenizer
+            tokenizer = AutoTokenizer.from_pretrained("openai-community/gpt2")
+            tokenizer.save_pretrained("/tmp/gpt_model")
+            config = AutoConfig.from_pretrained("openai-community/gpt2")
+            model = AutoModelForCausalLM.from_config(config)
+            model.save_pretrained("/tmp/gpt_model")
+            EOF
+            while true; do
+              torchrun --nproc_per_node=32 \
+                optimum-neuron/examples/language-modeling/run_clm.py \
+                --model_name_or_path /tmp/gpt_model \
+                --dataset_name wikitext \
+                --dataset_config_name wikitext-103-raw-v1 \
+                --per_device_train_batch_size 4 \
+                --gradient_accumulation_steps 8 \
+                --do_train \
+                --bf16 \
+                --save_strategy no \
+                --num_train_epochs 100 \
+                --output_dir /tmp/gpt_training
+              rm -fr /tmp/gpt_training
+              sleep 5
+            done
+        #securityContext:
+        #  privileged: true
+        #  runAsUser: 0
+        resources:
+          limits:
+            # change to the number of devices on your nodes
+            aws.amazon.com/neurondevice: 16
+        volumeMounts:
+        # container will write results to /var/log on the node
+        - name: log-volume
+          mountPath: /var/log
+        - name: dshm
+          mountPath: /dev/shm
+      volumes:
+      - name: log-volume
+        hostPath:
+          path: /var/log
+          type: DirectoryOrCreate
+      # k8s equivalent of docker run --shm-size 50G
+      - name: dshm
+        emptyDir:
+          medium: Memory
+          sizeLimit: "50Gi"
