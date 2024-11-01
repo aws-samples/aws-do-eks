@@ -23,7 +23,6 @@ spec:
                     operator: In
                     values:
                       - inf2.48xlarge
-                      - trn1.32xlarge
       containers:
       - name: neuronburn
         image: 763104351884.dkr.ecr.us-east-2.amazonaws.com/huggingface-pytorch-inference-neuronx:2.1.2-transformers4.41.1-neuronx-py310-sdk2.19.1-ubuntu20.04

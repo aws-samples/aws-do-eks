@@ -22,8 +22,8 @@ spec:
                   - key: "node.kubernetes.io/instance-type"
                     operator: In
                     values:
-                      - inf2.48xlarge
                       - trn1.32xlarge
+                      - trn1n.32xlarge
       containers:
       - name: neuronburn
         image: 763104351884.dkr.ecr.us-east-2.amazonaws.com/pytorch-training-neuronx:2.1.2-neuronx-py310-sdk2.20.1-ubuntu20.04
@@ -58,10 +58,12 @@ spec:
                 --do_train \
                 --bf16 \
                 --save_strategy no \
-                --num_train_epochs 100 \
+                --num_train_epochs 1 \
                 --output_dir /tmp/gpt_training
               rm -fr /tmp/gpt_training
-              sleep 5
+              rest_seconds=240
+              echo -e "\n ============================ \n Resting for $rest_seconds seconds ... \n ============================ \n"
+              sleep $rest_seconds
             done
         #securityContext:
         #  privileged: true
