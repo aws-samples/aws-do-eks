@@ -1,0 +1,29 @@
+FROM public.ecr.aws/hpc-cloud/nccl-tests:latest
+
+ARG MODEL_NAME=124M
+
+###################################################
+## Install fsdp
+
+RUN mkdir -p /workspace/
+
+WORKDIR /workspace
+
+#RUN git clone https://github.com/lessw2020/fsdp_llm.git
+#RUN git clone -b fsdp_2 https://github.com/lessw2020/nanoGPT_2d.git
+RUN git clone -b fsdp_2 https://github.com/iankouls-aws/nanoGPT_2d.git
+
+#RUN pip install -U --index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/Triton-Nightly/pypi/simple/ triton-nightly
+
+RUN pip3 uninstall -y torch torchvision torchaudio
+
+RUN pip3 install --pre torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu121
+
+RUN pip3 install numpy transformers datasets tiktoken wandb tqdm awscli pynvml python-etcd
+
+RUN ln -s /usr/bin/python3 /usr/bin/python
+
+WORKDIR /workspace/nanoGPT_2d
+
+#RUN export e="s/str = \"124M\"/str = \"${MODEL_NAME}\"/g"; echo vvvvvvvvvvv; echo $e;  sed -i config/nanogpt_config.py -e "$e"
+
