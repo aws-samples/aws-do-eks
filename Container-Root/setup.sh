@@ -57,9 +57,14 @@ python -m pip install torchx[kubernetes]
 
 # Install kubeps1 and configure bashrc aliases 
 ./eks/ops/setup/install-kubeps1.sh
+./eks/ops/setup/install-bashrc.sh
 
 # Install k9s
 ./eks/ops/setup/install-k9s.sh
+
+# Install stern using krew
+./eks/ops/setup/install-krew.sh
+./eks/ops/setup/install-stern.sh
 
 # Install sbom utilities
 ./eks/ops/setup/install-sbom-utils.sh

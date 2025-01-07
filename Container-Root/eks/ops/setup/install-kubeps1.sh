@@ -38,11 +38,14 @@ alias lnt='nodes-types-list.sh'
 alias ntl='nodes-types-list.sh'
 alias ke='pod-exec.sh'
 alias pe='pod-exec.sh'
-alias kl='pod-logs.sh'
+alias kl='kubectl stern'
 alias pl='pod-logs.sh'
 alias pln='pod-logs-ns.sh'
 alias tf='terraform'
 alias t='terraform'
+alias cu='htop.sh'
+alias gu='nvtop.sh'
+alias nu='neurontop.sh'
 
 if [ -f ~/.kubeon ]; then
         source ~/kube-ps1.sh
@@ -51,7 +54,7 @@ fi
 
 export TERM=xterm-256color
 
-export PATH=$PATH:/root/go/bin:/eks/ops:.
+export PATH=$PATH:/root/go/bin:/root/.krew/bin:/eks/ops:.
 
 EOF
 

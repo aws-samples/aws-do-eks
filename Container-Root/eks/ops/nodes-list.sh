@@ -1,8 +1,8 @@
 #!/bin/bash
 
-CMD="kubectl get nodes -L node.kubernetes.io/instance-type $@"
+CMD="kubectl get nodes -L node.kubernetes.io/instance-type -L sagemaker.amazonaws.com/node-health-status $@"
 
-if [ "${VERBOSE}" == "true" ]; then
+if [ ! "${VERBOSE}" == "false" ]; then
 	echo ""
 	echo "${CMD}"
 	echo ""

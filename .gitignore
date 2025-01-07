@@ -21,4 +21,4 @@ Container-Root/eks/deployment/horizontal-pod-autoscaler/hpa-example/php-apache.y
 **/terraform.tfstate.backup
 **/tfplan
 Container-Root/SBOM.txt
-
+Container-Root/version.txt
