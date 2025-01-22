@@ -2,12 +2,14 @@
 # Cluster
 ################################################################################
 
+# Reference: https://github.com/aws-ia/terraform-aws-eks-blueprints/blob/main/patterns/ml-capacity-block/eks.tf
+
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
-  version = "~> 20.9"
+  version = "~> 20.26"
 
   cluster_name    = local.name
-  cluster_version = "1.29"
+  cluster_version = "1.31"
 
   # Give the Terraform identity admin access to the cluster
   # which will allow it to deploy resources into the cluster
@@ -18,7 +20,7 @@ module "eks" {
     coredns                = {}
     eks-pod-identity-agent = {}
     kube-proxy             = {}
-    vpc-cni                = {}
+    vpc-cni                = { most_recent = true }
   }
 
   # Add security group rules on the node group security group to
@@ -28,16 +30,28 @@ module "eks" {
   vpc_id     = module.vpc.vpc_id
   subnet_ids = module.vpc.private_subnets
 
+  # Managed node groups
+  # If self-managed node groups are preferred, use self_managed_node_groups container.
+  # All settings are the same for self-managed NG, except capacity_type = "CAPACITY_BLOCK" should be omited
   eks_managed_node_groups = {
     nvidia-efa = {
       # The EKS AL2 GPU AMI provides all of the necessary components
       # for accelerated workloads w/ EFA
-      ami_type       = "AL2_x86_64_GPU"
+      # ami_type       = "AL2_x86_64_GPU"
+      ami_type       = "AL2023_x86_64_NVIDIA"
       instance_types = ["p5.48xlarge"]
 
 
-      # Uncomment this block and specify capacity_reservation_id
-      # to use an on-demand capacity reservation (ODCR) for your EFA instances
+      # Update the subnet to match the availability zone of *YOUR capacity reservation
+      subnet_ids = [element(module.vpc.private_subnets, 0)]
+
+      # Uncomment this block to use a capacity block instead of ODCR
+      #capacity_type = "CAPACITY_BLOCK"
+      #instance_market_options = {
+      #  market_type = "capacity-block"
+      #}
+      # Uncomment and specify capacity_reservation_id
+      # to use a capacity block or an on-demand capacity reservation (ODCR)
       #capacity_reservation_specification = {
       #  capacity_reservation_target = {
       #    capacity_reservation_id = "cr-xxxxxxxxxxxxxxxxx"

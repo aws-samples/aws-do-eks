@@ -4,11 +4,11 @@ terraform {
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = ">= 5.34"
+      version = ">= 5.70"
     }
     helm = {
       source  = "hashicorp/helm"
-      version = ">= 2.9"
+      version = ">= 2.16"
     }
   }
 }
@@ -35,11 +35,17 @@ provider "helm" {
 # Common data/locals
 ################################################################################
 
-data "aws_availability_zones" "available" {}
+data "aws_availability_zones" "available" {
+  # Do not include local zones
+  filter {
+    name   = "opt-in-status"
+    values = ["opt-in-not-required"]
+  }
+}
 
 locals {
-  name   = basename(path.cwd)
-  region = "us-east-2"
+  name   = var.cluster_name
+  region = var.aws_region
 
   vpc_cidr = "10.0.0.0/16"
   azs      = slice(data.aws_availability_zones.available.names, 0, 3)
