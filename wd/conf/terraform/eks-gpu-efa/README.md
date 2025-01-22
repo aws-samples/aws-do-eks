@@ -264,6 +264,25 @@ Note:
 terraform destroy -auto-approve
 ```
 
+# Using this template within the [aws-do-eks](https://bit.ly/do-eks) container
+
+Follow these steps to create an EKS cluster, using this terraform template:
+
+1. Create a capacity block
+2. `git clone https://github.com/aws-samples/aws-do-eks.git`
+3. `cd aws-do-eks`
+4. `./build.sh`
+5. `./run.sh`
+6. `./exec.sh`
+7. `./env-config.sh`
+8. Set `export IMPL=impl/terraform`
+9. Set `export CONF=conf/terraform/eks-gpu-efa/variables.tf`
+10. `./eks-config.sh`  - set cluster region to match capacity block, set desired cluster name
+11. `vi conf/terraform/eks-gpu-efa/eks.tf` - on line 46 updaate subnet_id to match the one of capacity block or ODCR, uncomment lines 49-52 for capacity block and 55-59 if using CB or ODCR, set capacity_reservation_id to your CB or ODCR id.
+12. `./eks-create.sh`
+
+This will create a cluster with the specified configuration. You should be able to see the nodes using `kgn` or `kubectl get nodes`.
+
 # References
 
 * [terraform](https://www.terraform.io/)
