@@ -18,7 +18,7 @@ else
         node_name=$1
         full_node_name=$(kubectl get nodes | grep $node_name | head -n 1 | cut -d ' ' -f 1)
         short_node_name=$(echo $full_node_name | cut -d '.' -f 1)
-        pod_name=neurontop-${short_node_name:-4}	
+        pod_name=nvtop-${short_node_name:-4}	
         CMD="kubectl run -it --rm $pod_name --image iankoulski/do-nvtop:latest --overrides='{\"apiVersion\": \"v1\", \"spec\": {\"nodeSelector\": { \"kubernetes.io/hostname\": \"$full_node_name\" }}}' --command -- nvtop"
         if [ ! "$VERBOSE" == "false" ]; then echo -e "\n${CMD}\n"; fi
         eval "$CMD"
