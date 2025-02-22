@@ -107,8 +107,8 @@ RUN mkdir -p /workspace/
 WORKDIR /workspace
 
 #RUN git clone https://github.com/lessw2020/fsdp_llm.git
-#RUN git clone -b fsdp_2 https://github.com/lessw2020/nanoGPT_2d.git
-RUN git clone -b fsdp_2 https://github.com/iankouls-aws/nanoGPT_2d.git
+RUN git clone -b fsdp_2 https://github.com/lessw2020/nanoGPT_2d.git
+#RUN git clone -b fsdp_2 https://github.com/iankouls-aws/nanoGPT_2d.git
 
 #RUN pip install -U --index-url https://aiinfra.pkgs.visualstudio.com/PublicPackages/_packaging/Triton-Nightly/pypi/simple/ triton-nightly
 
