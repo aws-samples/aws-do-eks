@@ -1,4 +1,5 @@
-FROM public.ecr.aws/ubuntu/ubuntu:20.04
+#FROM public.ecr.aws/ubuntu/ubuntu:20.04
+FROM ubuntu:20.04
 
 ARG http_proxy
 ARG https_proxy
