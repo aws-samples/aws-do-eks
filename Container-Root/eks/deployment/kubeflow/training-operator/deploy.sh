@@ -2,7 +2,7 @@
 
 # Deploy Kubeflow training operator
 
-kubectl apply -k "github.com/kubeflow/training-operator/manifests/overlays/standalone?ref=v1.7.0"
+kubectl apply -k "github.com/kubeflow/trainer/manifests/overlays/standalone?ref=v1.7.0"
 
 # Configure RBAC resources
 
