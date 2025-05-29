@@ -3,7 +3,7 @@
 additionalArguments:
   - "--api.insecure=true"
 #  - "--api.dashboard=true"
-#  - "--metrics.prometheus=true"
+  - "--metrics.prometheus=true"
 
 globalArguments: []
 

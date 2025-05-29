@@ -1,0 +1,18 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ingress-bert
+  namespace: default
+spec:
+  ingressClassName: traefik
+  rules:
+  - host: "bert.do.aws.dev"
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: bert-base-multilingual-cased-gpu-0
+            port:
+              number: 8080

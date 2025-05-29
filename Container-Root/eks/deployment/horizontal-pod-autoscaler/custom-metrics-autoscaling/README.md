@@ -624,7 +624,7 @@ popd
 ```
 
 <details>
-    <summary>Output:<\summary>
+    <summary>Output:</summary>
 
     root@ef15cb4b4d4a:/eks# pushd /eks/deployment/prometheus-grafana
     /eks/deployment/prometheus-grafana /eks

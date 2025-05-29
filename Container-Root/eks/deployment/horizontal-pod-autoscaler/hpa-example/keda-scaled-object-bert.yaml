@@ -1,0 +1,19 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: keda-prometheus-hpa
+  namespace: default
+spec:
+  scaleTargetRef:
+    name: bert-base-multilingual-cased-gpu-0
+  minReplicaCount:   1 
+  maxReplicaCount: 300
+  cooldownPeriod:  300
+  initialCooldownPeriod:  120
+  triggers:
+  - type: prometheus
+    metadata:
+      serverAddress: http://prometheus-server.prometheus.svc.cluster.local:80
+      metricName: http_requests_total # DEPRECATED: This parameter is deprecated as of KEDA v2.10 and will be removed in version 2.12
+      threshold: '60'
+      query: rate(traefik_service_requests_total{service="default-bert-base-multilingual-cased-gpu-0-8080@kubernetes",code="200"}[2m])

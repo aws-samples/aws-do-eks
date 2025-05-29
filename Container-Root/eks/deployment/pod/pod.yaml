@@ -7,7 +7,7 @@ spec:
     #node.kubernetes.io/instance-type: "m5.xlarge"
   containers:
   - name: pod
-    image: ubuntu:20.04
+    image: iankoulski/do-curl
     command: ["/bin/sh"]
     args: ["-c", "while true; do date; sleep 10; done"]
     securityContext:
