@@ -22,8 +22,10 @@ managedNodeGroups:
       withAddonPolicies:
         autoScaler: true
         cloudWatch: true
- 
-nodeGroups: 
+
+# Uncomment the line below if you prefer an unmanaged gpu nodegroup
+#nodeGroups: 
+
   - name: p5-cbr
     instanceType: p5.48xlarge
     instancePrefix: p5-cbr
@@ -36,7 +38,7 @@ nodeGroups:
     volumeSize: 500
     capacityReservation:
       capacityReservationTarget:
-        capacityReservationID: "cr-xxxxxxxxxxxxxx"
+        capacityReservationID: "cr-xxxxxxxxxxxx"
     instanceMarketOptions:
       marketType: "capacity-block"
     iam:
