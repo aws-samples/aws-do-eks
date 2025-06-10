@@ -1,0 +1,49 @@
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: do-eks-yaml-p5ene-cbr
+  version: "1.32"
+  region: us-east-2
+  tags:
+    karpenter.sh/discovery: do-eks-yaml-p4de-odcr
+
+availabilityZones:
+  - us-east-2a
+  - us-east-2b
+  - us-east-2c
+
+managedNodeGroups:
+
+  - name: sys
+    instanceType: c5.2xlarge
+    desiredCapacity: 1
+    iam:
+      withAddonPolicies:
+        autoScaler: true
+        cloudWatch: true
+ 
+nodeGroups: 
+  - name: p5en-odcr
+    instanceType: p5.48xlarge
+    instancePrefix: p5-cbr
+    privateNetworking: true
+    availabilityZones: ["us-east-2a"]
+    efaEnabled: true
+    minSize: 0
+    desiredCapacity: 2
+    maxSize: 8
+    volumeSize: 500
+    capacityReservation:
+      capacityReservationTarget:
+        capacityReservationID: "cr-xxxxxxxxxxxxxxxxx"
+    instanceMarketOptions:
+      marketType: "capacity-block"
+    iam:
+      withAddonPolicies:
+        cloudWatch: true
+        ebs: true
+        fsx: true
+
+iam:
+  withOIDC: true
