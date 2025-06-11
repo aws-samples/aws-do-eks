@@ -1,0 +1,54 @@
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: do-eks-yaml-p5-cbr-ssh
+  version: "1.32"
+  region: us-west-2
+  tags:
+    karpenter.sh/discovery: do-eks-yaml-p5-cbr-ssh
+
+availabilityZones:
+  - us-west-2a
+  - us-west-2b
+  - us-west-2c
+
+managedNodeGroups:
+
+  - name: sys
+    instanceType: c5.2xlarge
+    desiredCapacity: 1
+    iam:
+      withAddonPolicies:
+        autoScaler: true
+        cloudWatch: true
+
+# Uncomment the line below if you prefer an unmanaged gpu nodegroup
+#nodeGroups: 
+
+  - name: p5-cbr-ssh
+    instanceType: p5.48xlarge
+    instancePrefix: p5-cbr-ssh
+    privateNetworking: true
+    availabilityZones: ["us-west-2c"]
+    efaEnabled: true
+    minSize: 0
+    desiredCapacity: 1
+    maxSize: 8
+    volumeSize: 500
+    ssh:
+      publicKey: "ssh-rsa ..."
+      #publicKeyName: publicKeyNameFromKMS
+    capacityReservation:
+      capacityReservationTarget:
+        capacityReservationID: "cr-xxxxxxxxxxxxxxxxx"
+    instanceMarketOptions:
+      marketType: "capacity-block"
+    iam:
+      withAddonPolicies:
+        cloudWatch: true
+        ebs: true
+        fsx: true
+
+iam:
+  withOIDC: true
