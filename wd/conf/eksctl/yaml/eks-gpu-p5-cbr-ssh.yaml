@@ -39,6 +39,7 @@ managedNodeGroups:
     ssh:
       publicKey: "ssh-rsa ..."
       #publicKeyName: publicKeyNameFromKMS
+      #publicKeyPath: ~/.ssh/id_rsa.pub
     capacityReservation:
       capacityReservationTarget:
         capacityReservationID: "cr-xxxxxxxxxxxxxxxxx"
