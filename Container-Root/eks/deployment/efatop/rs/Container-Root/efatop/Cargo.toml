@@ -1,0 +1,13 @@
+[package]
+name = "efatop"
+version = "2025.8.12"
+edition = "2021"
+description = "EFA network traffic monitor TUI"
+
+[dependencies]
+tokio = { version = "1.0", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+anyhow = "1.0"
+chrono = { version = "0.4", features = ["serde"] }
+ratatui = "0.26"
+crossterm = "0.27"

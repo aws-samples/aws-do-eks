@@ -1,0 +1,11 @@
+version: "3.9"
+
+services:
+
+  ${CONTAINER}:
+    image: ${REGISTRY}${IMAGE}${TAG}
+    ports:
+      - ${PORT_EXTERNAL}:${PORT_INTERNAL}
+    volumes:
+      - ${VOLUME_PATH_EXTERNAL}:${VOLUME_PATH_INTERNAL}
+ 
