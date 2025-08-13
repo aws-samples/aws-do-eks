@@ -1,0 +1,17 @@
+#!/bin/bash
+
+source .env
+
+# Create registry if needed
+REGISTRY_COUNT=$(aws ecr describe-repositories --region ${AWS_REGION} | grep \"${IMAGE}\" | wc -l | xargs)
+if [ "$REGISTRY_COUNT" == "0" ]; then
+	echo "Creating repository ${REGISTRY}${IMAGE} ..."
+        aws ecr create-repository --repository-name ${IMAGE}
+fi
+
+# Login to registry
+echo "Logging in to $REGISTRY ..."
+aws ecr get-login-password | docker login --username AWS --password-stdin $REGISTRY
+
+docker image push ${REGISTRY}${IMAGE}${TAG}
+
