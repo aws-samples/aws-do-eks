@@ -3,7 +3,7 @@ ARG BASE_IMAGE_PATH="rust:slim-trixie"
 FROM $BASE_IMAGE_PATH
 
 ARG BUILD="20250812"
-ARG MAINTAINER="Alex Iankoulski <iankouls@amazon.com>"
+ARG MAINTAINER="Alex Iankoulski"
 ARG DESCRIPTION="Depend on Docker efatop image based on rust and ratatui"
 ARG http_proxy
 ARG https_proxy
