@@ -47,6 +47,7 @@ alias t='terraform'
 alias cu='htop.sh'
 alias gu='nvtop.sh'
 alias nu='neurontop.sh'
+alias eu='efatop.sh'
 
 if [ -f ~/.kubeon ]; then
         source ~/kube-ps1.sh

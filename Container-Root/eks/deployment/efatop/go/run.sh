@@ -25,7 +25,7 @@ function generate_docker_compose
 
 function generate_kubernetes_manifests
 {
-	CMD="BASE_PATH=$(pwd); cd ${KUBERNETES_TEMPLATE_PATH}; for f in *.yaml; do cat \$f | envsubst > \${BASE_PATH}/\${KUBERNETES_APP_PATH}/\$f; done; cd \${BASE_PATH}"
+	CMD="export BASE_PATH=$(pwd); mkdir -p ${KUBERNETES_APP_PATH}; cd ${KUBERNETES_TEMPLATE_PATH}; for f in *.yaml; do cat \$f | envsubst > \${BASE_PATH}/\${KUBERNETES_APP_PATH}/\$f; done; cd \${BASE_PATH}"
         if [ "${VERBOSE}" == "true" ]; then
                 echo "${CMD}"
         fi
