@@ -1,0 +1,24 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: cpuburn
+  labels:
+    app.kubernetes.io/name: "cpuburn"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: "cpuburn"
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: "cpuburn"
+      name: "cpuburn"
+    spec:
+      #nodeSelector:
+        #node.kubernetes.io/instance-type: "${INSTANCE_TYPE}"
+      containers:
+      - image: "iankoulski/cpuburn:latest"
+      # ref: https://github.com/patrickmn/cpuburn
+        imagePullPolicy: Always
+        command: ["bash", "-c", "while true; do date; cpuburn & sleep 20; killall cpuburn; sleep 10; done"]
+        name: "cpuburn"
