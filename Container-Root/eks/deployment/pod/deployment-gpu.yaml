@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: Deployment
+metadata:
+  name: nvtop
+  labels:
+    app: nvtop
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: nvtop
+  #nodeSelector:
+    #node.kubernetes.io/instance-type: "g5.8xlarge"
+  template:
+    metadata:
+      labels:
+        app: nvtop
+    spec:
+      containers:
+      - name: nvtop
+        image: iankoulski/do-nvtop
+        command: ["/bin/sh"]
+        args: ["-c", "while true; do date; sleep 10; done"]
+        resources:
+          limits:
+            nvidia.com/gpu: 1
+            vpc.amazonaws.com/efa: 0
+          requests:
+            nvidia.com/gpu: 1
+            vpc.amazonaws.com/efa: 0
+

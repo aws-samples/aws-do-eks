@@ -4,17 +4,17 @@ metadata:
   name: pod
 spec:
   #nodeSelector:
-    #node.kubernetes.io/instance-type: "m5.xlarge"
+    #node.kubernetes.io/instance-type: "g5.8xlarge"
   containers:
   - name: pod
-    image: morosow/nvtop
+    image: iankoulski/do-nvtop
     command: ["/bin/sh"]
     args: ["-c", "while true; do date; sleep 10; done"]
     resources:
       limits:
-        nvidia.com/gpu: 4
-        vpc.amazonaws.com/efa: 4
+        nvidia.com/gpu: 1
+        vpc.amazonaws.com/efa: 1
       requests:
-        nvidia.com/gpu: 4
-        vpc.amazonaws.com/efa: 4
+        nvidia.com/gpu: 1
+        vpc.amazonaws.com/efa: 1
 
