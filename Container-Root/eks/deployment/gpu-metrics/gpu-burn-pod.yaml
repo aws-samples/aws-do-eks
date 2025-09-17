@@ -6,7 +6,7 @@ spec:
   restartPolicy: OnFailure
   containers:
   - name: gpu-burn-test
-    image: mooseontehloose/gpuburn:latest
+    image: iankoulski/gpuburn:latest
     command: ["/bin/sh"]
     args: ["-c", "/opt/gpuburn/gpu_burn 120"]
     resources:

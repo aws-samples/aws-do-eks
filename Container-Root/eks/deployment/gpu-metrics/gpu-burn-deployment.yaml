@@ -19,7 +19,7 @@ spec:
       #  beta.kubernetes.io/instance-type: "p4d.24xlarge"
       containers:
       - name: main
-        image: "oguzpastirmaci/gpu-burn"
+        image: "iankoulski/gpuburn"
         imagePullPolicy: IfNotPresent
         command: ["bash", "-c", "while true; do /app/gpu_burn 20; sleep 20; done"]
         resources:

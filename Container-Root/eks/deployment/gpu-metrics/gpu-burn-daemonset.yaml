@@ -16,9 +16,9 @@ spec:
       name: "gpu-burn"
     spec:
       nodeSelector:
-        beta.kubernetes.io/instance-type: "p4d.24xlarge"
+        beta.kubernetes.io/instance-type: "ml.g5.8xlarge"
       containers:
-      - image: "oguzpastirmaci/gpu-burn"
+      - image: "iankoulski/gpuburn:latest"
       # ref: https://github.com/wilicc/gpu-burn
         imagePullPolicy: IfNotPresent
         command: ["bash", "-c", "while true; do /app/gpu_burn 20; sleep 20; done"]
