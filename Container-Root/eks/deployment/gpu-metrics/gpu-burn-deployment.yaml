@@ -2,7 +2,6 @@ kind: Deployment
 apiVersion: apps/v1
 metadata:
   name: gpu-burn
-  namespace: kube-system
   labels:
     app: gpu-burn
 spec:
@@ -16,10 +15,10 @@ spec:
         app: gpu-burn
     spec:
       #nodeSelector:
-      #  beta.kubernetes.io/instance-type: "p4d.24xlarge"
+      #  node.kubernetes.io/instance-type: "m5.8xlarge"
       containers:
       - name: main
-        image: "iankoulski/gpuburn"
+        image: "iankoulski/gpuburn:latest"
         imagePullPolicy: IfNotPresent
         command: ["bash", "-c", "while true; do /app/gpu_burn 20; sleep 20; done"]
         resources:
