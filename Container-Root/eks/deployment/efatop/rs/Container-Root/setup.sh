@@ -7,6 +7,7 @@ if [ -d /etc/apt ]; then
 fi
 
 apt update && apt upgrade -y
+apt install -y bmon
 
 cd efatop
 

@@ -51,6 +51,7 @@ alias cu='htop.sh'
 alias gu='nvtop.sh'
 alias nu='neurontop.sh'
 alias eu='efatop.sh'
+alias iu='iftop.sh'
 
 if [ -f ~/.kubeon ]; then
         source ~/kube-ps1.sh
