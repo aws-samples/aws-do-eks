@@ -73,6 +73,15 @@ impl EfaMonitor {
         })
     }
 
+    fn reset(&mut self) {
+        self.previous_stats.clear();
+        self.history.clear();
+        self.aggregated_history.clear();
+        self.max_rates.clear();
+        self.aggregated_max_rates.clear();
+        self.start_time = Instant::now();
+    }
+
     fn discover_efa_adapters() -> Result<Vec<String>> {
         let infiniband_path = Path::new("/sys/class/infiniband");
         let mut adapters = Vec::new();
@@ -549,7 +558,7 @@ impl EfaMonitor {
             ViewMode::Status => self.ui_status(f, &main_chunks),
         }
 
-        let menu = Paragraph::new("efatop v20250812 | 1 - Individual | 2 - Aggregated | 3 - Table | 4 - Counters | 5 - Status | q - Quit")
+        let menu = Paragraph::new("efatop v20251203 | 1 - Individual | 2 - Aggregated | 3 - Table | 4 - Counters | 5 - Status | 6 - Reset | q - Quit")
             .style(Style::default().fg(Color::White));
         f.render_widget(menu, main_chunks[1]);
     }
@@ -571,6 +580,7 @@ async fn run_app<B: Backend>(terminal: &mut Terminal<B>, mut monitor: EfaMonitor
                     KeyCode::Char('3') => monitor.view_mode = ViewMode::Table,
                     KeyCode::Char('4') => monitor.view_mode = ViewMode::Counters,
                     KeyCode::Char('5') => monitor.view_mode = ViewMode::Status,
+                    KeyCode::Char('6') => monitor.reset(),
                     KeyCode::Up => {
                         if monitor.view_mode == ViewMode::Counters && monitor.cursor_position > 0 {
                             monitor.cursor_position -= 1;
