@@ -31,15 +31,19 @@ ln -s /usr/bin/python3 /usr/bin/python
 
 update-alternatives --install /usr/bin/pip pip /usr/bin/pip3.8 1
 
-pip3.8 install --extra-index-url https://pip.repos.neuron.amazonaws.com \
-    neuronx-cc==$NEURONX_CC_VERSION \
+python -m pip config set global.extra-index-url https://pip.repos.neuron.amazonaws.com
+
+pip install neuronx-cc==$NEURONX_CC_VERSION \
     torch-neuronx==$NEURONX_FRAMEWORK_VERSION \
     transformers-neuronx==$NEURONX_TRANSFORMERS_VERSION 
 
-pip3.8 install "protobuf<4" \
-    && pip3.8 install torchserve==${TORCHSERVE_VERSION} \
-    && pip3.8 install torch-model-archiver==${TORCHSERVE_VERSION} \
-    && pip3.8 install --no-deps --no-cache-dir -U torchvision==0.14.* captum==0.6.0 configparser
+pip install "protobuf<4"
+
+pip install torchserve==${TORCHSERVE_VERSION} \
+    torch-model-archiver==${TORCHSERVE_VERSION}
+
+
+pip install --no-deps --no-cache-dir -U torchvision==0.14.* captum==0.6.0 configparser
 
 echo "alias ll='ls -alh --color=auto'" >> /root/.bashrc 
 
