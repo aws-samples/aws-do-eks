@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: efa-installer
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: "efa-installer"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: "efa-installer"
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: "efa-installer"
+      name: "efa-installer"
+    spec:
+      hostPID: true
+      hostNetwork: true
+      nodeSelector:
+        node.kubernetes.io/instance-type: "p5en.48xlarge"
+        #processor: gpu
+      initContainers:
+      - name: "installer"
+        image: "ubuntu:24.04"
+        env:
+        - name: EFA_INSTALLER_VERSION
+          value: "latest"
+        - name: REINSTALL
+          value: "N"
+        #command: ["bash", "-c", "while true; do date; sleep 10; done"]
+        command: ["nsenter", "--target", "1", "--mount", "--uts", "--ipc", "--net", "--pid", "--","bash", "-c", "echo IyEvYmluL2Jhc2gKc2V0IC1ldW8gcGlwZWZhaWwKCiMgRUZBIEluc3RhbGxlcgojIFJlcXVpcmVtZW50czoKIyAtIFJvb3QgcHJpdmlsZWdlcwojIC0gSW50ZXJuZXQgYWNjZXNzCgplY2hvICLwn5qAIFN0YXJ0aW5nIEVGQSBpbnN0YWxsYXRpb24gIgplY2hvICI9PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09PT09IgoKIyBDaGVjayBpZiBydW5uaW5nIGFzIHJvb3QKaWYgWyAiJEVVSUQiIC1uZSAwIF07IHRoZW4KICAgIGVjaG8gIuKdjCBFUlJPUjogVGhpcyBzY3JpcHQgbXVzdCBiZSBydW4gYXMgcm9vdCAodXNlIHN1ZG8pIgogICAgZXhpdCAxCmZpCgojIFZlcnNpb24gY29uZmlndXJhdGlvbgpFRkFfSU5TVEFMTEVSX1ZFUlNJT049JHtFRkFfSU5TVEFMTEVSX1ZFUlNJT046LSJsYXRlc3QifQpLRVJORUxfVkVSU0lPTj0kKHVuYW1lIC1yKQoKIyBEZXRlY3Qga2VybmVsIHNlcmllcyBmb3IgcGFja2FnZSBuYW1pbmcKS0VSTkVMX01BSk9SPSQoZWNobyAiJEtFUk5FTF9WRVJTSU9OIiB8IGN1dCAtZCcuJyAtZjEpCktFUk5FTF9NSU5PUj0kKGVjaG8gIiRLRVJORUxfVkVSU0lPTiIgfCBjdXQgLWQnLicgLWYyKQoKZWNobyAiU3lzdGVtIEluZm9ybWF0aW9uOiIKZWNobyAiICAtIE9TOiAkKGNhdCAvZXRjL29zLXJlbGVhc2UgfCBncmVwIFBSRVRUWV9OQU1FIHwgY3V0IC1kJyInIC1mMikiCmVjaG8gIiAgLSBLZXJuZWw6ICRLRVJORUxfVkVSU0lPTiIKZWNobyAiICAtIEtlcm5lbCBzZXJpZXM6ICR7S0VSTkVMX01BSk9SfS4ke0tFUk5FTF9NSU5PUn0iCmVjaG8gIiAgLSBFRkEgaW5zdGFsbGVyIHZlcnNpb246ICRFRkFfSU5TVEFMTEVSX1ZFUlNJT04iCmVjaG8gIiIKCiMgQ2hlY2sgaWYgYWxyZWFkeSBpbnN0YWxsZWQKaWYgWyAtZiAvb3B0L2FtYXpvbi9lZmEvYmluL2ZpX2luZm8gXTsgdGhlbgogICAgZWNobyAi4pqg77iPICBFRkEgYXBwZWFycyB0byBiZSBhbHJlYWR5IGluc3RhbGxlZCIKICAgIGVjaG8gIiAgIC0gRkkgSW5mbzogIgogICAgZWNobyAiJCgvb3B0L2FtYXpvbi9lZmEvYmluL2ZpX2luZm8gLXAgZWZhKSIKICAgIGVjaG8gIiIKICAgIGVjaG8gICIgICBSZWluc3RhbGwgYW55d2F5PyAoeS9OKSAiCiAgICBSRUlOU1RBTD0ke1JFSU5TVEFMTDotIk4ifQogICAgZWNobyAiJFJFSU5TVEFMTCIKICAgIGVjaG8gIiIKICAgIGlmIFtbICEgJFJFSU5TVEFMTCA9fiBeW1l5XSQgXV07IHRoZW4KICAgICAgICBlY2hvICJFeGl0aW5nLiIKICAgICAgICBleGl0IDAKICAgIGZpCmZpCgpjZCAvdG1wCmN1cmwgLWZzU0xPIGh0dHBzOi8vZWZhLWluc3RhbGxlci5hbWF6b25hd3MuY29tL2F3cy1lZmEtaW5zdGFsbGVyLSR7RUZBX0lOU1RBTExFUl9WRVJTSU9OfS50YXIuZ3oKdGFyIC14emYgYXdzLWVmYS1pbnN0YWxsZXItJHtFRkFfSU5TVEFMTEVSX1ZFUlNJT059LnRhci5negpjZCBhd3MtZWZhLWluc3RhbGxlcgouL2VmYV9pbnN0YWxsZXIuc2ggLXkgLWcKCg== | base64 -d > /tmp/install-efa.sh; chmod +x /tmp/install-efa.sh; /tmp/install-efa.sh"]
+        securityContext:
+          privileged: true
+          runAsNonRoot: false
+          runAsUser: 0
+      containers:
+      - name: "monitor"
+        image: "ubuntu:24.04"
+        command: ["nsenter", "--target", "1", "--mount", "--uts", "--ipc", "--net", "--pid", "--", "/bin/bash", "-c"]
+        args: 
+        - |
+          while true; do 
+            echo "efa installer pod is alive on $(date)"
+            echo "EFA devices:"
+            /opt/amazon/efa/bin/fi_info -p efa
+            sleep 300
+          done
+        securityContext:
+          privileged: true
+          runAsNonRoot: false
+          runAsUser: 0
+
