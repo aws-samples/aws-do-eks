@@ -1,0 +1,55 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: efatop
+spec:
+  selector:
+    matchLabels:
+      name: efatop
+  template:
+    metadata:
+      labels:
+        name: efatop
+    spec:
+      tolerations:
+      - key: "nvidia.com/gpu"
+        operator: "Equal"
+        value: "true"
+        effect: "NoSchedule"
+      #nodeSelector:
+      #  node.kubernetes.io/instance-type: g6e.8xlarge
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: node.kubernetes.io/instance-type
+                operator: In
+                values:
+                - g5.8xlarge
+                - g6.8xlarge
+                - g6e.8xlarge
+      containers:
+      - name: efatop
+        image: iankoulski/efatop:latest
+        command: ["bash", "-c"]
+        args: ["while true; do date; sleep 5; done;"]
+        securityContext:
+          privileged: true
+        volumeMounts:
+        - name: efa-vol
+          mountPath: "/dev/infiniband"
+        - name: class-vol
+          mountPath: "/sys/class/infiniband"
+        - name: devices-vol
+          mountPath: "/sys/devices"
+      volumes:
+      - name: efa-vol
+        hostPath:
+          path: "/dev/infiniband"
+      - name: class-vol
+        hostPath:
+          path: "/sys/class/infiniband"
+      - name: devices-vol
+        hostPath:
+          path: "/sys/devices"

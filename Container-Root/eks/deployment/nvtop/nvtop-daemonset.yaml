@@ -11,8 +11,28 @@ spec:
       labels:
         name: nvtop
     spec:
+      tolerations:
+      - key: "nvidia.com/gpu"
+        operator: "Equal"
+        value: "true"
+        effect: "NoSchedule"
+      #nodeSelector:
+      #  node.kubernetes.io/instance-type: g6e.8xlarge
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: node.kubernetes.io/instance-type
+                operator: In
+                values:
+                - g5.8xlarge
+                - g6.8xlarge
+                - g6e.8xlarge
       containers:
         - name: nvtop
           image: iankoulski/do-nvtop:latest
           command: ["/bin/bash"]
           args: ["-c", "while true; do date; sleep 10; done"]
+          securityContext:
+            privileged: true
