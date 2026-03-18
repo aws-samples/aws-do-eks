@@ -19,7 +19,13 @@ else
         full_node_name=$(kubectl get nodes | grep $node_name | head -n 1 | cut -d ' ' -f 1)
         short_node_name=$(echo $full_node_name | cut -d '.' -f 1)
         pod_name=efatop-${short_node_name:-4}	
-        CMD="kubectl run -it --rm --privileged=true $pod_name --image iankoulski/efatop:latest --overrides='{\"apiVersion\": \"v1\", \"spec\": { \"nodeSelector\": { \"kubernetes.io/hostname\": \"$full_node_name\" }, \"volumes\": [ {\"name\": \"sys-vol\", \"hostPath\": { \"path\": \"/sys\", \"type\": \"\" }}], \"containers\":  [ { \"name\": \"efatop\", \"image\": \"iankoulski/efatop:latest\", \"tty\": true, \"stdin\": true, \"command\": [\"bash\",\"-c\",\"efatop\"], \"volumeMounts\": [{ \"name\": \"sys-vol\", \"mountPath\": \"/sys\"}] } ] } }'"
+        # check if pod exists
+        pod_match=$(kubectl get pods | grep ${pod_name} | cut -d ' ' -f 1)
+        if [ "$pod_name" == "$pod_match" ]; then
+            CMD="kubectl exec -it ${pod_name} -- efatop"
+        else
+            CMD="kubectl run -it --rm --privileged=true $pod_name --image iankoulski/efatop:latest --overrides='{\"apiVersion\": \"v1\", \"spec\": { \"nodeSelector\": { \"kubernetes.io/hostname\": \"$full_node_name\" }, \"volumes\": [ {\"name\": \"sys-vol\", \"hostPath\": { \"path\": \"/sys\", \"type\": \"\" }}], \"containers\":  [ { \"name\": \"efatop\", \"image\": \"iankoulski/efatop:latest\", \"tty\": true, \"stdin\": true, \"command\": [\"bash\",\"-c\",\"efatop\"], \"volumeMounts\": [{ \"name\": \"sys-vol\", \"mountPath\": \"/sys\"}] } ] } }'"
+        fi
         if [ ! "$VERBOSE" == "false" ]; then echo -e "\n${CMD}\n"; fi
         eval "$CMD"
 fi
