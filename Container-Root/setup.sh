@@ -69,6 +69,9 @@ python -m pip install torchx[kubernetes]
 # Install ktop using krew
 ./eks/ops/setup/install-ktop.sh
 
+# Install zellij
+./eks/ops/setup/install-zellij.sh
+
 # Install sbom utilities
 ./eks/ops/setup/install-sbom-utils.sh
 
