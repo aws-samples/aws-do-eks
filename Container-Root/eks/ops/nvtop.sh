@@ -17,6 +17,11 @@ if [ "$1" == "" ]; then
 else
         node_name=$1
         full_node_name=$(kubectl get nodes | grep $node_name | head -n 1 | cut -d ' ' -f 1)
+        # check if node exists
+        if [ -z "$full_node_name" ]; then
+                echo "ERROR: no node matches '$node_name'" >&2
+	        exit 1
+	fi
         short_node_name=$(echo $full_node_name | cut -d '.' -f 1)
         pod_name=nvtop-${short_node_name:-4}	
 	# check if pod exists
