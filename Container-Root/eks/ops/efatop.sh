@@ -21,7 +21,7 @@ else
 		echo "ERROR: no node matches '${node_name}'" >&2
 		exit 1
 	fi
-	has_efa=$(kubectl describe ndoes ${full_node_name} | grep Capacity -A 8 | grep efa | wc -l)
+	has_efa=$(kubectl describe nodes ${full_node_name} | grep Capacity -A 8 | grep efa | wc -l)
 	if [ "${has_efa}" == "0" ]; then
 		echo "ERROR: node ${full_node_name} does not hae any EFA devices" >&2
 		exit 1
