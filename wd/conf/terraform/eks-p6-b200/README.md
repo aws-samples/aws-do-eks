@@ -1,4 +1,4 @@
-# EKS Cluster with P6-B200.48xlarge Node Group and 32 EFA Interfaces
+# EKS Cluster with P6-B200.48xlarge Node Group and 8 EFAv4 Interfaces
 
 ## Overview
 
@@ -11,7 +11,7 @@ Amazon EC2 P6-B200 instances feature:
 - 192 vCPUs (5th Gen Intel Xeon Scalable - Emerald Rapids)
 - 2 TiB system memory
 - 30 TB local NVMe storage
-- Up to 3.2 Tbps EFAv4 networking (32 EFA adapters)
+- Up to 3.2 Tbps EFAv4 networking (8 EFA adapters)
 
 ## Architecture
 
@@ -19,7 +19,7 @@ The cluster is deployed with two managed node groups:
 
 1. **sys** - CPU instances (m5.2xlarge by default) for running system pods such as CoreDNS, kube-proxy, and other cluster services. Default: 1 instance.
 
-2. **gpu** - P6-B200.48xlarge instances with full EFA networking enabled across all 32 network cards. Default: 2 instances.
+2. **gpu** - P6-B200.48xlarge instances with full EFA networking enabled across all 8 EFAv4 adapters. Default: 2 instances.
 
 ## Prerequisites
 
