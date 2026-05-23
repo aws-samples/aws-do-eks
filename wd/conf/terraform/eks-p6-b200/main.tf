@@ -11,19 +11,13 @@ provider "kubernetes" {
 }
 
 provider "helm" {
-  kubernetes {
+  kubernetes = {
     host                   = module.eks.cluster_endpoint
     cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
     token                  = data.aws_eks_cluster_auth.this.token
   }
 }
 
-provider "kubectl" {
-  apply_retry_count      = 10
-  host                   = module.eks.cluster_endpoint
-  cluster_ca_certificate = base64decode(module.eks.cluster_certificate_authority_data)
-  token                  = data.aws_eks_cluster_auth.this.token
-}
 
 # Data
 
@@ -33,9 +27,6 @@ data "aws_eks_cluster_auth" "this" {
 
 data "aws_availability_zones" "available" {}
 
-data "http" "efa_device_plugin_yaml" {
-  url = "https://raw.githubusercontent.com/aws-samples/aws-efa-eks/main/manifest/efa-k8s-device-plugin.yml"
-}
 
 data "aws_ami" "eks_gpu_node" {
   most_recent = true
@@ -64,23 +55,13 @@ locals {
 
   nodegroup_sys = var.nodegroup_settings_sys
   nodegroup_gpu = var.nodegroup_settings_gpu
+  gpu_subnet_id = module.vpc.private_subnets[index(local.azs, var.gpu_availability_zone)]
 }
 
 # Resources
 
-resource "kubectl_manifest" "efa_device_plugin" {
-  yaml_body = <<YAML
-${data.http.efa_device_plugin_yaml.response_body}
-YAML
-}
 
-resource "helm_release" "nvidia_device_plugin" {
-  name       = "nvidia-device-plugin"
-  repository = "https://nvidia.github.io/k8s-device-plugin"
-  chart      = "nvidia-device-plugin"
-  version    = "0.17.0"
-  namespace  = "kube-system"
-}
+
 
 # EKS Cluster
 
@@ -95,21 +76,25 @@ module "eks" {
 
   cluster_addons = {
     coredns = {
-      most_recent = true
+      most_recent                 = true
+      resolve_conflicts_on_create = "OVERWRITE"
+      resolve_conflicts_on_update = "OVERWRITE"
     }
     kube-proxy = {
-      most_recent = true
+      most_recent                 = true
+      resolve_conflicts_on_create = "OVERWRITE"
+      resolve_conflicts_on_update = "OVERWRITE"
     }
     vpc-cni = {
-      most_recent = true
+      most_recent                 = true
+      resolve_conflicts_on_create = "OVERWRITE"
+      resolve_conflicts_on_update = "OVERWRITE"
     }
   }
 
   vpc_id     = module.vpc.vpc_id
   subnet_ids = module.vpc.private_subnets
 
-  create_aws_auth_configmap = false
-  manage_aws_auth_configmap = true
 
   eks_managed_node_group_defaults = {
     iam_role_additional_policies = {
@@ -117,7 +102,7 @@ module "eks" {
     }
   }
 
-  eks_managed_node_groups = {
+  eks_managed_node_groups = merge({
 
     # System nodegroup - CPU instances for system pods (CoreDNS, kube-proxy, etc.)
     sys = {
@@ -141,25 +126,21 @@ module "eks" {
       }
     }
 
-    # GPU nodegroup - p6-b200.48xlarge with EFA networking
+  }, var.gpu_node_group_type == "managed" ? {
+
+    # GPU nodegroup - managed (use when capacity block is active)
     gpu = {
-      instance_types             = [local.nodegroup_gpu.instance_type]
-      ami_id                     = data.aws_ami.eks_gpu_node.id
-      enable_bootstrap_user_data = true
+      instance_types = [local.nodegroup_gpu.instance_type]
+      capacity_type  = var.gpu_capacity_type
+      ami_type       = "AL2023_x86_64_NVIDIA"
 
       min_size     = local.nodegroup_gpu.min_size
       max_size     = local.nodegroup_gpu.max_size
       desired_size = local.nodegroup_gpu.desired_size
 
-      # EFA support - the module automatically:
-      # - queries the instance type for the number of network cards
-      # - creates all EFA network interfaces
-      # - creates a placement group
-      # - adds security group rules for node-to-node EFA traffic
       enable_efa_support = true
-
-      ebs_optimized     = true
-      enable_monitoring = true
+      ebs_optimized      = true
+      enable_monitoring  = true
 
       block_device_mappings = {
         xvda = {
@@ -175,19 +156,63 @@ module "eks" {
         }
       }
 
-      # Pin GPU nodes to a single AZ for placement group compatibility
-      subnet_ids = [module.vpc.private_subnets[0]]
+      subnet_ids = [local.gpu_subnet_id]
 
-      # Comment out this block to use on-demand instances without a capacity reservation.
-      # The capacity_reservation_id can be from either an ODCR or an ML Capacity Block.
       capacity_reservation_specification = {
+        capacity_reservation_preference = "capacity-reservations-only"
+        capacity_reservation_target = {
+          capacity_reservation_id = var.capacity_reservation_id
+        }
+      }
+    }
+  } : {})
+  # GPU node group - self-managed (use when capacity block is not yet active)
+  # Set var.gpu_node_group_type = "self-managed" to use this
+  self_managed_node_groups = var.gpu_node_group_type == "self-managed" ? {
+    gpu = {
+      instance_type = local.nodegroup_gpu.instance_type
+      ami_type      = "AL2023_x86_64_NVIDIA"
+
+      min_size     = local.nodegroup_gpu.min_size
+      max_size     = local.nodegroup_gpu.max_size
+      desired_size = local.nodegroup_gpu.desired_size
+
+      enable_efa_support = true
+      ebs_optimized      = true
+      enable_monitoring  = true
+
+      block_device_mappings = {
+        xvda = {
+          device_name = "/dev/xvda"
+          ebs = {
+            volume_size           = local.nodegroup_gpu.vol_size_gb
+            volume_type           = "gp3"
+            iops                  = 3000
+            throughput            = 150
+            encrypted             = true
+            delete_on_termination = true
+          }
+        }
+      }
+
+      subnet_ids = [local.gpu_subnet_id]
+
+      instance_market_options = {
+        market_type = "capacity-block"
+      }
+
+      capacity_reservation_specification = {
+        capacity_reservation_preference = "capacity-reservations-only"
         capacity_reservation_target = {
           capacity_reservation_id = var.capacity_reservation_id
         }
       }
 
+      iam_role_additional_policies = {
+        AmazonSSMManagedInstanceCore = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+      }
     }
-  }
+  } : {}
 
   tags = local.tags
 }

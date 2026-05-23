@@ -13,7 +13,25 @@ variable "cluster_name" {
 variable "cluster_version" {
   description = "EKS Cluster Version"
   type        = string
-  default     = "1.35"
+  default     = "1.32"
+}
+
+variable "gpu_node_group_type" {
+  description = "Type of node group for GPU instances. Valid values: managed, self-managed, use managed if capacity reservation is active, self-managed if CR is not yet active"
+  type        = string
+  default     = "self-managed"
+}
+
+variable "gpu_capacity_type" {
+  description = "Capacity type for the GPU nodegroup. Valid values: ON_DEMAND, SPOT, CAPACITY_BLOCK"
+  type        = string
+  default     = "CAPACITY_BLOCK"
+}
+
+variable "gpu_availability_zone" {
+  description = "Availability zone for the GPU nodegroup (must match the capacity reservation AZ)"
+  type        = string
+  default     = "us-east-2b"
 }
 
 variable "capacity_reservation_id" {
@@ -38,11 +56,11 @@ variable "nodegroup_settings_sys" {
     vol_size_gb   = string
   })
   default = {
-    instance_type = "m5.2xlarge"
+    instance_type = "m5.8xlarge"
     min_size      = "1"
     max_size      = "4"
     desired_size  = "1"
-    vol_size_gb   = "200"
+    vol_size_gb   = "300"
   }
 }
 
@@ -59,7 +77,7 @@ variable "nodegroup_settings_gpu" {
     instance_type = "p6-b200.48xlarge"
     min_size      = "0"
     max_size      = "128"
-    desired_size  = "2"
+    desired_size  = "0"
     vol_size_gb   = "500"
   }
 }
