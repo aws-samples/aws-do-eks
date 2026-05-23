@@ -34,7 +34,7 @@ data "aws_ami" "eks_gpu_node" {
 
   filter {
     name   = "name"
-    values = ["amazon-eks-gpu-node-${local.cluster_version}-*"]
+    values = [var.gpu_ami_name_pattern]
   }
 }
 

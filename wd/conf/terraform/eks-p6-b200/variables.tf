@@ -13,7 +13,13 @@ variable "cluster_name" {
 variable "cluster_version" {
   description = "EKS Cluster Version"
   type        = string
-  default     = "1.32"
+  default     = "1.35"
+}
+
+variable "gpu_ami_name_pattern" {
+  description = "Name pattern for the GPU AMI lookup"
+  type        = string
+  default     = "amazon-eks-node-al2023-x86_64-nvidia-1.35-*"
 }
 
 variable "gpu_node_group_type" {
@@ -87,3 +93,4 @@ variable "cluster_enabled_log_types" {
   type        = list(any)
   default     = ["api", "authenticator", "audit", "scheduler", "controllerManager"]
 }
+
