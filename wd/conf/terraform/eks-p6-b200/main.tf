@@ -72,6 +72,8 @@ module "eks" {
   cluster_name                   = local.name
   cluster_version                = local.cluster_version
   cluster_endpoint_public_access = true
+  enable_cluster_creator_admin_permissions = true
+  enable_efa_support = true
   cluster_enabled_log_types      = var.cluster_enabled_log_types
 
   cluster_addons = {
@@ -129,6 +131,9 @@ module "eks" {
   }, var.gpu_node_group_type == "managed" ? {
 
     # GPU nodegroup - managed (use when capacity block is active)
+    # Requires: capacity_type = CAPACITY_BLOCK, instance_market_options, and
+    # capacity_reservation_specification on the launch template per AWS docs:
+    # https://docs.aws.amazon.com/eks/latest/userguide/capacity-blocks-mng.html
     gpu = {
       instance_types = [local.nodegroup_gpu.instance_type]
       capacity_type  = var.gpu_capacity_type
@@ -157,6 +162,10 @@ module "eks" {
       }
 
       subnet_ids = [local.gpu_subnet_id]
+
+      instance_market_options = {
+        market_type = "capacity-block"
+      }
 
       capacity_reservation_specification = {
         capacity_reservation_preference = "capacity-reservations-only"

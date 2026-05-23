@@ -19,7 +19,7 @@ variable "cluster_version" {
 variable "gpu_node_group_type" {
   description = "Type of node group for GPU instances. Valid values: managed, self-managed, use managed if capacity reservation is active, self-managed if CR is not yet active"
   type        = string
-  default     = "self-managed"
+  default     = "managed"
 }
 
 variable "gpu_capacity_type" {
@@ -77,7 +77,7 @@ variable "nodegroup_settings_gpu" {
     instance_type = "p6-b200.48xlarge"
     min_size      = "0"
     max_size      = "128"
-    desired_size  = "0"
+    desired_size  = "2"
     vol_size_gb   = "500"
   }
 }
