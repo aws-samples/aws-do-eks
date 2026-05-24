@@ -97,6 +97,11 @@ provisioner: fsx.csi.aws.com
 parameters:
   subnetId: ${FSX_SUBNET_ID}
   securityGroupIds: ${SECURITY_GROUP_ID}
+  deploymentType: ${FSX_TYPE}
+  fileSystemTypeVersion: "${FSX_VERSION}"
+  perUnitStorageThroughput: "${FSX_THROUGHPUT}"
+reclaimPolicy: $FSX_RECLAIM_POLICY
+volumeBindingMode: Immediate
 EOF
 kubectl apply -f fsx-storage-class.yaml
 kubectl get sc

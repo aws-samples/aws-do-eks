@@ -27,7 +27,7 @@ managedNodeGroups:
     instanceType: p6-b200.48xlarge
     instancePrefix: p6-b200-cbr
     privateNetworking: true
-    availabilityZones: ["us-east-2a"]
+    availabilityZones: ["us-east-2b"]
     efaEnabled: true
     minSize: 0
     desiredCapacity: 2
@@ -35,7 +35,7 @@ managedNodeGroups:
     volumeSize: 500
     capacityReservation:
       capacityReservationTarget:
-        capacityReservationID: "cr-xxxxxxxxxxxx"
+        capacityReservationID: "cr-0c955b3799653e29d"
     instanceMarketOptions:
       marketType: "capacity-block"
     iam:
