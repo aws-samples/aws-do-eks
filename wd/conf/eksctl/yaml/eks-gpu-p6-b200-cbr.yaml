@@ -18,10 +18,12 @@ managedNodeGroups:
   - name: sys
     instanceType: m5.8xlarge
     desiredCapacity: 1
+    availabilityZones: ["us-east-2b"]
     iam:
       withAddonPolicies:
-        autoScaler: true
         cloudWatch: true
+        ebs: true
+        fsx: true
 
   - name: p6-b200-cbr
     instanceType: p6-b200.48xlarge
@@ -35,7 +37,7 @@ managedNodeGroups:
     volumeSize: 500
     capacityReservation:
       capacityReservationTarget:
-        capacityReservationID: "cr-0c955b3799653e29d"
+        capacityReservationID: "cr-xxxxxxxxxxxxxxxxx"
     instanceMarketOptions:
       marketType: "capacity-block"
     iam:
