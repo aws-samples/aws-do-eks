@@ -25,7 +25,12 @@ data "aws_eks_cluster_auth" "this" {
   name = module.eks.cluster_name
 }
 
-data "aws_availability_zones" "available" {}
+data "aws_availability_zones" "available" {
+  filter {
+    name   = "opt-in-status"
+    values = ["opt-in-not-required"]
+  }
+}
 
 
 data "aws_ami" "eks_gpu_node" {
@@ -112,6 +117,8 @@ module "eks" {
       min_size       = local.nodegroup_sys.min_size
       max_size       = local.nodegroup_sys.max_size
       desired_size   = local.nodegroup_sys.desired_size
+
+      subnet_ids     = [local.gpu_subnet_id]   # ensure sys node is in the gpu AZ so it can mount the FSx volume too
 
       block_device_mappings = {
         xvda = {
@@ -237,7 +244,7 @@ module "vpc" {
 
   azs             = local.azs
   private_subnets = [for k, v in local.azs : cidrsubnet(local.vpc_cidr, 4, k)]
-  public_subnets  = [for k, v in local.azs : cidrsubnet(local.vpc_cidr, 8, k + 48)]
+  public_subnets  = [for k, v in local.azs : cidrsubnet(local.vpc_cidr, 8, k + 64)]
 
   enable_nat_gateway = true
   single_nat_gateway = true
