@@ -55,7 +55,8 @@ RUN curl -fsSLO https://efa-installer.amazonaws.com/aws-efa-installer-${EFA_INST
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libopenmpi-dev \
     openmpi-bin \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && find / -name mpi.h
 #    Built against the system NCCL that ships in the cuda-dl-base image.
 RUN git clone --depth 1 --branch ${NCCL_TESTS_REF} https://github.com/NVIDIA/nccl-tests.git /opt/nccl-tests \
     && cd /opt/nccl-tests \
