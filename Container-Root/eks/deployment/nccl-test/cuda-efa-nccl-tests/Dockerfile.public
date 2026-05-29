@@ -81,7 +81,7 @@ RUN find / -name mpi.h
 RUN git clone --depth 1 --branch ${NCCL_TESTS_REF} https://github.com/NVIDIA/nccl-tests.git /opt/nccl-tests \
     && cd /opt/nccl-tests \
     && make -j$(nproc) MPI=1 MPI_HOME=/opt/amazon/openmpi CUDA_HOME=/usr/local/cuda \
-                       NCCL_HOME=/usr NVCC_GENCODE="-gencode=arch=compute_90,code=sm_90 -gencode=arch=compute_100,code=sm_100"
+                       NCCL_HOME=/opt/nccl NVCC_GENCODE="-gencode=arch=compute_90,code=sm_90 -gencode=arch=compute_100,code=sm_100"
 
 # 5. sshd setup (port 22; MPIJob unprivileged worker pods use this)
 RUN mkdir -p /var/run/sshd \
