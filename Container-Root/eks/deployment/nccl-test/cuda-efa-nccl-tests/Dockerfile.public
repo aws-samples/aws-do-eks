@@ -30,8 +30,23 @@ ARG NCCL_TESTS_REF=v2.18.2
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+RUN apt-get update -y && apt-get upgrade -y
+
 # 0. Clean up hpcx
-RUN rm -rvf /opt/hpcx
+RUN apt-get remove -y --allow-change-held-packages \
+    ibverbs-utils \
+    libibverbs-dev \
+    libibverbs1 \
+    libmlx5-1 \
+    libnccl2 \
+    libnccl-dev
+
+RUN rm -rf /opt/hpcx \
+    && rm -rf /usr/local/mpi \
+    && rm -f /etc/ld.so.conf.d/hpcx.conf \
+    && ldconfig
+
+ENV OPAL_PREFIX=
 
 # 1. Build deps + OpenMPI + sshd (sshd needed for MPIJob worker pods)
 RUN apt-get update -qq && apt-get install -y --no-install-recommends \
