@@ -1,3 +1,6 @@
 #!/bin/bash
 
-kubectl delete -f https://raw.githubusercontent.com/NVIDIA/k8s-device-plugin/v0.14.3/nvidia-device-plugin.yml
+# Ref: https://github.com/NVIDIA/k8s-device-plugin
+
+kubectl delete -f https://raw.githubusercontent.com/NVIDIA/k8s-device-plugin/refs/heads/release-0.19/deployments/static/nvidia-device-plugin.yml
+
