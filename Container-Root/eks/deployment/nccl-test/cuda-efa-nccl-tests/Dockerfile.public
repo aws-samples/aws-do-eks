@@ -60,6 +60,7 @@ RUN git clone --depth 1 --branch ${NCCL_TESTS_REF} https://github.com/NVIDIA/ncc
 
 # 4. sshd setup (port 22; MPIJob unprivileged worker pods use this)
 RUN mkdir -p /var/run/sshd /root/.ssh \
+    && chmod 700 /root/.ssh \
     && ssh-keygen -A \
     && sed -i 's/^#*PermitRootLogin .*/PermitRootLogin yes/'                 /etc/ssh/sshd_config \
     && sed -i 's/^#*PasswordAuthentication .*/PasswordAuthentication no/'   /etc/ssh/sshd_config
