@@ -55,12 +55,11 @@ RUN find / -name mpi.h
 #    Built against the system NCCL that ships in the cuda-dl-base image.
 RUN git clone --depth 1 --branch ${NCCL_TESTS_REF} https://github.com/NVIDIA/nccl-tests.git /opt/nccl-tests \
     && cd /opt/nccl-tests \
-    && make -j$(nproc) MPI=1 MPI_HOME=/opt/amazon/openmpi5 CUDA_HOME=/usr/local/cuda \
+    && make -j$(nproc) MPI=1 MPI_HOME=/opt/amazon/openmpi CUDA_HOME=/usr/local/cuda \
                        NCCL_HOME=/usr NVCC_GENCODE="-gencode=arch=compute_90,code=sm_90 -gencode=arch=compute_100,code=sm_100"
 
 # 4. sshd setup (port 22; MPIJob unprivileged worker pods use this)
-RUN mkdir -p /var/run/sshd /root/.ssh \
-    && chmod 700 /root/.ssh \
+RUN mkdir -p /var/run/sshd \
     && ssh-keygen -A \
     && sed -i 's/^#*PermitRootLogin .*/PermitRootLogin yes/'                 /etc/ssh/sshd_config \
     && sed -i 's/^#*PasswordAuthentication .*/PasswordAuthentication no/'   /etc/ssh/sshd_config
