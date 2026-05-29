@@ -4,6 +4,3 @@
 
 kubectl apply -f https://raw.githubusercontent.com/NVIDIA/k8s-device-plugin/refs/heads/release-0.19/deployments/static/nvidia-device-plugin.yml
 
-# Patch daemonset so that plugin pods are only running on nodes labeled with nvidia.com/gpu.present=true
-kubectl patch daemonset nvidia-device-plugin-daemonset -n kube-system --type=merge -p '{"spec":{"template":{"spec":{"nodeSelector":{"nvidia.com/gpu.present":"true"}}}}}'
-
