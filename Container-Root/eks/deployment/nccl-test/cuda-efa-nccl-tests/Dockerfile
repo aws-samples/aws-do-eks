@@ -1,16 +1,15 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: MIT-0
-#FROM nvidia/cuda:12.2.2-devel-ubuntu22.04
 
-ARG CUDA_VERSION=12.2.2
+ARG CUDA_VERSION=12.9
 FROM nvcr.io/nvidia/cuda:${CUDA_VERSION}-devel-ubuntu22.04
-ARG GDRCOPY_VERSION=v2.4.1
-ARG EFA_INSTALLER_VERSION=1.33.0
-ARG AWS_OFI_NCCL_VERSION=v1.9.2-aws
-ARG NCCL_VERSION=v2.21.5-1
-ARG NCCL_TESTS_VERSION=v2.13.9
+ARG GDRCOPY_VERSION=v2.5.2
+ARG EFA_INSTALLER_VERSION=1.48.0
+ARG AWS_OFI_NCCL_VERSION=""
+ARG NCCL_VERSION=v2.30.4-1
+ARG NCCL_TESTS_VERSION=v2.18.3
 
-RUN echo "Versions: CUDA=${CUDA_VERSION} GDDRCOPY=${GDRCOPY_VERSION} EFA=${EFA_INSTALLER_VERSION} OFI=${AWS_OFI_NCCL_VERSION} NCCL=${NCCL_VERSION} TESTS=${NCCL_TESTS_VERSION}"
+RUN echo "Versions: CUDA=${CUDA_VERSION} GDDRCOPY=${GDRCOPY_VERSION} EFA=${EFA_INSTALLER_VERSION} NCCL=${NCCL_VERSION} TESTS=${NCCL_TESTS_VERSION}"
 
 RUN apt-get update -y && apt-get upgrade -y
 RUN apt-get remove -y --allow-change-held-packages \
@@ -92,25 +91,6 @@ RUN git clone -b ${NCCL_VERSION} https://github.com/NVIDIA/nccl.git  /opt/nccl \
     && cd /opt/nccl \
     && make -j $(nproc) src.build CUDA_HOME=/usr/local/cuda \
     NVCC_GENCODE="-gencode=arch=compute_80,code=sm_80 -gencode=arch=compute_86,code=sm_86 -gencode=arch=compute_89,code=sm_89 -gencode=arch=compute_90,code=sm_90"
-
-###################################################
-## Install AWS-OFI-NCCL plugin
-RUN DEBIAN_FRONTEND=noninteractive apt-get install -y libhwloc-dev
-#Switch from sh to bash to allow parameter expansion
-SHELL ["/bin/bash", "-c"]
-RUN curl -OL https://github.com/aws/aws-ofi-nccl/releases/download/${AWS_OFI_NCCL_VERSION}/aws-ofi-nccl-${AWS_OFI_NCCL_VERSION//v}.tar.gz \
-    && tar -xf aws-ofi-nccl-${AWS_OFI_NCCL_VERSION//v}.tar.gz \
-    && cd aws-ofi-nccl-${AWS_OFI_NCCL_VERSION//v} \
-    && ./configure --prefix=/opt/aws-ofi-nccl/install \
-        --with-mpi=/opt/amazon/openmpi \
-        --with-libfabric=/opt/amazon/efa \
-        --with-cuda=/usr/local/cuda \
-        --enable-platform-aws \
-    && make -j $(nproc) \
-    && make install \
-    && cd .. \
-    && rm -rf aws-ofi-nccl-${AWS_OFI_NCCL_VERSION//v} \
-    && rm aws-ofi-nccl-${AWS_OFI_NCCL_VERSION//v}.tar.gz
 
 SHELL ["/bin/sh", "-c"]
 

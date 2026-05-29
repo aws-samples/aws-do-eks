@@ -1,0 +1,84 @@
+# =============================================================================
+# Public-only NCCL bandwidth test image
+# =============================================================================
+# Author: Anton Alexander
+# Single-Dockerfile alternative to our private 5-layer chain. Uses ONLY:
+#   - nvcr.io/nvidia/cuda-dl-base       (public NVIDIA NGC, no auth)
+#   - efa-installer.amazonaws.com       (public AWS S3)
+#   - github.com/NVIDIA/nccl-tests      (public)
+#   - apt packages (openssh, openmpi)
+#
+# Build (~5 min on a workstation):
+#   docker build -f Dockerfile.public -t nccl-tests-public:efa-1.48.0 .
+#
+# Push to your ECR for the cluster to pull:
+#   ECR=<your-ecr>.dkr.ecr.<region>.amazonaws.com
+#   docker tag  nccl-tests-public:efa-1.48.0 $ECR/nccl-tests-public:efa-1.48.0
+#   docker push $ECR/nccl-tests-public:efa-1.48.0
+#
+# Use in the MPIJob (drop-in replacement for dynamo-efa:b200-fullbw-5fde05f):
+#   ECR_REGISTRY=$ECR IMAGE_TAG=efa-1.48.0 \
+#     envsubst < ../k8s/mpijob-nccl-tests-unprivileged.yaml \
+#     | sed 's|dynamo-efa|nccl-tests-public|g' \
+#     | kubectl -n default apply -f -
+# =============================================================================
+ARG BASE_IMAGE=nvcr.io/nvidia/cuda-dl-base:25.06-cuda12.9-devel-ubuntu24.04
+FROM ${BASE_IMAGE}
+
+ARG EFA_INSTALLER_VERSION=1.48.0
+ARG NCCL_TESTS_REF=v2.18.2
+
+ENV DEBIAN_FRONTEND=noninteractive
+
+# 1. Build deps + OpenMPI + sshd (sshd needed for MPIJob worker pods)
+RUN apt-get update -qq && apt-get install -y --no-install-recommends \
+        ca-certificates curl wget tar gnupg pciutils \
+        build-essential cmake git \
+        openmpi-bin libopenmpi-dev openssh-server openssh-client \
+        python3 python3-pip \
+    && rm -rf /var/lib/apt/lists/*
+
+# 2. AWS EFA installer (PUBLIC: efa-installer.amazonaws.com)
+#    --skip-kmod      : userspace only; the host already has efa.ko via DaemonSet
+#    --skip-limit-conf: don't tweak ulimits (PSA-locked clusters reject that)
+#    --no-verify      : skip post-install verify (no rdmap*s0 inside the container)
+WORKDIR /tmp
+RUN curl -fsSLO https://efa-installer.amazonaws.com/aws-efa-installer-${EFA_INSTALLER_VERSION}.tar.gz \
+    && tar -xf aws-efa-installer-${EFA_INSTALLER_VERSION}.tar.gz \
+    && cd aws-efa-installer \
+    && ./efa_installer.sh -y --skip-kmod --skip-limit-conf --no-verify \
+    && rm -rf /tmp/aws-efa-installer*
+
+# 3. nccl-tests (PUBLIC: github.com/NVIDIA/nccl-tests)
+#    Built against the system NCCL that ships in the cuda-dl-base image.
+RUN git clone --depth 1 --branch ${NCCL_TESTS_REF} https://github.com/NVIDIA/nccl-tests.git /opt/nccl-tests \
+    && cd /opt/nccl-tests \
+    && make -j$(nproc) MPI=1 MPI_HOME=/usr CUDA_HOME=/usr/local/cuda \
+                       NCCL_HOME=/usr NVCC_GENCODE="-gencode=arch=compute_90,code=sm_90 -gencode=arch=compute_100,code=sm_100"
+
+# 4. sshd setup (port 22; MPIJob unprivileged worker pods use this)
+RUN mkdir -p /var/run/sshd /root/.ssh \
+    && ssh-keygen -A \
+    && sed -i 's/^#*PermitRootLogin .*/PermitRootLogin yes/'                 /etc/ssh/sshd_config \
+    && sed -i 's/^#*PasswordAuthentication .*/PasswordAuthentication no/'   /etc/ssh/sshd_config
+
+# 5. Env defaults — same v2-corrected env as the privileged image
+ENV LD_LIBRARY_PATH=/opt/amazon/ofi-nccl/lib64:/opt/amazon/efa/lib:/opt/amazon/efa/lib64:/usr/local/lib:${LD_LIBRARY_PATH}
+ENV PATH=/opt/amazon/efa/bin:/opt/amazon/openmpi/bin:${PATH}
+ENV FI_PROVIDER=efa
+ENV FI_EFA_FORK_SAFE=1
+ENV FI_HMEM_CUDA_USE_DMABUF=1
+ENV NCCL_NET_PLUGIN=ofi
+ENV NCCL_TUNER_PLUGIN=ofi
+
+LABEL org.opencontainers.image.source="https://github.com/dmvevents/nemotron-3-deploy"
+LABEL org.opencontainers.image.description="Public-source nccl-tests image with EFA 1.48.0 + libfabric + aws-ofi-nccl + nccl-tests v2.18.2"
+LABEL nemotron-3-deploy.efa-installer="${EFA_INSTALLER_VERSION}"
+LABEL nemotron-3-deploy.nccl-tests="${NCCL_TESTS_REF}"
+
+CMD ["/bin/bash"]
+
+## Add SBOM info
+ADD Container-Root /
+RUN /setup-sbom-utils.sh
+RUN /sbom.sh
