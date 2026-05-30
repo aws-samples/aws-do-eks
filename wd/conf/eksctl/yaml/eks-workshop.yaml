@@ -3,7 +3,7 @@ kind: ClusterConfig
 
 metadata:
   name: do-eks-yaml-workshop
-  version: "1.25"
+  version: "1.35"
   region: us-west-2
 
 availabilityZones:

@@ -2,16 +2,16 @@ apiVersion: eksctl.io/v1alpha5
 kind: ClusterConfig
 
 metadata:
-  name: do-eks-yaml-gpu
+  name: do-eks-yaml-trn-inf
   version: "1.35"
-  region: us-west-2
+  region: us-east-2
   tags:
-    karpenter.sh/discovery: do-eks-yaml-gpu
+    karpenter.sh/discovery: do-eks-yaml-trn-inf
 
 availabilityZones:
-  - us-west-2a
-  - us-west-2b
-  - us-west-2c
+  - us-east-2a
+  - us-east-2b
+  - us-east-2c
 
 managedNodeGroups:
 
@@ -26,13 +26,13 @@ managedNodeGroups:
         efs: true
         fsx: true
  
-  - name: g4dn
-    instanceType: g4dn.8xlarge
-    instancePrefix: g4dn
+  - name: trn1n
+    instanceType: trn1n.32xlarge
+    instancePrefix: trn1n
     privateNetworking: true
-    efaEnabled: false
+    efaEnabled: true
     minSize: 0
-    desiredCapacity: 2
+    desiredCapacity: 1
     maxSize: 10
     volumeSize: 900
     iam:
@@ -42,13 +42,13 @@ managedNodeGroups:
         efs: true
         fsx: true
 
-  - name: p3dn
-    instanceType: p3dn.24xlarge
-    instancePrefix: p3dn
+  - name: inf2
+    instanceType: inf2.8xlarge
+    instancePrefix: inf2
     privateNetworking: true
     efaEnabled: false
     minSize: 0
-    desiredCapacity: 0
+    desiredCapacity: 1
     maxSize: 10
     volumeSize: 900
     iam:

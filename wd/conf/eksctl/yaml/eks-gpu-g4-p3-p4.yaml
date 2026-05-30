@@ -3,7 +3,7 @@ kind: ClusterConfig
 
 metadata:
   name: do-eks-yaml-gpu-g4-p3-p4
-  version: "1.25"
+  version: "1.35"
   region: us-east-1
 
 availabilityZones:

@@ -2,16 +2,17 @@ apiVersion: eksctl.io/v1alpha5
 kind: ClusterConfig
 
 metadata:
-  name: do-eks-yaml-gpu
+  name: do-eks-yaml-p5
   version: "1.35"
   region: us-west-2
   tags:
-    karpenter.sh/discovery: do-eks-yaml-gpu
+    karpenter.sh/discovery: do-eks-yaml-p5en
 
 availabilityZones:
   - us-west-2a
   - us-west-2b
   - us-west-2c
+  - us-west-2d
 
 managedNodeGroups:
 
@@ -22,15 +23,13 @@ managedNodeGroups:
       withAddonPolicies:
         autoScaler: true
         cloudWatch: true
-        ebs: true
-        efs: true
-        fsx: true
  
-  - name: g4dn
-    instanceType: g4dn.8xlarge
-    instancePrefix: g4dn
+  - name: p5en
+    instanceType: p5en.48xlarge
+    instancePrefix: p5en
     privateNetworking: true
-    efaEnabled: false
+    availabilityZones: ["us-west-2c"]
+    efaEnabled: true
     minSize: 0
     desiredCapacity: 2
     maxSize: 10
@@ -39,24 +38,9 @@ managedNodeGroups:
       withAddonPolicies:
         cloudWatch: true
         ebs: true
-        efs: true
         fsx: true
 
-  - name: p3dn
-    instanceType: p3dn.24xlarge
-    instancePrefix: p3dn
-    privateNetworking: true
-    efaEnabled: false
-    minSize: 0
-    desiredCapacity: 0
-    maxSize: 10
-    volumeSize: 900
-    iam:
-      withAddonPolicies:
-        cloudWatch: true
-        ebs: true
-        efs: true
-        fsx: true
+#nodeGroups: 
 
 iam:
   withOIDC: true

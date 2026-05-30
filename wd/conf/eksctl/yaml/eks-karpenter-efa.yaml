@@ -3,7 +3,7 @@ kind: ClusterConfig
 
 metadata:
   name: do-eks-yaml-karpenter-efa
-  version: "1.22"
+  version: "1.35"
   region: us-west-2
   tags:
     karpenter.sh/discovery: do-eks-yaml-karpenter-efa
