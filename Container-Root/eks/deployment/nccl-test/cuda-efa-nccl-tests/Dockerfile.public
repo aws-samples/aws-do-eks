@@ -2,6 +2,7 @@
 # Public-only NCCL bandwidth test image
 # =============================================================================
 # Author: Anton Alexander
+# =============================================================================
 # Single-Dockerfile alternative to our private 5-layer chain. Uses ONLY:
 #   - nvcr.io/nvidia/cuda-dl-base       (public NVIDIA NGC, no auth)
 #   - efa-installer.amazonaws.com       (public AWS S3)
@@ -26,36 +27,22 @@ ARG BASE_IMAGE=nvcr.io/nvidia/cuda-dl-base:25.06-cuda12.9-devel-ubuntu24.04
 FROM ${BASE_IMAGE}
 
 ARG EFA_INSTALLER_VERSION=1.48.0
-ARG NCCL_VERSION=v2.30.4-1
 ARG NCCL_TESTS_REF=v2.18.2
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update -y && apt-get upgrade -y
-
-# 0. Clean up hpcx
-RUN apt-get remove -y --allow-change-held-packages \
-    ibverbs-utils \
-    libibverbs-dev \
-    libibverbs1 \
-    libmlx5-1 \
-    libnccl2 \
-    libnccl-dev
-
-RUN rm -rf /opt/hpcx \
-    && rm -rf /usr/local/mpi \
-    && rm -f /etc/ld.so.conf.d/hpcx.conf \
-    && ldconfig
-
-ENV OPAL_PREFIX=
-
 # 1. Build deps + OpenMPI + sshd (sshd needed for MPIJob worker pods)
+#    NOTE: do NOT `rm -rf /var/lib/apt/lists/*` here — the EFA installer in
+#    step 2 runs its own `apt-get install` (environment-modules, tcl, libnl, …)
+#    and needs the package lists present. We pre-seed environment-modules + tcl
+#    so the installer's dependency step is a no-op, and clean apt lists only at
+#    the very end (step 3) once nothing else needs them.
 RUN apt-get update -qq && apt-get install -y --no-install-recommends \
         ca-certificates curl wget tar gnupg pciutils \
         build-essential cmake git \
         openmpi-bin libopenmpi-dev openssh-server openssh-client \
         python3 python3-pip \
-    && rm -rf /var/lib/apt/lists/*
+        environment-modules tcl
 
 # 2. AWS EFA installer (PUBLIC: efa-installer.amazonaws.com)
 #    --skip-kmod      : userspace only; the host already has efa.ko via DaemonSet
@@ -65,31 +52,27 @@ WORKDIR /tmp
 RUN curl -fsSLO https://efa-installer.amazonaws.com/aws-efa-installer-${EFA_INSTALLER_VERSION}.tar.gz \
     && tar -xf aws-efa-installer-${EFA_INSTALLER_VERSION}.tar.gz \
     && cd aws-efa-installer \
-    && apt update \
     && ./efa_installer.sh -y --skip-kmod --skip-limit-conf --no-verify \
-    && rm -rf /tmp/aws-efa-installer*
+    && rm -rf /tmp/aws-efa-installer* /var/lib/apt/lists/*
 
-# 3.Install NCCL
-RUN git clone -b ${NCCL_VERSION} https://github.com/NVIDIA/nccl.git  /opt/nccl \
-    && cd /opt/nccl \
-    && make -j $(nproc) src.build CUDA_HOME=/usr/local/cuda \
-    NVCC_GENCODE="-gencode=arch=compute_80,code=sm_80 -gencode=arch=compute_86,code=sm_86 -gencode=arch=compute_89,code=sm_89 -gencode=arch=compute_90,code=sm_90 -gencode=arch=compute_100,code=sm_100 -gencode=arch=compute_103,code=sm_103"
-
-# 4. nccl-tests (PUBLIC: github.com/NVIDIA/nccl-tests)
-RUN find / -name mpi.h
+# 3. nccl-tests (PUBLIC: github.com/NVIDIA/nccl-tests)
 #    Built against the system NCCL that ships in the cuda-dl-base image.
+#    NOTE: cuda-dl-base ships HPC-X OpenMPI at /opt/hpcx/ompi (mpi.h lives there,
+#    mpicc is symlinked to /usr/local/mpi/bin) — MPI_HOME=/usr is WRONG and fails
+#    with "mpi.h: No such file or directory". NCCL headers/libs are auto-found
+#    under /usr (nccl.h in /usr/include); leave NCCL_HOME=/usr.
 RUN git clone --depth 1 --branch ${NCCL_TESTS_REF} https://github.com/NVIDIA/nccl-tests.git /opt/nccl-tests \
     && cd /opt/nccl-tests \
-    && make -j$(nproc) MPI=1 MPI_HOME=/opt/amazon/openmpi CUDA_HOME=/usr/local/cuda \
-                       NCCL_HOME=/opt/nccl/build NVCC_GENCODE="-gencode=arch=compute_90,code=sm_90 -gencode=arch=compute_100,code=sm_100"
+    && make -j$(nproc) MPI=1 MPI_HOME=/opt/hpcx/ompi CUDA_HOME=/usr/local/cuda \
+                       NCCL_HOME=/usr NVCC_GENCODE="-gencode=arch=compute_90,code=sm_90 -gencode=arch=compute_100,code=sm_100"
 
-# 5. sshd setup (port 22; MPIJob unprivileged worker pods use this)
-RUN mkdir -p /var/run/sshd \
+# 4. sshd setup (port 22; MPIJob unprivileged worker pods use this)
+RUN mkdir -p /var/run/sshd /root/.ssh \
     && ssh-keygen -A \
     && sed -i 's/^#*PermitRootLogin .*/PermitRootLogin yes/'                 /etc/ssh/sshd_config \
     && sed -i 's/^#*PasswordAuthentication .*/PasswordAuthentication no/'   /etc/ssh/sshd_config
 
-# 6. Env defaults — same v2-corrected env as the privileged image
+# 5. Env defaults — same v2-corrected env as the privileged image
 ENV LD_LIBRARY_PATH=/opt/amazon/ofi-nccl/lib64:/opt/amazon/efa/lib:/opt/amazon/efa/lib64:/usr/local/lib:${LD_LIBRARY_PATH}
 ENV PATH=/opt/amazon/efa/bin:/opt/amazon/openmpi/bin:${PATH}
 ENV FI_PROVIDER=efa
@@ -104,8 +87,3 @@ LABEL nemotron-3-deploy.efa-installer="${EFA_INSTALLER_VERSION}"
 LABEL nemotron-3-deploy.nccl-tests="${NCCL_TESTS_REF}"
 
 CMD ["/bin/bash"]
-
-## Add SBOM info
-ADD Container-Root /
-RUN /setup-sbom-utils.sh
-RUN /sbom.sh
