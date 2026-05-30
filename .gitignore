@@ -22,3 +22,4 @@ Container-Root/eks/deployment/horizontal-pod-autoscaler/hpa-example/php-apache.y
 **/tfplan
 Container-Root/SBOM.txt
 Container-Root/version.txt
+Container-Root/eks/deployment/topology/topograph/topograph/
