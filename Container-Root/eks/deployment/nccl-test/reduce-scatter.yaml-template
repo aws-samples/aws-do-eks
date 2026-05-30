@@ -1,3 +1,37 @@
+# =============================================================================
+# Portable NCCL bandwidth test - MPI-Operator-native
+# =============================================================================
+# Author: Anton Alexander
+#
+# =============================================================================
+# Follows the canonical awslabs/awsome-distributed-ai nccl-tests MPIJob pattern:
+# the Kubeflow MPI Operator injects the SSH keypair + hostfile and runs sshd in
+# the worker. The ONLY worker-side step we add is `StrictModes no` - the operator
+# mounts /root/.ssh world-writable (drwxrwxrwt) and stock sshd rejects that with
+# "Authentication refused: bad ownership or modes for directory /root/.ssh".
+# VERIFIED on 2x p6-b200: NET/OFI platform AWS (EFA), busbw 523.8 GB/s @ 8GiB, 0 errors.
+#
+# Prereqs:
+#   1. Kubeflow MPI Operator v2beta1 (install with --server-side; CRD > 256KB):
+#        kubectl apply --server-side --force-conflicts \
+#          -f https://raw.githubusercontent.com/kubeflow/mpi-operator/v0.6.0/deploy/v2beta1/mpi-operator.yaml
+#   2. EFA device plugin installed (advertises vpc.amazonaws.com/efa).
+#
+# Run:
+#   kubectl apply -f <manifest_file>.yaml
+#   kl launcher
+#
+# Tear down:
+#   kubectl delete mpijob --all
+#
+# Per-instance knobs (the ONLY lines that change):
+#   p5en.48xlarge (H200): vpc.amazonaws.com/efa: 16 ; nodeSelector p5en.48xlarge
+#   p6-b200.48xlarge (B200): vpc.amazonaws.com/efa: 8 ; nodeSelector p6-b200.48xlarge
+#   p5.48xlarge (H100): vpc.amazonaws.com/efa: 32 ; nodeSelector p5.48xlarge
+#
+# Success: NCCL_DEBUG=INFO shows "NET/OFI Selected ... efa" (not Socket) and
+# all_reduce_perf busbw climbs to ~350+ GB/s at the largest size.
+# =============================================================================
 apiVersion: kubeflow.org/v2beta1
 kind: MPIJob
 metadata:
@@ -7,7 +41,6 @@ spec:
     cleanPodPolicy: Running
     backoffLimit: 20
   slotsPerWorker: ${GPU_PER_WORKER}
-  mpiImplementation: "OpenMPI"
   mpiReplicaSpecs:
     Launcher:
       replicas: 1
@@ -15,106 +48,91 @@ spec:
         spec:
           restartPolicy: OnFailure
           containers:
-          - image: ${IMAGE_URI}
-            name: ${TEST_NAME}-launcher
-            imagePullPolicy: Always
-            env:
-             - name: LD_LIBRARY_PATH
-               value: "/opt/amazon/openmpi/lib:/opt/nccl/build/lib:/opt/amazon/efa/lib:/opt/aws-ofi-nccl/install/lib:/usr/local/nvidia/lib"
-             - name: PATH
-               value: "/opt/amazon/efa/bin:/usr/bin"
-             - name: XLA_FLAGS
-               value: "--xla_gpu_cuda_data_dir=/usr/local/cuda"
-             - name: TF_XLA_FLAGS
-               value: "--tf_xla_cpu_global_jit"
-             - name: NCCL_DEBUG
-               value: INFO
-            command:
-            - /opt/amazon/openmpi/bin/mpirun
-            - --allow-run-as-root
-            - --oversubscribe
-            - --tag-output
-            #- -N
-            #- "8"
-            - -np
-            - "${TOTAL_GPUS}"
-            - -bind-to
-            - none
-            - -map-by
-            - slot
-            - -x
-            - PATH
-            - -x
-            - LD_LIBRARY_PATH
-            - -x
-            - XLA_FLAGS
-            - -x
-            - TF_XLA_FLAGS
-            - -x
-            - NCCL_DEBUG=INFO
-            #- -x
-            #- NCCL_NVLS_ENABLE=${NCCL_NVLS_ENABLE}
-            #- -x
-            #- NCCL_PROTO=${NCCL_PROTO}
-            #- -x
-            #- NCCL_ALGO=${NCCL_ALGO}
-            #- -x
-            #- FI_PROVIDER=${FI_PROVIDER}
-            #- -x
-            #- FI_EFA_USE_DEVICE_RDMA=${FI_EFA_USE_DEVICE_RDMA}
-            #- -x
-            #- FI_EFA_FORK_SAFE=${FI_EFA_FORK_SAFE}
-            #- -x
-            #- NCCL_SHM_DISABLE=${NCCL_SHM_DISABLE}
-            - --mca
-            - pml
-            - ^cm
-            - --mca
-            - plm_rsh_agent
-            - ssh
-            - /opt/nccl-tests/build/reduce_scatter_perf
-            - -b
-            - "1"
-            - -e
-            - 2G
-            - -f
-            - "2"
-            - -t
-            - "1"
-            - -g
-            - "1"
-            - -c
-            - "1"
-            - -n
-            - "100"
-            #- -o
-            #- "all"
+            - image: ${IMAGE_URI}
+              imagePullPolicy: Always
+              name: ${TEST_NAME}-launcher
+              env:
+                # nccl-tests is linked against HPC-X OpenMPI (ldd: libmpi.so.40 ->
+                # /opt/hpcx/ompi/lib). To avoid the dual-MPI trap (HPC-X vs Amazon
+                # OpenMPI plugin mismatch) put /opt/hpcx/ompi FIRST on both PATH and
+                # LD_LIBRARY_PATH so mpirun + the binary load one consistent MPI.
+                - name: PATH
+                  value: /opt/hpcx/ompi/bin:/opt/amazon/efa/bin:/usr/local/bin:/usr/bin:/bin
+                - name: LD_LIBRARY_PATH
+                  value: /opt/hpcx/ompi/lib:/opt/amazon/ofi-nccl/lib64:/opt/amazon/efa/lib:/opt/amazon/efa/lib64:/usr/local/lib:/usr/local/cuda/lib64
+              # Launcher pattern from a VERIFIED-passing MPIJob. Two non-obvious musts:
+              #  1. NO `set -e` - the MPI Operator mounts /root/.ssh READ-ONLY via a
+              #     Secret; any stray write fails and `set -e` would abort the launcher.
+              #  2. The --mca btl/pml flags below fix the ORTE "does not know how to
+              #     route a message" error on a flat CNI (force TCP bootstrap, exclude
+              #     veth/docker); NCCL itself still uses EFA via the OFI plugin.
+              command: ["/bin/bash", "-lc"]
+              args:
+                - |
+                  SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
+                  echo "[launcher] waiting for workers to become reachable ..."
+                  for host in ${DOLLAR}(awk '{print ${DOLLAR}1}' /etc/mpi/hostfile); do
+                    for i in ${DOLLAR}(seq 1 40); do
+                      if ssh ${DOLLAR}SSH_OPTS -o ConnectTimeout=2 "${DOLLAR}host" true 2>/dev/null; then
+                        echo "  ${DOLLAR}host reachable"; break; fi
+                      sleep 3
+                    done
+                  done
+                  echo "[launcher] starting NCCL all_reduce_perf (${TOTAL_GPUS} ranks, ${NUM_WORKERS} nodes)"
+                  /opt/hpcx/ompi/bin/mpirun \
+                    --allow-run-as-root --tag-output \
+                    -np ${TOTAL_GPUS} -N ${GPU_PER_WORKER} --hostfile /etc/mpi/hostfile --bind-to none \
+                    --mca plm_rsh_args "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
+                    --mca pml ^cm,ucx --mca btl tcp,self --mca btl_tcp_if_exclude lo,docker0,veth \
+                    --mca coll ^ucc,hcoll \
+                    -x PATH -x LD_LIBRARY_PATH \
+                    -x FI_PROVIDER=${FI_PROVIDER} -x FI_EFA_FORK_SAFE=${FI_EFA_FORK_SAFE} -x FI_HMEM_CUDA_USE_DMABUF=${FI_HMEM_CUDA_USE_BMABUF} -x FI_EFA_USE_DEVICE_RDMA=${FI_EFA_USE_DEVICE_RDMA} \
+                    -x NCCL_DEBUG=${NCCL_DEBUG} -x NCCL_SOCKET_IFNAME='^lo,docker,veth' \
+                    -x NCCL_NET_PLUGIN=ofi -x NCCL_TUNER_PLUGIN=ofi \
+                    /opt/nccl-tests/build/reduce_scatter_perf -b 8 -e 8G -f 2 -g 1 -c 1 -n 50
     Worker:
       replicas: ${NUM_WORKERS}
       template:
         spec:
           nodeSelector:
             node.kubernetes.io/instance-type: "${INSTANCE_TYPE}"
+          tolerations:
+            - { key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
+            - { key: vpc.amazonaws.com/efa, operator: Exists, effect: NoSchedule }
           containers:
-          - image: ${IMAGE_URI}
-            name: ${TEST_NAME}-worker
-            imagePullPolicy: Always
-            volumeMounts:
-            - name: shmem
-              mountPath: /dev/shm
-            resources:
-              limits:
-                nvidia.com/gpu: ${GPU_PER_WORKER}
-                hugepages-2Mi: ${HUGEPAGES_2MI}
-                vpc.amazonaws.com/efa: ${EFA_PER_WORKER}
-                memory: ${MEMORY}
-              requests:
-                nvidia.com/gpu: ${GPU_PER_WORKER}
-                hugepages-2Mi: ${HUGEPAGES_2MI}
-                vpc.amazonaws.com/efa: ${EFA_PER_WORKER}
-                memory: ${MEMORY}
+            - image: ${IMAGE_URI}
+              imagePullPolicy: Always
+              name: ${TEST_NAME}-worker
+              # The MPI Operator wires the SSH KEYS (mounts the keypair at /root/.ssh
+              # and runs sshd here). But it mounts that dir world-writable (drwxrwxrwt),
+              # and stock sshd has StrictModes ON - it rejects auth with
+              # "bad ownership or modes for directory /root/.ssh". This ONE worker-side
+              # line disables StrictModes (the keys themselves are operator-managed and
+              # correct), then runs the same sshd the operator expects on :22.
+              command: ["/bin/bash", "-lc"]
+              args:
+                - |
+                  sed -i 's/^#*StrictModes .*/StrictModes no/' /etc/ssh/sshd_config
+                  grep -q '^StrictModes' /etc/ssh/sshd_config || echo 'StrictModes no' >> /etc/ssh/sshd_config
+                  mkdir -p /var/run/sshd; ssh-keygen -A 2>/dev/null
+                  exec /usr/sbin/sshd -D -e
+              securityContext:
+                capabilities:
+                  add: ["IPC_LOCK"]
+              volumeMounts:
+                - { name: shmem, mountPath: /dev/shm }
+              resources:
+                limits:
+                  nvidia.com/gpu: ${GPU_PER_WORKER}
+                  hugepages-2Mi: ${HUGEPAGES_2MI}
+                  vpc.amazonaws.com/efa: ${EFA_PER_WORKER}
+                  memory: ${MEMORY}
+                requests:
+                  nvidia.com/gpu: ${GPU_PER_WORKER}
+                  hugepages-2Mi: ${HUGEPAGES_2MI}
+                  vpc.amazonaws.com/efa: ${EFA_PER_WORKER}
+                  memory: ${MEMORY}
           volumes:
-          - name: shmem
-            hostPath:
-              path: /dev/shm
-
+            - name: shmem
+              hostPath:
+                path: /dev/shm 

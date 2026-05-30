@@ -1,0 +1,102 @@
+---
+# =============================================================================
+# gdrcopy installer DaemonSet ( Tested on p5en.48xlarge and p6-b200.48xlarge)
+# =============================================================================
+#
+# Author: Anton Alexander
+#
+# Builds gdrcopy v2.5 from source on the host, loads gdrdrv.ko, mknods
+# /dev/gdrdrv with mode 666, persists via /etc/modules-load.d/gdrdrv.conf.
+# Idempotent: exits clean in ~5s if /dev/gdrdrv already exists.
+# =============================================================================
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: gdrcopy-installer-p5en
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: gdrcopy-installer-p5en
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: gdrcopy-installer-p5en
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: gdrcopy-installer-p5en
+    spec:
+      hostPID: true
+      hostNetwork: true
+      nodeSelector:
+        node.kubernetes.io/instance-type: "p5en.48xlarge"
+      tolerations:
+        - operator: Exists
+      initContainers:
+        - name: installer
+          image: "ubuntu:24.04"
+          env:
+            - name: GDRCOPY_VERSION
+              value: "2.5"
+          command: ["nsenter", "--target", "1", "--mount", "--uts", "--ipc", "--net", "--pid", "--", "bash", "-c"]
+          args:
+            - |
+              if [ -e /dev/gdrdrv ] && lsmod | grep -q '^gdrdrv'; then
+                  echo "gdrdrv already loaded; /dev/gdrdrv exists"
+                  ls -la /dev/gdrdrv
+                  exit 0
+              fi
+              set -e
+              GDRCOPY_VERSION="${GDRCOPY_VERSION:-2.5}"
+              KERNEL_VERSION=$(uname -r)
+              echo "Host: $(hostname)  Kernel: $KERNEL_VERSION  Target gdrcopy v$GDRCOPY_VERSION"
+              if command -v dnf >/dev/null; then
+                  dnf install -y gcc make rpm-build elfutils-libelf-devel git tar 2>&1 | tail -3
+              fi
+              if [ ! -e /lib/modules/${KERNEL_VERSION}/build ]; then
+                  echo "ERROR: no kernel build dir at /lib/modules/${KERNEL_VERSION}/build"
+                  exit 1
+              fi
+              cd /tmp
+              rm -rf gdrcopy
+              git clone --depth 1 --branch v${GDRCOPY_VERSION} https://github.com/NVIDIA/gdrcopy.git
+              cd gdrcopy
+              make CC=gcc KVERS=${KERNEL_VERSION} driver_clean || true
+              make CC=gcc KVERS=${KERNEL_VERSION} -j$(nproc) driver
+              make CC=gcc KVERS=${KERNEL_VERSION} driver_install || {
+                  MODDIR=/lib/modules/${KERNEL_VERSION}/extra
+                  mkdir -p "$MODDIR"
+                  cp src/gdrdrv/gdrdrv.ko "$MODDIR/"
+                  depmod -a
+              }
+              modprobe -v gdrdrv 2>&1 || insmod src/gdrdrv/gdrdrv.ko
+              sleep 1
+              if [ ! -e /dev/gdrdrv ]; then
+                  major=$(awk '/gdrdrv/{print $1}' /proc/devices)
+                  if [ -n "$major" ]; then
+                      mknod /dev/gdrdrv c "$major" 0
+                      chmod 666 /dev/gdrdrv
+                  fi
+              fi
+              echo gdrdrv > /etc/modules-load.d/gdrdrv.conf
+              echo "=== Verification ==="
+              lsmod | grep gdrdrv && echo "gdrdrv loaded"
+              ls -la /dev/gdrdrv && echo "device present"
+              [ -x /usr/local/bin/gdrcopy_sanity ] && /usr/local/bin/gdrcopy_sanity 2>&1 | tail -5 || true
+              echo "gdrcopy install complete"
+          securityContext:
+            privileged: true
+            runAsUser: 0
+      containers:
+        - name: monitor
+          image: "ubuntu:24.04"
+          command: ["nsenter", "--target", "1", "--mount", "--", "/bin/bash", "-c"]
+          args:
+            - |
+              while true; do
+                echo "$(date -u +%FT%TZ) p5en gdrdrv state:"
+                lsmod | grep gdrdrv && ls -la /dev/gdrdrv
+                sleep 300
+              done
+          securityContext:
+            privileged: true
+            runAsUser: 0

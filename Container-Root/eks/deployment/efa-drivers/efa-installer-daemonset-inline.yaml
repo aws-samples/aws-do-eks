@@ -1,0 +1,116 @@
+---
+# =============================================================================
+# Step 0a — EFA driver + libfabric installer DaemonSet ( Tested on p5en, p6-b200)
+# =============================================================================
+# Author: Anton Alexander
+#
+# p5en differs from p6-b200: most p5en EKS-optimized AMIs ship EFA installer
+# 1.43.x or 1.46.x already enabled and `efa.ko` already loaded. This DS is
+# an idempotent safety net.
+#
+# What it installs (only if not already present):
+#   - aws-efa-installer 1.48.0 --build-ngc
+#   - EFA Linux driver 3.0.0
+#   - libfabric 2.4.0amzn3.0
+#   - aws-ofi-nccl 1.19.0-1 NGC v1
+#
+# After it converges every p5en node reports 16 EFAv3 NICs to
+# `vpc.amazonaws.com/efa` (16 per NUMA on p5en) and `fi_info -p efa`
+# discovers them.
+#
+# Pattern: nsenter PID 1, install on host, persist across reboots.
+# =============================================================================
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: efa-installer-p5en
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: efa-installer-p5en
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: efa-installer-p5en
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: efa-installer-p5en
+    spec:
+      hostPID: true
+      hostNetwork: true
+      nodeSelector:
+        node.kubernetes.io/instance-type: "p5en.48xlarge"
+      tolerations:
+        - operator: Exists
+      initContainers:
+        - name: installer
+          image: "ubuntu:24.04"
+          env:
+            - name: EFA_INSTALLER_VERSION
+              value: "1.48.0"
+          command: ["nsenter", "--target", "1", "--mount", "--uts", "--ipc", "--net", "--pid", "--", "bash", "-c"]
+          args:
+            - |
+              set -uo pipefail
+              echo "=== Host: $(hostname) ==="
+              echo "=== Kernel: $(uname -r) ==="
+              echo "=== EFA target: ${EFA_INSTALLER_VERSION} ==="
+
+              if lsmod | grep -q '^efa' && [ -d /opt/amazon/efa ] && [ -d /opt/amazon/ofi-nccl ]; then
+                echo "EFA driver loaded + libfabric + aws-ofi-nccl present; nothing to do"
+                lsmod | grep efa
+                ls /opt/amazon/efa/lib/libfabric.so* 2>/dev/null || true
+                exit 0
+              fi
+
+              if command -v dnf >/dev/null; then
+                dnf install -y gcc make rpm-build kernel-devel-$(uname -r) \
+                    kernel-headers-$(uname -r) elfutils-libelf-devel \
+                    git tar wget pciutils 2>&1 | tail -3
+              elif command -v apt-get >/dev/null; then
+                DEBIAN_FRONTEND=noninteractive apt-get update -qq
+                DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+                    build-essential dkms libelf-dev linux-headers-$(uname -r) \
+                    git tar wget pciutils 2>&1 | tail -3
+              fi
+
+              cd /tmp
+              rm -rf aws-efa-installer*
+              wget -q https://efa-installer.amazonaws.com/aws-efa-installer-${EFA_INSTALLER_VERSION}.tar.gz
+              tar -xf aws-efa-installer-${EFA_INSTALLER_VERSION}.tar.gz
+              cd aws-efa-installer
+              ./efa_installer.sh -y -k --build-ngc 2>&1 | tail -20
+
+              # Workaround for awslabs/amazon-eks-ami#2672:
+              # Force-rebuild efa-nv-peermem against the live NVIDIA driver.
+              # (No-op if already correct.)
+              if rpm -q efa-nv-peermem >/dev/null 2>&1 && ! lsmod | grep -q '^efa_nv_peermem'; then
+                echo "=== EKS-AMI #2672 workaround: rebuilding efa-nv-peermem ==="
+                EFA_NV_VER=$(rpm -q --queryformat '%{VERSION}' efa-nv-peermem)
+                dkms remove efa-nv-peermem/${EFA_NV_VER} --all 2>&1 | tail -3 || true
+                dkms install efa-nv-peermem/${EFA_NV_VER} 2>&1 | tail -3
+                modprobe efa_nv_peermem
+              fi
+
+              echo "=== Verification ==="
+              lsmod | grep -E '^efa|efa_nv_peermem' && echo "EFA + peermem loaded"
+              /opt/amazon/efa/bin/fi_info -p efa 2>&1 | grep -c "provider: efa" \
+                | xargs -I{} echo "  fi_info -p efa providers: {} (target 16 on p5en)"
+              echo "=== EFA installer complete ==="
+          securityContext:
+            privileged: true
+            runAsUser: 0
+      containers:
+        - name: monitor
+          image: "ubuntu:24.04"
+          command: ["nsenter", "--target", "1", "--mount", "--", "/bin/bash", "-c"]
+          args:
+            - |
+              while true; do
+                echo "$(date -u +%FT%TZ) p5en EFA state on $(hostname):"
+                lsmod | grep -E '^efa|efa_nv_peermem' | head -3
+                sleep 600
+              done
+          securityContext:
+            privileged: true
+            runAsUser: 0

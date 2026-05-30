@@ -1,0 +1,108 @@
+---
+# =============================================================================
+# efa-nv-peermem DKMS-rebuild DaemonSet ( Tested on p5en and p6-b200)
+# =============================================================================
+# Author: Anton Alexander
+#
+# Workaround for awslabs/amazon-eks-ami#2672: efa_nv_peermem.ko is built
+# once at AMI build time, then kmod-nvidia-latest-dkms gets rotated by
+# DKMS autoinstall and efa_nv_peermem is NOT auto-rebuilt against the new
+# NVIDIA driver. Symbol-version checksums for nvidia_p2p_* exports drift,
+# and `modprobe efa_nv_peermem` either fails silently or refuses to load.
+#
+# This DS:
+#   1. Detects the broken state (rpm installed, module not loaded)
+#   2. Removes the stale DKMS build
+#   3. Reinstalls (rebuilds against the live nvidia.ko)
+#   4. modprobe + persist
+#
+# Idempotent: skips if efa_nv_peermem is already loaded. Safe to apply on
+# every node — non-affected nodes exit clean in ~3s.
+#
+# This is NOT a "swap to nvidia_peermem" DS — that module is irrelevant
+# to EFA. See PEERMEM-H200-VS-B200.md for the differential.
+#
+# Reference: https://github.com/awslabs/amazon-eks-ami/issues/2672
+# =============================================================================
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: efa-peermem-dkms-rebuild
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: efa-peermem-dkms-rebuild
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: efa-peermem-dkms-rebuild
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: efa-peermem-dkms-rebuild
+    spec:
+      hostPID: true
+      hostNetwork: true
+      nodeSelector:
+        node.kubernetes.io/instance-type: "p5en.48xlarge"
+      tolerations:
+        - operator: Exists
+      initContainers:
+        - name: rebuild
+          image: "ubuntu:24.04"
+          command: ["nsenter", "--target", "1", "--mount", "--uts", "--ipc", "--net", "--pid", "--", "bash", "-c"]
+          args:
+            - |
+              set -uo pipefail
+              echo "=== Host: $(hostname) ==="
+              echo "=== state BEFORE ==="
+              dkms status efa-nv-peermem 2>&1 || echo "(no efa-nv-peermem in dkms)"
+              lsmod | grep -E 'peermem|^nvidia' || true
+
+              # Idempotency: if it's already loaded, exit clean.
+              if lsmod | grep -q '^efa_nv_peermem'; then
+                echo "efa_nv_peermem already loaded; nothing to do"
+                exit 0
+              fi
+
+              # If rpm not installed, this DS does not apply
+              if ! rpm -q efa-nv-peermem >/dev/null 2>&1; then
+                echo "efa-nv-peermem rpm not installed; nothing to do"
+                exit 0
+              fi
+
+              EFA_NV_VER=$(rpm -q --queryformat '%{VERSION}' efa-nv-peermem)
+              echo "=== rebuilding efa-nv-peermem/${EFA_NV_VER} against $(uname -r) ==="
+
+              # Force the rebuild — eks-ami#2672 workaround
+              dkms remove efa-nv-peermem/${EFA_NV_VER} --all 2>&1 | tail -5 || true
+              dkms install efa-nv-peermem/${EFA_NV_VER} 2>&1 | tail -10
+
+              # Load + persist
+              modprobe efa_nv_peermem || {
+                echo "ERROR: modprobe efa_nv_peermem failed after dkms install"
+                dmesg | tail -20
+                exit 1
+              }
+              echo efa_nv_peermem > /etc/modules-load.d/efa_nv_peermem.conf
+
+              echo "=== state AFTER ==="
+              dkms status efa-nv-peermem
+              lsmod | grep -E 'peermem|^nvidia'
+              echo "=== efa_nv_peermem rebuild complete ==="
+          securityContext:
+            privileged: true
+            runAsUser: 0
+      containers:
+        - name: monitor
+          image: "ubuntu:24.04"
+          command: ["nsenter", "--target", "1", "--mount", "--", "/bin/bash", "-c"]
+          args:
+            - |
+              while true; do
+                echo "$(date -u +%FT%TZ) efa_nv_peermem state on $(hostname):"
+                lsmod | grep -E 'peermem' || echo "  (no peermem modules loaded)"
+                sleep 600
+              done
+          securityContext:
+            privileged: true
+            runAsUser: 0

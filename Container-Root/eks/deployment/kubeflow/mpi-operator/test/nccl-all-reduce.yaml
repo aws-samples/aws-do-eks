@@ -35,12 +35,12 @@
 apiVersion: kubeflow.org/v2beta1
 kind: MPIJob
 metadata:
-  name: ${TEST_NAME}
+  name: all-reduce
 spec:
   runPolicy:
     cleanPodPolicy: Running
     backoffLimit: 20
-  slotsPerWorker: ${GPU_PER_WORKER}
+  slotsPerWorker: 1
   mpiReplicaSpecs:
     Launcher:
       replicas: 1
@@ -48,9 +48,9 @@ spec:
         spec:
           restartPolicy: OnFailure
           containers:
-            - image: ${IMAGE_URI}
+            - image: public.ecr.aws/hpc-cloud/cuda-efa-nccl-tests:latest
               imagePullPolicy: Always
-              name: ${TEST_NAME}-launcher
+              name: all-reduce-launcher
               env:
                 # nccl-tests is linked against HPC-X OpenMPI (ldd: libmpi.so.40 ->
                 # /opt/hpcx/ompi/lib). To avoid the dual-MPI trap (HPC-X vs Amazon
@@ -71,48 +71,49 @@ spec:
                 - |
                   SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR"
                   echo "[launcher] waiting for workers to become reachable ..."
-                  for host in ${DOLLAR}(awk '{print ${DOLLAR}1}' /etc/mpi/hostfile); do
-                    for i in ${DOLLAR}(seq 1 40); do
-                      if ssh ${DOLLAR}SSH_OPTS -o ConnectTimeout=2 "${DOLLAR}host" true 2>/dev/null; then
-                        echo "  ${DOLLAR}host reachable"; break; fi
+                  for host in $(awk '{print $1}' /etc/mpi/hostfile); do
+                    for i in $(seq 1 40); do
+                      if ssh $SSH_OPTS -o ConnectTimeout=2 "$host" true 2>/dev/null; then
+                        echo "  $host reachable"; break; fi
                       sleep 3
                     done
                   done
-                  echo "[launcher] starting NCCL all_reduce_perf (${TOTAL_GPUS} ranks, ${NUM_WORKERS} nodes)"
+                  echo "[launcher] starting NCCL all_reduce_perf"
                   /opt/hpcx/ompi/bin/mpirun \
                     --allow-run-as-root --tag-output \
-                    -np ${TOTAL_GPUS} -N ${GPU_PER_WORKER} --hostfile /etc/mpi/hostfile --bind-to none \
+                    -np 2 -N 1 --hostfile /etc/mpi/hostfile --bind-to none \
                     --mca plm_rsh_args "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
                     --mca pml ^cm,ucx --mca btl tcp,self --mca btl_tcp_if_exclude lo,docker0,veth \
                     --mca coll ^ucc,hcoll \
                     -x PATH -x LD_LIBRARY_PATH \
-                    -x FI_PROVIDER=${FI_PROVIDER} -x FI_EFA_FORK_SAFE=${FI_EFA_FORK_SAFE} -x FI_HMEM_CUDA_USE_DMABUF=${FI_HMEM_CUDA_USE_BMABUF} -x FI_EFA_USE_DEVICE_RDMA=${FI_EFA_USE_DEVICE_RDMA} \
-                    -x NCCL_DEBUG=${NCCL_DEBUG} -x NCCL_SOCKET_IFNAME='^lo,docker,veth' \
+                    -x FI_PROVIDER=efa -x FI_EFA_FORK_SAFE=1 -x FI_HMEM_CUDA_USE_DMABUF=1 -x FI_EFA_USE_DEVICE_RDMA=0 \
+                    -x NCCL_DEBUG=WARN -x NCCL_SOCKET_IFNAME='^lo,docker,veth' \
                     -x NCCL_NET_PLUGIN=ofi -x NCCL_TUNER_PLUGIN=ofi \
                     /opt/nccl-tests/build/all_reduce_perf -b 8 -e 8G -f 2 -g 1 -c 1 -n 50
     Worker:
-      replicas: ${NUM_WORKERS}
+      replicas: 2
       template:
         spec:
           nodeSelector:
-            node.kubernetes.io/instance-type: "${INSTANCE_TYPE}"
+            #node.kubernetes.io/instance-type: "p5en.48xlarge"
+            nvidia.com/gpu.present: "true"
           affinity:
-            nodeAffinity:
-              requiredDuringSchedulingIgnoredDuringExecution:
-                nodeSelectorTerms:
-                - matchExpressions:
-                  - key: kubernetes.io/hostname
-                    operator: In
-                    values:
-                    - ${HOSTNAME_1}
-                    - ${HOSTNAME_2}
+            podAntiAffinity:
+              preferredDuringSchedulingIgnoredDuringExecution:
+                - weight: 100
+                  podAffinityTerm:
+                    labelSelector:
+                      matchLabels:
+                        training.kubeflow.org/job-name: nccl-all-reduce
+                        training.kubeflow.org/replica-type: worker
+                    topologyKey: kubernetes.io/hostname
           tolerations:
             - { key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
             - { key: vpc.amazonaws.com/efa, operator: Exists, effect: NoSchedule }
           containers:
-            - image: ${IMAGE_URI}
+            - image: public.ecr.aws/hpc-cloud/cuda-efa-nccl-tests:latest
               imagePullPolicy: Always
-              name: ${TEST_NAME}-worker
+              name: all-reduce-anton-worker
               # The MPI Operator wires the SSH KEYS (mounts the keypair at /root/.ssh
               # and runs sshd here). But it mounts that dir world-writable (drwxrwxrwt),
               # and stock sshd has StrictModes ON - it rejects auth with
@@ -133,15 +134,15 @@ spec:
                 - { name: shmem, mountPath: /dev/shm }
               resources:
                 limits:
-                  nvidia.com/gpu: ${GPU_PER_WORKER}
-                  hugepages-2Mi: ${HUGEPAGES_2MI}
-                  vpc.amazonaws.com/efa: ${EFA_PER_WORKER}
-                  memory: ${MEMORY}
+                  nvidia.com/gpu: 1
+                  hugepages-2Mi: 5120Mi
+                  vpc.amazonaws.com/efa: 1
+                  memory: 8000Mi
                 requests:
-                  nvidia.com/gpu: ${GPU_PER_WORKER}
-                  hugepages-2Mi: ${HUGEPAGES_2MI}
-                  vpc.amazonaws.com/efa: ${EFA_PER_WORKER}
-                  memory: ${MEMORY}
+                  nvidia.com/gpu: 1
+                  hugepages-2Mi: 5120Mi
+                  vpc.amazonaws.com/efa: 1
+                  memory: 8000Mi
           volumes:
             - name: shmem
               hostPath:

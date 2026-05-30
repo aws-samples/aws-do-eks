@@ -19,7 +19,7 @@ spec:
       hostNetwork: true
       nodeSelector:
         node.kubernetes.io/instance-type: "p5en.48xlarge"
-        #processor: gpu
+        #nvidia.com/gpu.present: "true"
       initContainers:
       - name: "installer"
         image: "ubuntu:24.04"
