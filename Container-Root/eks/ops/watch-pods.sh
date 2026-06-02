@@ -2,11 +2,11 @@
 
 if [ "$2" == "" ]; then
 	if [ "$1" == "" ]; then
-		watch "kubectl get pods -o wide"
+		watch "kubectl get pods"
 	else
-		watch "kubectl get pods -o wide | grep $1"
+		watch "kubectl get pods | grep $1"
 	fi
 else	
-	watch kubectl get pods -o wide "$@"
+	watch kubectl get pods "$@"
 fi
 
