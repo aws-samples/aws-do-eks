@@ -1,0 +1,128 @@
+# =============================================================================
+# Nemotron-3 Ultra 550B -~T AGGREGATEDsingle-node)
+# =============================================================================
+#
+# Author: Anton Alexandre
+#
+# Single-node aggregated (prefill+decode) Nemotron-3 Ultra 550B (TP=8 PP=1,, intra-node NVLink).
+# 550B BF16 = ~137.5 GB/GPU on 141 GB H200 -> fits only at high gpu-mem-util + reduced
+# max-model-len. No Ray, no LWS multinode, no EFA needed for the model (single node).
+#
+# Frontend deployment and service included
+# API call example:
+#   FE=$(kubectl get svc ${DEPLOYMENT_NAME}-frontend -o jsonpath='{.spec.clusterIP}')
+#   curl http://${FE}:8000/v1/chat/completions -d '{"model":"${MODEL_NAME}","messages":[{"role":"user","content":"Hello"}],"max_tokens":16}'
+#
+# =============================================================================
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ${DEPLOYMENT_NAME}-frontend
+  namespace: ${NAMESPACE}
+  labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}, app.kubernetes.io/component: frontend }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}, app.kubernetes.io/component: frontend } }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}, app.kubernetes.io/component: frontend }
+    spec:
+      nodeSelector: { node.kubernetes.io/instance-type: ${INSTANCE_TYPE_FRONTEND} }
+      volumes:
+        - name: shared
+          persistentVolumeClaim: { claimName: fsx-pvc }
+      containers:
+        - name: frontend
+          image: ${REGISTRY}${IMAGE}${TAG}
+          imagePullPolicy: Always
+          command: ["/opt/dynamo/venv/bin/python3","-m","dynamo.frontend"]
+          args: ["--http-port","8000","--http-host","0.0.0.0"]
+          env:
+            - { name: DYNAMO_BACKEND, value: vllm }
+            - { name: DYN_NAMESPACE, value: dynamo-agg }
+            - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }
+            - { name: NATS_SERVER, value: "${NATS_URL}" }
+          ports: [ { containerPort: 8000, name: http } ]
+          readinessProbe: { tcpSocket: { port: 8000 }, periodSeconds: 10, failureThreshold: 30 }
+          resources: { requests: { cpu: "2", memory: 4Gi }, limits: { cpu: "4", memory: 8Gi } }
+          volumeMounts:
+            - { name: shared, mountPath: /shared, readOnly: true }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ${DEPLOYMENT_NAME}-frontend
+  namespace: ${NAMESPACE}
+  labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}, app.kubernetes.io/component: frontend }
+spec:
+  selector: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}, app.kubernetes.io/component: frontend }
+  ports: [ { port: 8000, targetPort: 8000, name: http } ]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ${DEPLOYMENT_NAME}-worker
+  namespace: ${NAMESPACE}
+  labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}, app.kubernetes.io/component: worker }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}, app.kubernetes.io/component: worker } }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}, app.kubernetes.io/component: worker }
+    spec:
+      nodeSelector: { node.kubernetes.io/instance-type: ${INSTANCE_TYPE_WORKER} }
+      tolerations:
+        - { key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
+        - { key: vpc.amazonaws.com/efa, operator: Exists, effect: NoSchedule }
+      volumes:
+        - name: dshm
+          emptyDir: { medium: Memory, sizeLimit: 64Gi }
+        - name: shared
+          persistentVolumeClaim: { claimName: fsx-pvc }
+      containers:
+        - name: vllm
+          image: ${REGISTRY}${IMAGE}${TAG}
+          imagePullPolicy: Always
+          securityContext: { capabilities: { add: ["IPC_LOCK"] } }
+          command: ["/bin/bash","-c"]
+          args:
+            - |-
+              set -eu
+              unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
+                    HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
+              source /opt/dynamo/venv/bin/activate
+              exec python3 -m dynamo.vllm \
+                --model ${MODEL_PATH} \
+                --served-model-name ${MODEL_NAME} \
+                --tensor-parallel-size ${GPU_PER_WORKER} \
+                --pipeline-parallel-size 1 \
+                --max-model-len 4096 \
+                --gpu-memory-utilization 0.97 \
+                --enforce-eager \
+                --trust-remote-code \
+                --mamba-cache-mode align
+          env:
+            - { name: DYNAMO_BACKEND, value: vllm }
+            - { name: DYN_NAMESPACE, value: dynamo-agg }
+            - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }
+            - { name: NATS_SERVER, value: "${NATS_URL}" }
+            - { name: DYN_SYSTEM_ENABLED, value: "true" }
+            - { name: DYN_SYSTEM_PORT, value: "9090" }
+            - { name: HF_HOME, value: /tmp/hf_cache }
+            - { name: HF_MODULES_CACHE, value: /tmp/hf_cache/modules }
+            - { name: VLLM_LOGGING_LEVEL, value: INFO }
+          ports: [ { containerPort: 9090, name: dyn-system } ]
+          startupProbe:
+            httpGet: { path: /health, port: 9090 }
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 150
+          resources:
+            requests: { cpu: "48", memory: 800Gi, nvidia.com/gpu: "${GPU_PER_WORKER}" }
+            limits:   { cpu: "48", memory: 800Gi, nvidia.com/gpu: "${GPU_PER_WORKER}" }
+          volumeMounts:
+            - { name: dshm, mountPath: /dev/shm }
+            - { name: shared, mountPath: /shared }

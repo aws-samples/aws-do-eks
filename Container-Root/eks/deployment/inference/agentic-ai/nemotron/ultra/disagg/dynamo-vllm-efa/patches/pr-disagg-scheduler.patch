@@ -1,0 +1,40 @@
+--- a/vllm/v1/core/sched/scheduler.py
++++ b/vllm/v1/core/sched/scheduler.py
+@@ -302,9 +302,14 @@
+         num_new_local_computed_tokens: int = 0,
+         num_external_computed_tokens: int = 0,
+     ) -> int:
+-        assert num_external_computed_tokens == 0, (
+-            "External KV connector is not verified yet"
+-        )
++        # DISAGG-PATCH 2026-05-26: trust connector-side alignment validation;
++        # PR #42522 sets block_size=max_model_len for hybrid Mamba models, so any
++        # external prefix is automatically Mamba-block-aligned. The downstream
++        # block-alignment logic (lines below) correctly handles
++        # num_external_computed_tokens > 0 because num_computed_tokens already
++        # includes external tokens, and when the request is past prefill the
++        # alignment branch is skipped (decode behavior).
++        # Original assertion removed: assert num_external_computed_tokens == 0
+         num_computed_tokens = (
+             request.num_computed_tokens
+             + num_new_local_computed_tokens
+@@ -698,7 +703,18 @@
+                             # The request cannot be scheduled.
+                             break
+ 
+-                if self.need_mamba_block_aligned_split:
++                # DISAGG-PATCH 2026-05-29: skip block-align on the async KV-load
++                # path. When load_kv_async is True the scheduler has deliberately
++                # set num_new_tokens=0 above ("do not allocate for new work"); the
++                # prefill-chunking block-align split would return 0 and break the
++                # loop BEFORE update_state_after_alloc enrolls this request for the
++                # remote KV read, so the NIXL transfer never fires (0 EFA bytes,
++                # request spins in WAITING forever). The async-load downstream code
++                # (allocate_slots(delay_cache_blocks=True) -> update_state_after_alloc
++                # -> WAITING_FOR_REMOTE_KVS) is built for num_new_tokens=0, so we
++                # must NOT short-circuit here. The RUNNING-loop split site is
++                # unaffected (it never sees load_kv_async).
++                if self.need_mamba_block_aligned_split and not load_kv_async:
+                     num_new_tokens = self._mamba_block_aligned_split(
+                         request,
+                         num_new_tokens,

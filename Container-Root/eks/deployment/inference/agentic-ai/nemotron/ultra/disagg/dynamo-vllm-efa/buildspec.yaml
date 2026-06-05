@@ -1,0 +1,88 @@
+version: 0.2
+
+# =============================================================================
+# CodeBuild buildspec for the Nemotron-3 disagg image (dynamo-vllm-efa recipe).
+#
+# Author: Anton Alexander
+#
+# Reproducible build fromPUBLIC base: nvcr.io/nvidia/ai-dynamo/
+# vllm-runtime:1.2.0-efa (EFA + NIXL LIBFABRIC + vLLM 0.20.1 baked) + 5 disagg
+# anchor-patches. No AWS base chain, no private hops. Alex can rebuild this with
+# only this repo + a CodeBuild project.
+#
+# Reuses build-sbom-scan.sh, so the CodeBuild path produces the SAME artifacts
+# as the local path: image + syft SBOM (SPDX+CycloneDX) + trivy CVE gate.
+# The gate FAILS the build on a CRITICAL CVE (or a missing/empty scan report).
+#
+# Required project env vars (PLAINTEXT unless noted):
+#   AWS_ACCOUNT_ID, AWS_DEFAULT_REGION, ECR_REPO   (e.g. nemotron-3-disagg)
+#   IMAGE_TAG        (default: disagg-1.2.0)
+# Optional:
+#   VLLM_EFA_IMAGE   (override base; default 1.2.0-efa)
+#   NGC_API_KEY      (SECRETS_MANAGER) - only if NGC ever gates the -efa pull;
+#                    the public -efa tags pull anonymously today, so unset = OK.
+#   GATE_SEVERITY    (default CRITICAL; set CRITICAL,HIGH to tighten)
+# =============================================================================
+
+env:
+  variables:
+    IMAGE_TAG: "disagg-1.2.0"
+    VLLM_EFA_IMAGE: "nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.2.0-efa"
+    ENABLE_DISAGG_PATCHES: "1"
+    GATE_SEVERITY: "CRITICAL"
+    REGISTRY: "public.ecr.aws/hpc-cloud/"
+    IMAGE: "dynamo-vllm-efa"
+    TAG: "disagg-1.2.0"
+
+phases:
+  install:
+    commands:
+      # syft + trivy (the SBOM + CVE-gate tools build-sbom-scan.sh expects).
+      - curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+      - curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+      - syft version && trivy --version
+
+  pre_build:
+    commands:
+      - cd "${CODEBUILD_SRC_DIR}/Container-Root/eks/deployment/inference/agentic-ai/nemotron/ultra/disagg/dynamo-vllm-efa"
+      # NGC login ONLY if a key is supplied; public -efa tags pull anonymously.
+      - |
+        if [ -n "${NGC_API_KEY:-}" ]; then
+          echo "[ngc] logging in to nvcr.io"
+          echo "${NGC_API_KEY}" | docker login nvcr.io -u '$oauthtoken' --password-stdin
+        else
+          echo "[ngc] no NGC_API_KEY set - relying on anonymous pull of ${VLLM_EFA_IMAGE}"
+        fi
+      #- aws ecr get-login-password --region "${AWS_DEFAULT_REGION}" | docker login --username AWS --password-stdin "${REGISTRY}"
+      #- aws ecr describe-repositories --repository-names "${IMAGE}" --region "${AWS_DEFAULT_REGION}" >/dev/null 2>&1 || aws ecr create-repository --repository-name "${IMAGE}" --region "${AWS_DEFAULT_REGION}"
+      - aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${REGISTRY}
+
+  build:
+    commands:
+      - cd "${CODEBUILD_SRC_DIR}/Container-Root/eks/deployment/inference/agentic-ai/nemotron/ultra/disagg/dynamo-vllm-efa"
+      # build (ENABLE_DISAGG_PATCHES=1) -> syft SBOM -> trivy CVE gate.
+      # build-sbom-scan.sh exits NONZERO on any CRITICAL or a missing scan,
+      # which fails this phase (no false-pass - see the script's fail-loud guard).
+      - IMAGE="${REGISTRY}${IMAGE}:${TAG}" VLLM_EFA_IMAGE="${VLLM_EFA_IMAGE}" ENABLE_DISAGG_PATCHES="${ENABLE_DISAGG_PATCHES}" GATE_SEVERITY="${GATE_SEVERITY}" ./build-sbom-scan.sh
+
+  post_build:
+    commands:
+      # Push ONLY on a succeeding build (codebuild-rapid-iteration Workflow 4:
+      # never push/preflight on a failed BUILD — it masks the real failure).
+      - |
+        if [ "${CODEBUILD_BUILD_SUCCEEDING:-0}" != "1" ]; then
+          echo "[post_build] BUILD/gate failed -  NOT pushing to ECR"
+          exit 0
+        fi
+      - export IMAGE_URI="${REGISTRY}${IMAGE}:${TAG}"
+      - docker push "${IMAGE_URI}"
+      - echo "[post_build] pushed ${IMAGE_URI} (0 CRITICAL gate passed)"
+
+artifacts:
+  # Ship the SBOM + gate summary as build artifacts (provenance record).
+  base-directory: Container-Root/eks/deployment/inference/agentic-ai/nemotron/ultra/disagg/dynamo-vllm-efa/sbom
+  files:
+    - "*.cyclonedx.json"
+    - "*.spdx.json"
+    - "*.gate-summary.txt"
+    - "*.trivy.txt"

@@ -1,0 +1,144 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: aiperf-sweep-${DEPLOYMENT_NAME}
+  namespace: ${NAMESPACE}
+  labels:
+    app: aiperf-live
+    role: benchmark
+    model: nemotron3-ultra-550b
+  annotations:
+    awesome-inferencing/benchmark: aiperf-nemo3-1.2.0-agg
+    awesome-inferencing/aiperf-version: "0.7.0"
+    awesome-inferencing/target: nemotron3-ultra-550b-vllm 2 replicas (TP=8 PP=2 each)
+spec:
+  restartPolicy: Never
+  #nodeSelector:
+  #  node.kubernetes.io/instance-type: m5.8xlarge
+  containers:
+    - name: aiperf
+      image: python:3.12-slim
+      command: ["/bin/bash", "-c"]
+      args:
+        - |
+          set -eu
+          B=/tmp/run-bundle
+          mkdir -p ${DOLLAR}B/aiperf-args
+
+          echo "=== installing aiperf 0.7.0 ==="
+          pip install -q --upgrade pip
+          pip install -q aiperf==0.7.0 httpx
+          AIPERF_VERSION=${DOLLAR}(aiperf --version 2>&1 | tr -d '\n')
+          echo "aiperf=${DOLLAR}AIPERF_VERSION"
+
+          URL="${SERVICE_URL}"
+          MODEL="${MODEL_NAME}"
+          TOKENIZER="${MODEL_PATH}"
+
+          for i in ${DOLLAR}(seq 1 30); do
+            if python3 -c "import httpx,sys; r=httpx.get('${DOLLAR}URL/v1/models', timeout=4); sys.exit(0 if r.status_code==200 else 1)" 2>/dev/null; then
+              echo "endpoint ok after ${DOLLAR}{i} tries"; break
+            fi
+            echo "  waiting for endpoint (${DOLLAR}i)"; sleep 4
+          done
+
+          python3 - <<PY > ${DOLLAR}B/run-metadata.json
+          import json, os, socket, datetime
+          meta = {
+              "timestamp_utc": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+              "pod_name": "aiperf-sweep-${DEPLOYMENT_NAME}",
+              "node_name": os.environ.get("NODE_NAME", socket.gethostname()),
+              "namespace": "${NAMESPACE}",
+              "target_url": "${DOLLAR}URL",
+              "target_model": "${DOLLAR}MODEL",
+              "tokenizer_path": "${DOLLAR}TOKENIZER",
+              "aiperf_version": "${DOLLAR}AIPERF_VERSION",
+              "deployment": "nemotron3-ultra-550b-vllm LWS, 2 replicas x 2 p5en, TP=8 PP=2 each, 32x H200 total, --enforce-eager",
+              "input_tokens_mean": 512,
+              "input_tokens_stddev": 64,
+              "output_tokens_mean": 128,
+              "random_seed": 42,
+              "concurrencies": [1, 4, 8, 16, 32, 64],
+              "request_counts": {"1": 20, "4": 80, "8": 160, "16": 320, "32": 640, "64": 1280},
+              "warmup_counts":  {"1": 3,  "4": 8,  "8": 16,  "16": 32,  "32": 64, "64": 128},
+          }
+          json.dump(meta, open('${DOLLAR}B/run-metadata.json','w'), indent=2)
+          print(json.dumps(meta, indent=2))
+          PY
+
+          run_phase() {
+            local C=${DOLLAR}1 N=${DOLLAR}2 W=${DOLLAR}3
+            local args="--model ${DOLLAR}MODEL --tokenizer ${DOLLAR}TOKENIZER \
+              --endpoint-type chat --url ${DOLLAR}URL --streaming \
+              --synthetic-input-tokens-mean 512 --synthetic-input-tokens-stddev 64 \
+              --output-tokens-mean 128 \
+              --concurrency ${DOLLAR}C --request-count ${DOLLAR}N --warmup-request-count ${DOLLAR}W \
+              --random-seed 42 --artifact-dir ${DOLLAR}B/c${DOLLAR}C"
+            echo "${DOLLAR}args" > ${DOLLAR}B/aiperf-args/c${DOLLAR}C.args
+            echo ""
+            echo "=== aiperf phase c=${DOLLAR}C n=${DOLLAR}N w=${DOLLAR}W ==="
+            aiperf profile ${DOLLAR}args 2>&1 | tee ${DOLLAR}B/c${DOLLAR}C.log || true
+          }
+
+          run_phase 1   20  3
+          run_phase 4   80  8
+          run_phase 8  160 16
+          run_phase 16 320 32
+          run_phase 32 640 64
+          run_phase 64 1280 128
+
+          echo ""
+          echo "=== summary ==="
+          python3 - <<'PY'
+          import glob, json, os, re
+          rows = []
+          def keynum(d):
+              m = re.search(r"c(\d+)", d)
+              return int(m.group(1)) if m else 0
+          for d in sorted(glob.glob("/tmp/run-bundle/c*/"), key=keynum):
+              c = os.path.basename(d.rstrip("/"))
+              p = os.path.join(d, "profile_export_aiperf.json")
+              if not os.path.exists(p):
+                  continue
+              j = json.load(open(p))
+              def g(k, stat="p50"):
+                  v = j.get(k, {})
+                  if isinstance(v, dict):
+                      return v.get(stat, v.get("avg", v.get("value")))
+                  return v
+              rows.append({
+                  "phase": c,
+                  "ttft_p50_ms": g("time_to_first_token"),
+                  "ttft_p90_ms": g("time_to_first_token","p90"),
+                  "ttft_p99_ms": g("time_to_first_token","p99"),
+                  "itl_p50_ms":  g("inter_token_latency"),
+                  "itl_p90_ms":  g("inter_token_latency","p90"),
+                  "req_lat_p50_ms": g("request_latency"),
+                  "req_lat_p90_ms": g("request_latency","p90"),
+                  "req_lat_p99_ms": g("request_latency","p99"),
+                  "output_tok_per_sec": g("output_token_throughput","avg") or g("output_token_throughput"),
+                  "requests_per_sec":   g("request_throughput","avg") or g("request_throughput"),
+              })
+          print(json.dumps(rows, indent=2))
+          json.dump(rows, open("/tmp/run-bundle/summary.json","w"), indent=2)
+          PY
+
+          echo ""
+          echo "=== BENCH DONE - bundle at /tmp/run-bundle ==="
+          ls -la /tmp/run-bundle/
+          sleep 3600
+      env:
+        - name: NODE_NAME
+          valueFrom: { fieldRef: { fieldPath: spec.nodeName } }
+      resources:
+        limits:   { cpu: "4", memory: 8Gi }
+        requests: { cpu: "2", memory: 4Gi }
+      volumeMounts:
+        - { name: shared, mountPath: /shared, readOnly: true }
+        - { name: bundle, mountPath: /tmp/run-bundle }
+  volumes:
+    - name: shared
+      persistentVolumeClaim:
+        claimName: fsx-pvc
+    - name: bundle
+      emptyDir: {}

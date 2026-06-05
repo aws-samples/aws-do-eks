@@ -1,0 +1,82 @@
+--- a/vllm/config/vllm.py
++++ b/vllm/config/vllm.py
+@@ -1227,18 +1227,46 @@
+         if self.scheduler_config.disable_hybrid_kv_cache_manager is None:
+             # Default to disable HMA, but only if the user didn't express a preference.
+             if self.kv_transfer_config is not None:
+-                # NOTE(Kuntai): turn HMA off for connector unless specifically enabled.
+-                need_disable_hybrid_kv_cache_manager = True
+-                logger.warning(
+-                    "Turning off hybrid kv cache manager because "
+-                    "`--kv-transfer-config` is set. This will reduce the "
+-                    "performance of vLLM on LLMs with sliding window attention "
+-                    "or Mamba attention. If you are a developer of kv connector"
+-                    ", please consider supporting hybrid kv cache manager for "
+-                    "your connector by making sure your connector is a subclass"
+-                    " of `SupportsHMA` defined in kv_connector/v1/base.py and"
+-                    " use --no-disable-hybrid-kv-cache-manager to start vLLM."
+-                )
++                # NOTE(Kuntai): turn HMA off for connector unless it explicitly
++                # advertises support.
++                # PR41644-PATCH 2026-05-26: gate HMA-disable on supports_hma()
++                try:
++                    # Lazy import to avoid circular dependencies.
++                    from vllm.distributed.kv_transfer.kv_connector.factory import (
++                        KVConnectorFactory,
++                    )
++                    from vllm.distributed.kv_transfer.kv_connector.v1 import (
++                        supports_hma,
++                    )
++
++                    connector_cls = KVConnectorFactory.get_connector_class(
++                        self.kv_transfer_config
++                    )
++                    connector_supports_hma = supports_hma(connector_cls)
++                except Exception:
++                    logger.debug(
++                        "Failed to check whether KV connector supports HMA.",
++                        exc_info=True,
++                    )
++                    connector_supports_hma = False
++
++                if not connector_supports_hma:
++                    need_disable_hybrid_kv_cache_manager = True
++                    logger.warning(
++                        "Turning off hybrid kv cache manager because "
++                        "`--kv-transfer-config` is set. This will reduce the "
++                        "performance of vLLM on LLMs with sliding window attention "
++                        "or Mamba attention. If you are a developer of kv connector"
++                        ", please consider supporting hybrid kv cache manager for "
++                        "your connector by making sure your connector is a subclass"
++                        " of `SupportsHMA` defined in kv_connector/v1/base.py and"
++                        " use --no-disable-hybrid-kv-cache-manager to start vLLM."
++                    )
++                else:
++                    logger.info(
++                        "PR41644-PATCH 2026-05-26: KV connector advertises "
++                        "SupportsHMA; keeping hybrid KV cache manager enabled."
++                    )
+             self.scheduler_config.disable_hybrid_kv_cache_manager = (
+                 need_disable_hybrid_kv_cache_manager
+             )
+@@ -1741,9 +1769,18 @@
+             self.cache_config.mamba_block_size is not None
+             and self.cache_config.mamba_block_size != self.model_config.max_model_len
+         )
+-        if mamba_block_size_is_set and not self.cache_config.enable_prefix_caching:
++        # PR43935-ADAPT 2026-05-29: allow --mamba-block-size in disagg P/D when a
++        # KV connector is configured with the hybrid KV cache manager enabled,
++        # even without prefix caching.
++        can_set_mamba = (
++            not self.scheduler_config.disable_hybrid_kv_cache_manager
++            and self.kv_transfer_config is not None
++        )
++        can_set_mamba = can_set_mamba or self.cache_config.enable_prefix_caching
++        if mamba_block_size_is_set and not can_set_mamba:
+             raise ValueError(
+-                "--mamba-block-size can only be set with --enable-prefix-caching"
++                "--mamba-block-size can only be set with --enable-prefix-caching "
++                "or --no-disable_hybrid_kv_cache_manager and --kv_transfer_config"
+             )
+         return self
+ 

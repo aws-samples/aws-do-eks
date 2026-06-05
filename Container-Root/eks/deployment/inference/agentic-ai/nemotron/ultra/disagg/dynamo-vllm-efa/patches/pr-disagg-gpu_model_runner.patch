@@ -1,0 +1,18 @@
+--- a/vllm/v1/worker/gpu_model_runner.py
++++ b/vllm/v1/worker/gpu_model_runner.py
+@@ -4031,6 +4031,15 @@
+                 defer_finalize=defer_kv_connector_finalize,
+             ) as kv_connector_output,
+         ):
++            # PR43935-ADAPT 2026-05-29: issue the deferred mamba state copy here,
++            # AFTER the kv_connector load context has started (KV transfer for the
++            # decode side has landed). preprocess_mamba (earlier this step) only
++            # collected copy metadata into the memoized copy buffers; doing the
++            # copy here ensures we copy real KV blocks, not empty ones. Uses the
++            # 0.19.0 accessor self._get_mamba_copy_bufs() (same object populated
++            # by preprocess_mamba) instead of the upstream 0.22 _get_mamba_bufs().
++            if self.cache_config.mamba_cache_mode == "align":
++                mamba_utils.do_mamba_copy_block(self._get_mamba_copy_bufs())
+             model_output = self._model_forward(
+                 input_ids=input_ids,
+                 positions=positions,
