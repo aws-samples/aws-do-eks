@@ -153,12 +153,12 @@ spec:
 ---
 apiVersion: apps/v1
 kind: Deployment
-metadata: { name: ${DEPLOYMENT_NAME}-frontend, namespace: ${NAMESPACE}, labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}-disagg, app.kubernetes.io/component: frontend } }
+metadata: { name: ${DEPLOYMENT_NAME}-frontend, namespace: ${NAMESPACE}, labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}, app.kubernetes.io/component: frontend } }
 spec:
   replicas: 1
-  selector: { matchLabels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}-disagg, app.kubernetes.io/component: frontend } }
+  selector: { matchLabels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}, app.kubernetes.io/component: frontend } }
   template:
-    metadata: { labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}-disagg, app.kubernetes.io/component: frontend } }
+    metadata: { labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}, app.kubernetes.io/component: frontend } }
     spec:
       nodeSelector: { node.kubernetes.io/instance-type: ${INSTANCE_TYPE_FRONTEND} }
       volumes:
