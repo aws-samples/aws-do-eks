@@ -108,6 +108,9 @@ spec:
               - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }
               - { name: NATS_SERVER, value: "${NATS_URL}" }
               - { name: HF_HOME, value: /shared/hf_cache }
+              # FIX: start the dyn-system health server the startupProbe (httpGet /health:9091) gates on
+              - { name: DYN_SYSTEM_ENABLED, value: "true" }
+              - { name: DYN_SYSTEM_PORT, value: "9091" }
               - { name: VLLM_LOGGING_LEVEL, value: INFO }
               - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
               - { name: FI_PROVIDER, value: efa }
@@ -298,6 +301,9 @@ spec:
               - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }
               - { name: NATS_SERVER, value: "${NATS_URL}" }
               - { name: HF_HOME, value: /shared/hf_cache }
+              # FIX: start the dyn-system health server the startupProbe (httpGet /health:9092) gates on
+              - { name: DYN_SYSTEM_ENABLED, value: "true" }
+              - { name: DYN_SYSTEM_PORT, value: "9092" }
               - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
               - { name: FI_PROVIDER, value: efa }
               - { name: FI_EFA_USE_DEVICE_RDMA, value: "1" }
