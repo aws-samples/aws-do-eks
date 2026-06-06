@@ -12,6 +12,10 @@ read -r -d '' REQUEST_BODY << EOF
 {"model":"${MODEL_NAME}","messages": [ { "role": "user", "content": "${LLM_PROMPT}" } ], "max_tokens":128, "temperature": 0.2}
 EOF
 
+echo ""
+echo "${REQUEST_BODY}"
+echo ""
+
 # Base64 encode to completely avoid quoting issues
 B64_BODY=$(echo -n "$REQUEST_BODY" | base64 -w0)
 

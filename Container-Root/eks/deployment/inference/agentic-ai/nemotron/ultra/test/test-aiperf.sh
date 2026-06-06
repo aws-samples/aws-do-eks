@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Ref: https://github.com/ai-dynamo/aiperf
+# Ref: https://github.com/iankoulski/do-aiperf
+
 source .env
 
 # Start the do-aiperf pod 
