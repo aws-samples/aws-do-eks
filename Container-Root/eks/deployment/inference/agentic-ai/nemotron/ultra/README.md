@@ -53,7 +53,7 @@ cd /eks/deployment/inference/agentic-ai/nemotron/ultra/download
 
 ## Deploy the model
 
-The model can be deployed in aggregated or disaggregated mode. In aggregated mode the prefill and decode work in any inference operation is performed by a single worker. In disaggregated mode the prefill and decode operations are done by different workers which are deployed on different nodes and can be scaled independently.
+The model can be deployed in aggregated or disaggregated mode. In aggregated mode the prefill and decode work in any inference operation is performed by a single worker. In disaggregated mode the prefill and decode operations are done by different workers which are deployed on different nodes and can be scaled independently. The model can also be deployed using deployment manifests when running one instance of the model on one node, or using a [LeaderWorkerSet]() manifest when running a model instance distributed between two nodes. Set `MANIFEST_TYPE` to `deployment` or `lws` in the corresponding `.env` file per your preference.
 
 ### Aggregated mode
 

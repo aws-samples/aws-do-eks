@@ -2,7 +2,22 @@
 
 source .env
 
-cat deployment.yaml-template | envsubst > deployment.yaml
+if [ "${MANIFEST_TYPE}" == "" ]; then
+	export MANIFEST_TYPE=deployment
+fi
 
-kubectl apply -f ./deployment.yaml
+if [ "${MANIFEST_TYPE}" == "deployment" ]; then
+
+	cat deployment.yaml-template | envsubst > deployment.yaml
+
+	kubectl apply -f ./deployment.yaml
+elif [ "${MANIFEST_TYPE}" == "lws" ]; then
+
+	cat lws.yaml-template | envsubst > lws.yaml
+
+	kubectl apply -f ./lws.yaml
+else
+	echo "Unknown MANIFEST_TYPE ${MANIFEST_TYPE}"
+fi
+
 

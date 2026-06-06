@@ -1,0 +1,467 @@
+# =============================================================================
+# Nemotron-3 Ultra disagg using LeaderWorkerSet manifest
+# =============================================================================
+#
+# Author: Anton Alexander
+#
+# Two LWS roles (prefill + decode), each TP=8 PP=2 across 2x nodes
+# 4 pods total, 32 GPUs, 64 EFAv3 NICs.
+#
+#   - kv_role: kv_both             (BOTH sides; producer/consumer split broken in 1.1.0)
+#   - kv_connector_extra_config:
+#       backends: ["LIBFABRIC"]    (NIXL on EFA, NOT UCX)
+#   - mamba-cache-mode align       (paired with vLLM PR #42522 patch in image)
+#
+# =============================================================================
+---
+apiVersion: leaderworkerset.x-k8s.io/v1
+kind: LeaderWorkerSet
+metadata:
+  name: ${DEPLOYMENT_NAME}-prefill
+  labels:
+    app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
+    app.kubernetes.io/component: prefill
+spec:
+  replicas: 1
+  startupPolicy: LeaderCreated
+  rolloutStrategy:
+    type: RollingUpdate
+  leaderWorkerTemplate:
+    restartPolicy: None
+    size: 2
+    leaderTemplate:
+      metadata:
+        labels:
+          app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
+          app.kubernetes.io/component: prefill
+          dynamo-role: leader
+      spec:
+        hostNetwork: true
+        dnsPolicy: ClusterFirstWithHostNet
+        nodeSelector:
+          node.kubernetes.io/instance-type: ${INSTANCE_TYPE_WORKER}
+        tolerations:
+          - { key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
+          - { key: vpc.amazonaws.com/efa, operator: Exists, effect: NoSchedule }
+        affinity:
+          podAntiAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
+                topologyKey: kubernetes.io/hostname
+        #imagePullSecrets:
+        #  - name: dynamo-efa-pull
+        volumes:
+          - { name: dshm,        emptyDir: { medium: Memory, sizeLimit: 64Gi } }
+          - { name: infiniband,  hostPath: { path: /dev/infiniband, type: DirectoryOrCreate } }
+          - { name: gdrdrv,      hostPath: { path: /dev/gdrdrv, type: CharDevice } }
+          - { name: shared,      persistentVolumeClaim: { claimName: fsx-pvc } }
+        containers:
+          - name: vllm
+            image: ${REGISTRY}${IMAGE}${TAG}
+            imagePullPolicy: Always
+            securityContext: { capabilities: { add: ["IPC_LOCK"] } }
+            command: ["/bin/bash", "-c"]
+            args:
+              - |-
+                set -u
+                unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
+                      HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
+                source /opt/dynamo/venv/bin/activate
+                LOG=/shared/disagg-prefill-p5en-$(date -u +%FT%TZ).log
+                echo "[prefill-leader p5en] starting; piping to ${DOLLAR}LOG"
+                python3 -c "import vllm; print(f'vllm {vllm.__version__}')" 2>&1 | tee -a "${DOLLAR}LOG"
+                # Verify the PR #42522 patch is present
+                grep -A2 "is_kv_consumer" /opt/dynamo/venv/lib/python3.12/site-packages/vllm/model_executor/models/config.py 2>&1 | tee -a "${DOLLAR}LOG"
+                for i in ${DOLLAR}(seq 1 60); do
+                  if getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" >/dev/null 2>&1; then break; fi
+                  sleep 2
+                done
+                LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk '{print ${DOLLAR}1}')
+                echo "[prefill-leader p5en] LEADER_IP=${DOLLAR}LEADER_IP" | tee -a "${DOLLAR}LOG"
+                ray start --head --port=6379 --node-ip-address="${DOLLAR}LEADER_IP" --num-gpus=${GPU_PER_WORKER} 2>&1 | tee -a "${DOLLAR}LOG"
+                for i in ${DOLLAR}(seq 1 120); do
+                  N=${DOLLAR}(ray status 2>/dev/null | awk '/Active:/{flag=1; next} /Pending:|Recent failures:|Resources/{flag=0} flag' | grep -c node_ || true)
+                  if [ "${DOLLAR}{N:-0}" -ge 2 ]; then break; fi
+                  sleep 5
+                done
+                exec python3 -m dynamo.vllm \
+                  --model ${MODEL_PATH} \
+                  --served-model-name ${MODEL_NAME} \
+                  --tensor-parallel-size ${GPU_PER_WORKER} \
+                  --pipeline-parallel-size 2 \
+                  --distributed-executor-backend ray \
+                  --max-model-len 8192 \
+                  --gpu-memory-utilization 0.92 \
+                  --enforce-eager \
+                  --trust-remote-code \
+                  --mamba-cache-mode align \
+                  --load-format runai_streamer \
+                  --no-disable-hybrid-kv-cache-manager \
+                  --disaggregation-mode prefill \
+                  --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_connector_extra_config":{"backends":["LIBFABRIC"]}}' 2>&1 | tee -a "${DOLLAR}LOG"
+            env:
+              - { name: MY_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
+              - { name: DYNAMO_BACKEND, value: vllm }
+              - { name: DYN_NAMESPACE, value: dynamo-disagg }
+              - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }
+              - { name: NATS_SERVER, value: "${NATS_URL}" }
+              - { name: HF_HOME, value: /shared/hf_cache }
+              - { name: VLLM_LOGGING_LEVEL, value: INFO }
+              - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
+              - { name: FI_PROVIDER, value: efa }
+              - { name: FI_EFA_USE_DEVICE_RDMA, value: "1" }
+              - { name: FI_EFA_FORK_SAFE, value: "1" }
+              - { name: FI_HMEM_CUDA_USE_DMABUF, value: "1" }
+              - { name: NIXL_LIBFABRIC_MAX_RAILS, value: "1" }
+              - { name: NIXL_SKIP_TOPOLOGY_CHECK, value: "1" }
+              - { name: NCCL_NET_PLUGIN, value: ofi }
+              - { name: NCCL_TUNER_PLUGIN, value: ofi }
+              - { name: OFI_NCCL_FORCE_NUM_RAILS, value: "4" }
+              - { name: NCCL_RUNTIME_CONNECT, value: "0" }
+              - { name: NCCL_NVLS_ENABLE, value: "1" }
+              - { name: NCCL_CUMEM_ENABLE, value: "1" }
+            ports:
+              - { containerPort: 9091, name: dyn-system }
+            startupProbe:
+              httpGet: { path: /health, port: 9091 }
+              periodSeconds: 30
+              timeoutSeconds: 10
+              failureThreshold: 120
+            resources:
+              requests: { cpu: "96", memory: 1000Gi, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
+              limits:   { cpu: "96", memory: 1000Gi, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
+            volumeMounts:
+              - { name: dshm,       mountPath: /dev/shm }
+              - { name: infiniband, mountPath: /dev/infiniband }
+              - { name: gdrdrv,     mountPath: /dev/gdrdrv }
+              - { name: shared,     mountPath: /shared }
+    workerTemplate:
+      metadata:
+        labels:
+          app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
+          app.kubernetes.io/component: prefill
+          dynamo-role: worker
+      spec:
+        hostNetwork: true
+        dnsPolicy: ClusterFirstWithHostNet
+        nodeSelector:
+          node.kubernetes.io/instance-type: ${INSTANCE_TYPE_WORKER}
+        tolerations:
+          - { key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
+          - { key: vpc.amazonaws.com/efa, operator: Exists, effect: NoSchedule }
+        affinity:
+          podAntiAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
+                topologyKey: kubernetes.io/hostname
+        #imagePullSecrets:
+        #  - name: dynamo-efa-pull
+        volumes:
+          - { name: dshm,       emptyDir: { medium: Memory, sizeLimit: 64Gi } }
+          - { name: infiniband, hostPath: { path: /dev/infiniband, type: DirectoryOrCreate } }
+          - { name: gdrdrv,     hostPath: { path: /dev/gdrdrv, type: CharDevice } }
+          - { name: shared,     persistentVolumeClaim: { claimName: fsx-pvc } }
+        containers:
+          - name: vllm
+            image: ${REGISTRY}${IMAGE}${TAG}
+            imagePullPolicy: Always
+            securityContext: { capabilities: { add: ["IPC_LOCK"] } }
+            command: ["/bin/bash", "-c"]
+            args:
+              - |-
+                set -u
+                unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
+                      HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
+                source /opt/dynamo/venv/bin/activate
+                for i in ${DOLLAR}(seq 1 60); do
+                  if getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" >/dev/null 2>&1; then break; fi
+                  sleep 2
+                done
+                LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk '{print ${DOLLAR}1}')
+                for i in ${DOLLAR}(seq 1 60); do
+                  if (echo > /dev/tcp/${DOLLAR}LEADER_IP/6379) 2>/dev/null; then break; fi
+                  sleep 5
+                done
+                exec ray start --address="${DOLLAR}LEADER_IP:6379" --node-ip-address="${DOLLAR}MY_IP" --num-gpus=${GPU_PER_WORKER} --block
+            env:
+              - { name: MY_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
+              - { name: HF_HOME, value: /shared/hf_cache }
+              - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
+              - { name: FI_PROVIDER, value: efa }
+              - { name: FI_EFA_USE_DEVICE_RDMA, value: "1" }
+              - { name: FI_EFA_FORK_SAFE, value: "1" }
+              - { name: FI_HMEM_CUDA_USE_DMABUF, value: "1" }
+              - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }
+              - { name: NATS_SERVER, value: "${NATS_URL}" }
+              - { name: NIXL_LIBFABRIC_MAX_RAILS, value: "1" }
+              - { name: NIXL_SKIP_TOPOLOGY_CHECK, value: "1" }
+              - { name: NCCL_NET_PLUGIN, value: ofi }
+              - { name: NCCL_TUNER_PLUGIN, value: ofi }
+              - { name: OFI_NCCL_FORCE_NUM_RAILS, value: "4" }
+            resources:
+              requests: { cpu: "96", memory: 1000Gi, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
+              limits:   { cpu: "96", memory: 1000Gi, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
+            volumeMounts:
+              - { name: dshm,       mountPath: /dev/shm }
+              - { name: infiniband, mountPath: /dev/infiniband }
+              - { name: gdrdrv,     mountPath: /dev/gdrdrv }
+              - { name: shared,     mountPath: /shared }
+---
+apiVersion: leaderworkerset.x-k8s.io/v1
+kind: LeaderWorkerSet
+metadata:
+  name: ${DEPLOYMENT_NAME}-decode
+  labels:
+    app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
+    app.kubernetes.io/component: decode
+spec:
+  replicas: 1
+  startupPolicy: LeaderCreated
+  rolloutStrategy:
+    type: RollingUpdate
+  leaderWorkerTemplate:
+    restartPolicy: None
+    size: 2
+    leaderTemplate:
+      metadata:
+        labels:
+          app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
+          app.kubernetes.io/component: decode
+          dynamo-role: leader
+      spec:
+        hostNetwork: true
+        dnsPolicy: ClusterFirstWithHostNet
+        nodeSelector: { node.kubernetes.io/instance-type: ${INSTANCE_TYPE_WORKER} }
+        tolerations:
+          - { key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
+          - { key: vpc.amazonaws.com/efa, operator: Exists, effect: NoSchedule }
+        affinity:
+          podAntiAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector: { matchLabels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME} } }
+                topologyKey: kubernetes.io/hostname
+        #imagePullSecrets: [{ name: dynamo-efa-pull }]
+        volumes:
+          - { name: dshm,       emptyDir: { medium: Memory, sizeLimit: 64Gi } }
+          - { name: infiniband, hostPath: { path: /dev/infiniband, type: DirectoryOrCreate } }
+          - { name: gdrdrv,     hostPath: { path: /dev/gdrdrv, type: CharDevice } }
+          - { name: shared,     persistentVolumeClaim: { claimName: fsx-pvc } }
+        containers:
+          - name: vllm
+            image: ${REGISTRY}${IMAGE}${TAG}
+            imagePullPolicy: Always
+            securityContext: { capabilities: { add: ["IPC_LOCK"] } }
+            command: ["/bin/bash", "-c"]
+            args:
+              - |-
+                set -u
+                unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
+                      HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
+                source /opt/dynamo/venv/bin/activate
+                LOG=/shared/disagg-decode-p5en-$(date -u +%FT%TZ).log
+                python3 -c "import vllm; print(f'vllm {vllm.__version__}')" 2>&1 | tee -a "${DOLLAR}LOG"
+                grep -A2 "is_kv_consumer" /opt/dynamo/venv/lib/python3.12/site-packages/vllm/model_executor/models/config.py 2>&1 | tee -a "${DOLLAR}LOG"
+                for i in ${DOLLAR}(seq 1 60); do
+                  if getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" >/dev/null 2>&1; then break; fi
+                  sleep 2
+                done
+                LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk '{print ${DOLLAR}1}')
+                ray start --head --port=6379 --node-ip-address="${DOLLAR}LEADER_IP" --num-gpus=8 2>&1 | tee -a "${DOLLAR}LOG"
+                for i in ${DOLLAR}(seq 1 120); do
+                  N=${DOLLAR}(ray status 2>/dev/null | awk '/Active:/{flag=1; next} /Pending:|Recent failures:|Resources/{flag=0} flag' | grep -c node_ || true)
+                  if [ "${DOLLAR}{N:-0}" -ge 2 ]; then break; fi
+                  sleep 5
+                done
+                exec python3 -m dynamo.vllm \
+                  --model ${MODEL_PATH} \
+                  --served-model-name ${MODEL_NAME} \
+                  --tensor-parallel-size ${GPU_PER_WORKER} \
+                  --pipeline-parallel-size 2 \
+                  --distributed-executor-backend ray \
+                  --max-model-len 8192 \
+                  --gpu-memory-utilization 0.92 \
+                  --enforce-eager \
+                  --trust-remote-code \
+                  --mamba-cache-mode align \
+                  --load-format runai_streamer \
+                  --no-disable-hybrid-kv-cache-manager \
+                  --disaggregation-mode decode \
+                  --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_connector_extra_config":{"backends":["LIBFABRIC"]}}' 2>&1 | tee -a "${DOLLAR}LOG"
+            env:
+              - { name: MY_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
+              - { name: DYNAMO_BACKEND, value: vllm }
+              - { name: DYN_NAMESPACE, value: dynamo-disagg }
+              - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }
+              - { name: NATS_SERVER, value: "${NATS_URL}" }
+              - { name: HF_HOME, value: /shared/hf_cache }
+              - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
+              - { name: FI_PROVIDER, value: efa }
+              - { name: FI_EFA_USE_DEVICE_RDMA, value: "1" }
+              - { name: FI_EFA_FORK_SAFE, value: "1" }
+              - { name: FI_HMEM_CUDA_USE_DMABUF, value: "1" }
+              - { name: NIXL_LIBFABRIC_MAX_RAILS, value: "1" }
+              - { name: NIXL_SKIP_TOPOLOGY_CHECK, value: "1" }
+              - { name: NCCL_NET_PLUGIN, value: ofi }
+              - { name: NCCL_TUNER_PLUGIN, value: ofi }
+              - { name: OFI_NCCL_FORCE_NUM_RAILS, value: "4" }
+              - { name: NCCL_RUNTIME_CONNECT, value: "0" }
+              - { name: NCCL_NVLS_ENABLE, value: "1" }
+              - { name: NCCL_CUMEM_ENABLE, value: "1" }
+            ports: [{ containerPort: 9092, name: dyn-system }]
+            startupProbe:
+              httpGet: { path: /health, port: 9092 }
+              periodSeconds: 30
+              timeoutSeconds: 10
+              failureThreshold: 120
+            resources:
+              requests: { cpu: "96", memory: 1000Gi, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
+              limits:   { cpu: "96", memory: 1000Gi, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
+            volumeMounts:
+              - { name: dshm,       mountPath: /dev/shm }
+              - { name: infiniband, mountPath: /dev/infiniband }
+              - { name: gdrdrv,     mountPath: /dev/gdrdrv }
+              - { name: shared,     mountPath: /shared }
+    workerTemplate:
+      metadata:
+        labels:
+          app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
+          app.kubernetes.io/component: decode
+          dynamo-role: worker
+      spec:
+        hostNetwork: true
+        dnsPolicy: ClusterFirstWithHostNet
+        nodeSelector: { node.kubernetes.io/instance-type: ${INSTANCE_TYPE_WORKER} }
+        tolerations:
+          - { key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
+          - { key: vpc.amazonaws.com/efa, operator: Exists, effect: NoSchedule }
+        affinity:
+          podAntiAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector: { matchLabels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME} } }
+                topologyKey: kubernetes.io/hostname
+        #imagePullSecrets: [{ name: dynamo-efa-pull }]
+        volumes:
+          - { name: dshm,       emptyDir: { medium: Memory, sizeLimit: 64Gi } }
+          - { name: infiniband, hostPath: { path: /dev/infiniband, type: DirectoryOrCreate } }
+          - { name: gdrdrv,     hostPath: { path: /dev/gdrdrv, type: CharDevice } }
+          - { name: shared,     persistentVolumeClaim: { claimName: fsx-pvc } }
+        containers:
+          - name: vllm
+            image: ${REGISTRY}${IMAGE}${TAG}
+            imagePullPolicy: Always
+            securityContext: { capabilities: { add: ["IPC_LOCK"] } }
+            command: ["/bin/bash", "-c"]
+            args:
+              - |-
+                set -u
+                unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
+                      HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
+                source /opt/dynamo/venv/bin/activate
+                for i in ${DOLLAR}(seq 1 60); do
+                  if getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" >/dev/null 2>&1; then break; fi
+                  sleep 2
+                done
+                LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk '{print ${DOLLAR}1}')
+                for i in ${DOLLAR}(seq 1 60); do
+                  if (echo > /dev/tcp/$LEADER_IP/6379) 2>/dev/null; then break; fi
+                  sleep 5
+                done
+                exec ray start --address="${DOLLAR}LEADER_IP:6379" --node-ip-address="${DOLLAR}MY_IP" --num-gpus=8 --block
+            env:
+              - { name: MY_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
+              - { name: HF_HOME, value: /shared/hf_cache }
+              - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
+              - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }
+              - { name: NATS_SERVER, value: "${NATS_URL}" }
+              - { name: FI_PROVIDER, value: efa }
+              - { name: FI_EFA_USE_DEVICE_RDMA, value: "1" }
+              - { name: FI_EFA_FORK_SAFE, value: "1" }
+              - { name: FI_HMEM_CUDA_USE_DMABUF, value: "1" }
+              - { name: NIXL_LIBFABRIC_MAX_RAILS, value: "1" }
+              - { name: NIXL_SKIP_TOPOLOGY_CHECK, value: "1" }
+              - { name: NCCL_NET_PLUGIN, value: ofi }
+              - { name: NCCL_TUNER_PLUGIN, value: ofi }
+              - { name: OFI_NCCL_FORCE_NUM_RAILS, value: "4" }
+            resources:
+              requests: { cpu: "96", memory: 1000Gi, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
+              limits:   { cpu: "96", memory: 1000Gi, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
+            volumeMounts:
+              - { name: dshm,       mountPath: /dev/shm }
+              - { name: infiniband, mountPath: /dev/infiniband }
+              - { name: gdrdrv,     mountPath: /dev/gdrdrv }
+              - { name: shared,     mountPath: /shared }
+---
+# Frontend Deployment (separate from LWS, runs on cpu).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ${DEPLOYMENT_NAME}-frontend
+  namespace: ${NAMESPACE}
+  labels:
+    app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
+    app.kubernetes.io/component: frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
+      app.kubernetes.io/component: frontend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
+        app.kubernetes.io/component: frontend
+    spec:
+      nodeSelector:
+        node.kubernetes.io/instance-type: ${INSTANCE_TYPE_FRONTEND}
+      volumes:
+        - name: shared
+          persistentVolumeClaim: { claimName: fsx-pvc }
+      containers:
+        - name: frontend
+          image: ${REGISTRY}${IMAGE}${TAG}
+          imagePullPolicy: Always
+          command: ["/opt/dynamo/venv/bin/python3", "-m", "dynamo.frontend"]
+          args:
+            - --http-port
+            - "8000"
+            - --http-host
+            - "0.0.0.0"
+          env:
+            - { name: DYNAMO_BACKEND, value: vllm }
+            - { name: DYN_NAMESPACE, value: dynamo-disagg }
+            - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }
+            - { name: NATS_SERVER, value: "${NATS_URL}" }
+          ports:
+            - { containerPort: 8000, name: http }
+          readinessProbe:
+            tcpSocket: { port: 8000 }
+            periodSeconds: 10
+            failureThreshold: 30
+          resources:
+            requests: { cpu: "2", memory: 4Gi }
+            limits: { cpu: "4", memory: 8Gi }
+          volumeMounts:
+            - { name: shared, mountPath: /shared }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ${DEPLOYMENT_NAME}-frontend
+  namespace: $NAMESPACE
+  labels:
+    app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
+    app.kubernetes.io/component: frontend
+spec:
+  selector:
+    app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
+    app.kubernetes.io/component: frontend
+  ports:
+    - port: 8000
+      targetPort: 8000
+      name: http
+
