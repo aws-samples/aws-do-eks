@@ -12,6 +12,20 @@
 #       backends: ["LIBFABRIC"]    (NIXL on EFA, NOT UCX)
 #   - mamba-cache-mode align       (paired with vLLM PR #42522 patch in image)
 #
+# -----------------------------------------------------------------------------
+# FIXED here vs the upstream aws-do-eks copy (2026-06-07):
+#   (1) leaders now set DYN_SYSTEM_ENABLED=true + DYN_SYSTEM_PORT - the startupProbe
+#       httpGet /health:{9091,9092} gates on this; without it pods load but never go Ready.
+#   (2) decode worker now uses ${DOLLAR}LEADER_IP (was a bare $LEADER_IP that envsubst
+#       collapsed to /dev/tcp//6379, wasting the Ray-join wait).
+#
+# KNOWN-UNPROVEN (verified live on cgk, 2026-06-07): this TP8/PP2, 4-pod, multi-node-per-role
+#   + Ray-compiled-graph topology DEADLOCKS in decode for the hybrid-Mamba model. KV DOES transfer
+#   over EFA (decode rdma_read_bytes climbs), but all decode GPUs stay 0% and output_tokens=0 —
+#   the per-stage Mamba SSM state never passes across the 2 PP stages via the Ray static DAG.
+#   *** For a PROVEN serving path use the sibling deployment.yaml-template (TP8/PP1, single
+#   node per role) - that returns real chat completions with KV over EFA (510MB rdma_read). ***
+#   If PP2 is required, try VLLM_USE_RAY_COMPILED_DAG=0 (untested lead).
 # =============================================================================
 ---
 apiVersion: leaderworkerset.x-k8s.io/v1
@@ -113,6 +127,7 @@ spec:
               - { name: DYN_SYSTEM_PORT, value: "9091" }
               - { name: VLLM_LOGGING_LEVEL, value: INFO }
               - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
+              - { name: VLLM_USE_RAY_COMPILED_DAG, value: "0"}
               - { name: FI_PROVIDER, value: efa }
               - { name: FI_EFA_USE_DEVICE_RDMA, value: "1" }
               - { name: FI_EFA_FORK_SAFE, value: "1" }
@@ -194,6 +209,7 @@ spec:
               - { name: MY_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
               - { name: HF_HOME, value: /shared/hf_cache }
               - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
+              - { name: VLLM_USE_RAY_COMPILED_DAG, value: "0" }
               - { name: FI_PROVIDER, value: efa }
               - { name: FI_EFA_USE_DEVICE_RDMA, value: "1" }
               - { name: FI_EFA_FORK_SAFE, value: "1" }
@@ -305,6 +321,7 @@ spec:
               - { name: DYN_SYSTEM_ENABLED, value: "true" }
               - { name: DYN_SYSTEM_PORT, value: "9092" }
               - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
+              - { name: VLLM_USE_RAY_COMPILED_DAG, value: "0" }
               - { name: FI_PROVIDER, value: efa }
               - { name: FI_EFA_USE_DEVICE_RDMA, value: "1" }
               - { name: FI_EFA_FORK_SAFE, value: "1" }
@@ -373,7 +390,7 @@ spec:
                 done
                 LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk '{print ${DOLLAR}1}')
                 for i in ${DOLLAR}(seq 1 60); do
-                  if (echo > /dev/tcp/$LEADER_IP/6379) 2>/dev/null; then break; fi
+                  if (echo > /dev/tcp/${DOLLAR}LEADER_IP/6379) 2>/dev/null; then break; fi
                   sleep 5
                 done
                 exec ray start --address="${DOLLAR}LEADER_IP:6379" --node-ip-address="${DOLLAR}MY_IP" --num-gpus=8 --block
@@ -381,6 +398,7 @@ spec:
               - { name: MY_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
               - { name: HF_HOME, value: /shared/hf_cache }
               - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
+              - { name: VLLM_USE_RAY_COMPILED_DAG, value: "0" }
               - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }
               - { name: NATS_SERVER, value: "${NATS_URL}" }
               - { name: FI_PROVIDER, value: efa }
