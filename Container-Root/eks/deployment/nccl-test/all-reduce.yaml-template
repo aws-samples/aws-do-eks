@@ -47,6 +47,7 @@ spec:
       template:
         spec:
           restartPolicy: OnFailure
+          dnsPolicy: ClusterFirst
           containers:
             - image: ${IMAGE_URI}
               imagePullPolicy: Always
@@ -99,6 +100,7 @@ spec:
           tolerations:
             - { key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
             - { key: vpc.amazonaws.com/efa, operator: Exists, effect: NoSchedule }
+          dnsPolicy: ClusterFirst
           containers:
             - image: ${IMAGE_URI}
               imagePullPolicy: Always
