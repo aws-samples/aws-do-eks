@@ -24,3 +24,4 @@ Container-Root/SBOM.txt
 Container-Root/version.txt
 Container-Root/eks/deployment/topology/topograph/topograph/
 Container-Root/eks/deployment/nvidia-dynamo/dynamo-platform-*.tgz
+*.pkg
