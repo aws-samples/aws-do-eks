@@ -2,6 +2,14 @@
 
 Author: Anton Alexander
 
+> **Disclaimer.** This calculator is provided **free of charge, as a utility** to help quickly
+> **estimate** and plan model-serving topologies. It produces **first-order estimates and guidance only**.
+> AWS and the authors make **no representation, warranty, or guarantee** — express or implied — about model
+> performance, throughput, latency, cost, or fitness for any purpose, and **accept no liability** for any
+> outcome arising from its use. Actual measured results will differ from the calculated numbers. Always
+> validate on your own hardware with your own workload before making deployment or purchasing decisions.
+> The calculator is provided **"AS IS"** without support obligation.
+
 An architecture-first calculator that answers a single question for any model on any GPU:
 **should I serve it aggregated (prefill + decode on one worker) or disaggregated (prefill and decode
 split across workers, KV cache moved over the network)?** It derives the answer from the model's real
@@ -28,7 +36,7 @@ disagg-calculator/
     index.html       # interactive calculator (pick a model + GPU + workload → verdict), runs in-browser
     calculator.html  # the same engine as a single-purpose page (shareable link)
   docs/
-    PRODUCTION-GUIDE.md  # when to disaggregate vs. scale aggregated replicas — rules of thumb + worked cases
+    DEPLOYMENT-GUIDE.md  # when to disaggregate vs. scale aggregated replicas — rules of thumb + worked cases
     METHODOLOGY.md       # the math, the physics assumptions, and how the calibration loop refines them
 ```
 
@@ -77,7 +85,7 @@ accurate **without changing the physics**. See [docs/METHODOLOGY.md](docs/METHOD
 
 ## When to use which verdict
 
-See [docs/PRODUCTION-GUIDE.md](docs/PRODUCTION-GUIDE.md) for the rules of thumb. In short:
+See [docs/DEPLOYMENT-GUIDE.md](docs/DEPLOYMENT-GUIDE.md) for the rules of thumb. In short:
 
 - **Aggregated replicas** when: short-context chat, prefill cheap relative to decode, cost/throughput-bound,
   loose-to-moderate ITL SLO. At the 1P:1D floor, disaggregation buys little but costs ≥2× the GPUs.

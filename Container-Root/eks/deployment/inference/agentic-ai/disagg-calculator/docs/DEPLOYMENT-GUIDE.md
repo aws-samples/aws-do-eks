@@ -1,4 +1,4 @@
-# Production guide: aggregation vs disaggregation, end-to-end
+# Deployment guide: aggregation vs disaggregation, end-to-end
 
 *Author: Anton Alexander*  
 *Source: github.com/dmvevents/dynamo-disagg-optimizer · live: dmvevents.github.io/dynamo-disagg-optimizer/calculator.html*
@@ -7,7 +7,7 @@
 A decision-then-deploy runbook. You start with a model + an SLA + a budget, and finish with a deployed,
 benchmarked Dynamo serving config — having spent GPU hours **only where the cheap analytical layers said to**.
 
-The question this guide answers in production terms: **for MY model, instance, SLA, and budget — do I
+The question this guide answers in deployment terms: **for MY model, instance, SLA, and budget — do I
 aggregate or disaggregate prefill/decode, and what does each cost per million tokens?**
 
 > Latency and cost can disagree. Disaggregation often wins on **TTFT / SLA-attainment** while
@@ -119,10 +119,10 @@ python3 analyze/cost.py --instance p5en.48xlarge --config m.json \
    --price-per-hr <your_rate_if_capacity_block>      # default = live AWS on-demand
 ```
 Output: $/Mtok for agg vs disagg, cheaper-at-SLA, savings %, and the latency-vs-cost note. **This is the
-production decision artifact** — pair it with the SLA-attainment from step 6.
+deployment decision artifact** — pair it with the SLA-attainment from step 6.
 
 ## 8. DEPLOY the winner
-`kubectl apply -f <chosen YAML>` (or the aiconfigurator DGD). Re-run step 6 in prod periodically; pod-freshness
+`kubectl apply -f <chosen YAML>` (or the aiconfigurator DGD). Re-run step 6 in your live environment periodically; pod-freshness
 matters (a stale pod can show 4× worse latency — restart before trusting a baseline).
 
 ---

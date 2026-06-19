@@ -3,6 +3,10 @@
 Author: Anton Alexander
 Source: github.com/dmvevents/dynamo-disagg-optimizer · live: dmvevents.github.io/dynamo-disagg-optimizer/calculator.html
 
+DISCLAIMER: Provided free, as a utility, for estimation and planning ONLY. AWS and the authors make no
+warranty or guarantee of model performance and accept no liability for results obtained from its use.
+Actual measured numbers will differ; validate on your own hardware before deployment decisions. AS IS.
+
 calc.py — analytical "should I disaggregate?" model for ANY (instance, model, workload).
 
 Given an AWS instance type + model characteristics + workload SLO, estimate — WITHOUT running GPUs —
@@ -12,7 +16,7 @@ time, roofline regime). Outputs a JSON the HTML page + chart renderer + visual-L
 
 Grounded in first-order rooflines and CALIBRATED to this org's measured Nemotron-3 Ultra 550B / p5en
 numbers (see CAL/calibration below). It is an ESTIMATOR (order-of-magnitude + direction), not a simulator —
-it tells you where to spend GPU hours, then the live sweep (driver/sweep.py) confirms.
+it tells you where to spend GPU hours, then the live sweep (a live GPU sweep) confirms.
 
 Pure-Python stdlib only, so it runs headless and the HTML pages reimplement the SAME formulas in JS
 (kept honest by tests/parity.py, which asserts calc.py == calculator.html == index.html on a grid).
@@ -496,12 +500,12 @@ def _caveats(model: dict, itl_cal: dict | None = None) -> list[str]:
     if itl_cal is not None:
         if itl_cal.get("calibration_n", 0) >= 1:
             out.append("decode ITL is calibrated to a MEASURED anchor (n=%d, %s); raw roofline shown alongside. "
-                       "Single-point calibration — re-confirm off the bf16/H200/TP8 anchor with driver/sweep.py."
+                       "Single-point calibration — re-confirm off the bf16/H200/TP8 anchor with a live GPU sweep."
                        % (itl_cal["calibration_n"], itl_cal.get("calibration_confidence", "")))
         else:
             out.append("decode ITL is the RAW HBM roofline (no measured anchor for this family) — likely OPTIMISTIC "
                        "for eager-mode / low-concurrency; treat as a lower bound on latency.")
-    out.append("Estimator only: directionally accurate, calibrated to 550B/p5en (n=1). Confirm the verdict with driver/sweep.py on real GPUs.")
+    out.append("Estimator only: directionally accurate, calibrated to 550B/p5en (n=1). Confirm the verdict with a live GPU sweep on real GPUs.")
     return out
 
 

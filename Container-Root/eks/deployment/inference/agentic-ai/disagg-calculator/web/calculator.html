@@ -116,6 +116,13 @@
    transfer-toll vs interference → <b>verdict</b> → $/Mtok → optimal operating point.
    <b class="honest">Disaggregation is not free — it helps for some workloads and regresses for others. This tool tells you which: when it helps, when it&rsquo;s a no-op, and when it costs you (at the 1P:1D floor it&rsquo;s a latency play, not a cost play).</b>
    Physics mirrors <code>analyze/calc.py</code> + <code>cost.py</code> + <code>optimizer.py</code>, calibrated to measured 550B/p5en.</div>
+  <div style="margin:10px 0;padding:8px 12px;border:1px solid #c89b3c;background:#2a2410;color:#e8d9a0;border-radius:6px;font-size:12px;line-height:1.45">
+    <b>Disclaimer.</b> Provided free of charge, as a utility, for quick <b>estimation and planning only</b>. AWS and the
+    authors make <b>no representation, warranty, or guarantee</b> of model performance, throughput, latency, or cost, and
+    <b>accept no liability</b> for any outcome arising from its use. Actual measured results will differ from the
+    calculated numbers — always validate on your own hardware with your own workload before deployment or purchasing
+    decisions. Provided <b>&ldquo;AS IS&rdquo;</b>.
+  </div>
 </header>
 <div class="wrap">
   <!-- ============ INPUTS (the architecture) ============ -->
@@ -205,7 +212,7 @@
         <b>How to read this:</b> a <b>directional L0 screen</b>, calibrated to a single measured anchor
         (<b>n=1</b>): Nemotron-3 Ultra 550B, <b>bf16</b>, <b>H200 / p5en</b>, <b>TP8</b>. It models per-request
         single-stream latency — <b>not</b> a validated multi-tenant simulator. Confirm any verdict with
-        <code>driver/sweep.py</code> on real GPUs before acting.
+        <code>a live GPU sweep</code> on real GPUs before acting.
         <div class="provlegend">Number provenance:
           <span class="badge meas tiny">MEASURED</span> real GPU benchmark
           <span class="badge der tiny">DERIVED</span> computed from your inputs
