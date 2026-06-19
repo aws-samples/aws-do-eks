@@ -1,0 +1,3 @@
+{"model": "llama-3.1-70b", "family": "dense", "instance": "p5en.48xlarge", "isl": 512, "osl": 128, "metric": "itl_ms", "predicted": 22.44, "measured": 19.9, "source": "optimize/at-scale/results/l70-agg-result.json (live agg sweep, CUDA graphs on, conc16)", "date": "2026-06-14"}
+{"model": "llama-3.1-70b", "family": "dense", "instance": "p5en.48xlarge", "isl": 512, "osl": 128, "metric": "agg_req_s", "predicted": null, "measured": 3.54, "source": "l70-agg-result.json conc16 knee", "date": "2026-06-14"}
+{"model": "llama-3.1-70b", "family": "dense", "instance": "p5en.48xlarge", "isl": 512, "osl": 128, "metric": "disagg_req_s", "predicted": null, "measured": 3.17, "source": "l70-disagg-result.json conc16 (1P:1D, 4 GPU)", "date": "2026-06-14"}
