@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
 Author: Anton Alexander
-Source: github.com/dmvevents/dynamo-disagg-optimizer · live: dmvevents.github.io/dynamo-disagg-optimizer/calculator.html
 
 DISCLAIMER: Provided free, as a utility, for estimation and planning ONLY. AWS and the authors make no
 warranty or guarantee of model performance and accept no liability for results obtained from its use.

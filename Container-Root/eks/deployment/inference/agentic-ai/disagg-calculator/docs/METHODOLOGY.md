@@ -1,7 +1,6 @@
 # Methodology: deciding aggregation vs disaggregation, and finding the optimal settings — for ANY model on ANY compute
 
 *Author: Anton Alexander*  
-*Source: github.com/dmvevents/dynamo-disagg-optimizer · live: dmvevents.github.io/dynamo-disagg-optimizer/calculator.html*
 
 
 A **repeatable, model-agnostic, hardware-agnostic, engine-agnostic** process. Plug in a model (its HF

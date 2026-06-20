@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """
 Author: Anton Alexander
-Source: github.com/dmvevents/dynamo-disagg-optimizer · live: dmvevents.github.io/dynamo-disagg-optimizer/calculator.html
 
 calibration.py — close the loop: PREDICT → MEASURE → DELTA → CORRECTION-FACTOR, refined over time.
 

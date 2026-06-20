@@ -1,7 +1,6 @@
 # Deployment guide: aggregation vs disaggregation, end-to-end
 
 *Author: Anton Alexander*  
-*Source: github.com/dmvevents/dynamo-disagg-optimizer · live: dmvevents.github.io/dynamo-disagg-optimizer/calculator.html*
 
 
 A decision-then-deploy runbook. You start with a model + an SLA + a budget, and finish with a deployed,
@@ -18,7 +17,7 @@ aggregate or disaggregate prefill/decode, and what does each cost per million to
 > `calibration.py`) and the two browser pages — the cheap, run-anywhere screening tool. This runbook also
 > references the optional **live-sweep harness** (`driver/sweep.py`, `driver/goodput.py`, `cost.py`,
 > `render_charts.py`) and the L3 GPU benchmarking steps; those are the deeper research layer and live in the
-> companion project ([github.com/dmvevents/dynamo-disagg-optimizer](https://github.com/dmvevents/dynamo-disagg-optimizer)).
+> companion research harness (not required to use the calculator).
 > You do **not** need them to use the calculator — they're how the calculator gets calibrated against real
 > GPUs. Steps 0, 2 (L0), and 7 are self-contained here; steps 1, 3–6 point at the companion harness or
 > upstream tooling.
