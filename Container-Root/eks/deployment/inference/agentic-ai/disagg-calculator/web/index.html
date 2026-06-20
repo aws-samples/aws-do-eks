@@ -5,12 +5,18 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>Aggregation vs Disaggregation Optimizer — should you split prefill/decode?</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Crect width=%2716%27 height=%2716%27 rx=%273%27 fill=%27%230d1117%27/%3E%3Crect x=%273%27 y=%279%27 width=%273%27 height=%274%27 fill=%27%2358a6ff%27/%3E%3Crect x=%277%27 y=%276%27 width=%273%27 height=%277%27 fill=%27%23d29922%27/%3E%3Crect x=%2711%27 y=%273%27 width=%273%27 height=%2710%27 fill=%27%233fb950%27/%3E%3C/svg%3E">
 <!-- Self-contained client-side tool. NO API keys here. Mirrors analyze/calc.py physics in JS.
      Chart.js from CDN (charts only); the optional visual-LLM verdict is a server-side step (analyze/visual_verdict.py). -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
  :root{--bg:#0d1117;--card:#161b22;--fg:#e6edf3;--mut:#8b949e;--acc:#58a6ff;--ok:#3fb950;--warn:#d29922;--bad:#f85149}
  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 system-ui,Segoe UI,Roboto,sans-serif}
+ .disclaimer{margin:10px 24px 0;padding:9px 13px;border:1px solid #c89b3c;border-left:4px solid #c89b3c;background:#2a2410;color:#e8d9a0;border-radius:6px;font-size:12px;line-height:1.5}
+ .disclaimer b{color:#f0c552}
+ .glossary{margin:8px 24px 0;font-size:12px;color:var(--mut)} .glossary summary{cursor:pointer;color:var(--acc)}
+ .gloss-grid{display:grid;grid-template-columns:1fr 1fr;gap:3px 24px;margin-top:6px} .gloss-grid b{color:var(--fg)}
+ @media(max-width:760px){.gloss-grid{grid-template-columns:1fr}}
  header{padding:18px 24px;border-bottom:1px solid #30363d} h1{margin:0;font-size:19px} .sub{color:var(--mut);font-size:13px;margin-top:4px}
  h1 .brand{color:var(--mut);font-weight:400}            /* decision leads; the descriptor rides along, de-emphasized */
  .sub .honest{color:var(--fg)}                          /* the agg-vs-disagg honesty line reads as a feature, not a footnote */
@@ -24,10 +30,27 @@
    .grid{grid-template-columns:1fr}      /* charts + KPI stack */
    canvas{max-height:300px}
    table.sens{display:block;overflow-x:auto}   /* sensitivity tables scroll, page doesn't */
+   table.uc{display:block;overflow-x:auto;max-width:100%}   /* use-case table scrolls within itself, not the page */
+   .card{padding:12px;min-width:0}             /* cards must not force min-content width on mobile */
+   .wrap>div{min-width:0}                       /* grid children shrink instead of overflowing */
+ }
+ html,body{overflow-x:hidden}                    /* belt-and-suspenders: no page-level horizontal scroll */
+ @media(prefers-reduced-motion:reduce){*{animation-duration:.001ms!important;transition-duration:.001ms!important}}  /* WCAG 2.3.3 — respect motion sensitivity */
+ /* print / PDF: people screenshot+PDF a verdict for sign-off — keep it legible + the disclaimer must survive */
+ @media print{
+   :root{--bg:#fff;--card:#fff;--fg:#111;--mut:#444}
+   body{background:#fff;color:#111}
+   details{display:block!important} details>summary{font-weight:600}  /* expand glossary/methodology in print */
+   .disclaimer{border:1px solid #b8860b;background:#fff8e6;color:#5a4500;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+   button,.opt-none{display:none}                                     /* hide interactive-only controls */
+   .card{border:1px solid #ccc;break-inside:avoid}
+   .topo,.diag,pre,.formula{background:#f6f8fa!important;color:#111!important;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+   .explain{break-inside:avoid}
  }
  label{display:block;color:var(--mut);font-size:12px;margin:10px 0 3px} input,select{width:100%;background:#0d1117;color:var(--fg);border:1px solid #30363d;border-radius:6px;padding:7px}
  .row{display:grid;grid-template-columns:1fr 1fr;gap:10px} button{margin-top:14px;width:100%;background:var(--acc);color:#06121f;border:0;border-radius:6px;padding:10px;font-weight:600;cursor:pointer}
- .verdict{font-size:22px;font-weight:700;margin:4px 0} .verdict.disaggregate{color:var(--ok)} .verdict.hybrid{color:var(--warn)} .verdict.aggregate{color:var(--acc)}
+ .verdict{font-size:30px;font-weight:800;margin:4px 0;letter-spacing:-.3px;line-height:1.15} .verdict.disaggregate{color:var(--ok)} .verdict.hybrid{color:var(--warn)} .verdict.aggregate{color:var(--acc)}
+ .verdict-label{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--mut);font-weight:600;margin-top:6px}
  /* verdict carries a SHAPE prefix too (CSS ::before keyed on the verdict class the JS sets), so the
     meaning is never color-only — passes a11y / colorblind. Pure presentation; no JS change. */
  .verdict::before{font-family:ui-monospace,Menlo,monospace;margin-right:9px;font-size:18px;vertical-align:1px}
@@ -139,14 +162,18 @@
 <body>
 <header>
   <h1>Aggregation vs Disaggregation Optimizer <span class="brand">— should you split prefill/decode?</span></h1>
-  <div class="sub">Enter an AWS instance + model + workload → get the <b>topology verdict</b>: aggregate, hybrid, or disaggregate. <b class="honest">Disaggregation is not free — it helps for some workloads and regresses for others. This tool tells you which: when it helps, when it&rsquo;s a no-op, and when it costs you (at the 1P:1D floor it&rsquo;s a latency play, not a cost play).</b> Physics mirrors <code>analyze/calc.py</code>; calibrated to measured Nemotron-3 Ultra 550B / p5en. Estimator — confirm with a live sweep.</div>
-  <div style="margin:10px 0;padding:8px 12px;border:1px solid #c89b3c;background:#2a2410;color:#e8d9a0;border-radius:6px;font-size:12px;line-height:1.45">
-    <b>Disclaimer.</b> Provided free of charge, as a utility, for quick <b>estimation and planning only</b>. AWS and the
-    authors make <b>no representation, warranty, or guarantee</b> of model performance, throughput, latency, or cost, and
-    <b>accept no liability</b> for any outcome arising from its use. Actual measured results will differ from the
-    calculated numbers — always validate on your own hardware with your own workload before deployment or purchasing
-    decisions. Provided <b>&ldquo;AS IS&rdquo;</b>.
-  </div>
+  <div class="sub">Enter an AWS instance + model + workload → get the <b>topology verdict</b>: aggregate, hybrid, or disaggregate. <b class="honest">Disaggregation is not free — it helps for some workloads and regresses for others. This tool tells you which: when it helps, when it&rsquo;s a no-op, and when it costs you (at the 1P:1D floor it&rsquo;s a latency play, not a cost play).</b> Physics mirrors <code>analyze/calc.py</code>; calibrated to measured Nemotron-3 Ultra 550B / p5en. Estimator — confirm with a live GPU sweep.</div>
+  <div class="disclaimer" role="note" aria-label="Disclaimer"><b>⚠ Disclaimer:</b> Provided free, as a utility, for quick <b>estimation and planning only</b>. AWS and the authors make <b>no representation, warranty, or guarantee</b> of model performance, throughput, latency, or cost, and <b>accept no liability</b> for any outcome of its use. Actual measured results will differ — always validate on your own hardware before deployment or purchasing decisions. Provided <b>&ldquo;AS IS&rdquo;</b>.</div>
+  <details class="glossary"><summary>Glossary — terms used below</summary>
+    <div class="gloss-grid">
+      <span><b>ISL</b> input seq length (prompt tokens)</span><span><b>OSL</b> output seq length (generated tokens)</span>
+      <span><b>KV</b> key/value attention cache</span><span><b>HBM</b> GPU high-bandwidth memory</span>
+      <span><b>TTFT</b> time to first token</span><span><b>ITL/TPOT</b> inter-token latency / time per output token</span>
+      <span><b>SLO/SLA</b> latency target / service-level agreement</span><span><b>TP/PP</b> tensor / pipeline parallelism</span>
+      <span><b>1P:1D</b> 1 prefill : 1 decode worker</span><span><b>MFU/MBU</b> model-FLOP / memory-bandwidth utilization</span>
+      <span><b>RDMA</b> remote direct memory access (EFA)</span><span><b>$/Mtok</b> cost per 1M output tokens</span>
+    </div>
+  </details>
 </header>
 
 <!-- ============ EXPLAINER ============ -->
@@ -284,6 +311,11 @@ fav          = toll × interference
     <p>Intuition: <b>disaggregation only pays off when it removes a lot of decode-stalling interference AND the KV cache
     is cheap to move.</b> Long prompts + short outputs raise interference (favors disagg); short prompts, or a fat KV
     cache over a slow link, raise the toll (favors agg). The verdict is a sliding scale, not a coin flip.</p>
+    <p class="mut" style="font-size:12.5px">Under the hood the two inputs are <b>not</b> naive rooflines — <code>prefill_ms</code> adds the
+    <b>O(ISL²) quadratic-attention</b> term (dominates at long context, not just linear <code>2·P·ISL</code>) scaled by the
+    <b>quantized peak</b> (fp8 ≈2×, fp4 ≈4× vs bf16); <code>decode_ITL</code> adds the <b>context-dependent KV-read</b> (each token
+    re-reads the whole KV cache so far) on top of the measured family calibration; and chunked-prefill recovery, the hybrid-Mamba
+    constant SSM state, and an SLO gate are all folded in. Every one mirrors <code>analyze/calc.py</code> exactly (parity-tested).</p>
   </div>
 </details>
 
@@ -490,6 +522,8 @@ fav          = toll × interference
   </div>
 </div>
 <script>
+// a11y (WCAG 2.3.3): respect prefers-reduced-motion — disable Chart.js animation for motion-sensitive users.
+try{ if(window.Chart && window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches){ Chart.defaults.animation=false; } }catch(e){}
 // ---- mirror of analyze/calc.py (keep in sync) ----
 // hbm_GBs = HBM BANDWIDTH per GPU (decode roofline); hbm_cap_GB = HBM CAPACITY per GPU (memory fit / KV budget).
 const INSTANCES={
@@ -701,10 +735,10 @@ let charts={};
 // a11y: write a one-line text summary under a chart (screen-reader / no-canvas fallback).
 // pure DOM text write; touches no physics. no-op if the element is absent.
 function _sum(id,txt){ const el=document.getElementById(id); if(el) el.textContent=txt; }
-function bar(id,labels,data,colors,title){
+function bar(id,labels,data,colors,title,xlab,ylab){
  if(charts[id])charts[id].destroy();
  charts[id]=new Chart(document.getElementById(id),{type:'bar',data:{labels,datasets:[{label:title,data,backgroundColor:colors}]},
-  options:{plugins:{legend:{display:false},title:{display:true,text:title,color:'#e6edf3'}},scales:{x:{ticks:{color:'#8b949e'}},y:{ticks:{color:'#8b949e'}}}}});
+  options:{plugins:{legend:{display:false},title:{display:true,text:title,color:'#e6edf3'}},scales:{x:{title:xlab?{display:true,text:xlab,color:'#8b949e'}:{display:false},ticks:{color:'#8b949e'}},y:{title:ylab?{display:true,text:ylab,color:'#8b949e'}:{display:false},ticks:{color:'#8b949e'}}}}});
 }
 function run(){
  syncUseCase();   // keep the use-case dropdown + hint in sync with whatever ISL/OSL currently are
@@ -720,16 +754,16 @@ function run(){
  document.getElementById('cav').textContent = m.family==="hybrid-mamba"?"⚠ hybrid-Mamba: PP1 only on EFA; KV pull descriptor-bound. Confirm with a live GPU sweep.":"Estimator — confirm verdict with a live GPU sweep on real GPUs.";
  kKV.textContent=r.kv_MB.toFixed(1)+" MB"; kXfer.textContent=r.xfer.toFixed(1)+" ms"; kPre.textContent=r.pre.toFixed(0)+" ms";
  kITL.textContent=r.itl.toFixed(1)+" ms"; kLine.textContent=r.line.toFixed(0)+" GB/s"; kImb.textContent=r.imb.toFixed(1)+"×";
- bar('cTime',['KV xfer','Prefill','Decode/tok','Decode phase'],[r.xfer,r.pre,r.itl,r.dphase],['#58a6ff','#d29922','#3fb950','#8957e5'],'Latency components (ms)');
+ bar('cTime',['KV xfer','Prefill','Decode/tok','Decode phase'],[r.xfer,r.pre,r.itl,r.dphase],['#58a6ff','#d29922','#3fb950','#8957e5'],'Latency components',null,'milliseconds');
  _sum('cTime_sum','Latency components (ms): KV transfer '+r.xfer.toFixed(1)+', prefill '+r.pre.toFixed(0)+', decode/token '+r.itl.toFixed(1)+', full decode phase '+r.dphase.toFixed(0)+'.');
  // favorability sweep over OSL to show where the verdict flips
  const osls=[64,128,256,512,1024],favs=osls.map(o=>analyze(g,m,{isl:wl.isl,osl:o}).fav);
  if(charts.cFav)charts.cFav.destroy();
- charts.cFav=new Chart(document.getElementById('cFav'),{type:'line',data:{labels:osls,datasets:[{label:'disagg favorability vs OSL',data:favs,borderColor:'#3fb950',tension:.3}]},options:{plugins:{title:{display:true,text:'Disagg favorability vs output length',color:'#e6edf3'},legend:{display:false}},scales:{x:{title:{display:true,text:'OSL',color:'#8b949e'},ticks:{color:'#8b949e'}},y:{min:0,max:1,ticks:{color:'#8b949e'}}}}});
+ charts.cFav=new Chart(document.getElementById('cFav'),{type:'line',data:{labels:osls,datasets:[{label:'disagg favorability vs OSL',data:favs,borderColor:'#3fb950',tension:.3}]},options:{plugins:{title:{display:true,text:'Disagg favorability vs output length',color:'#e6edf3'},legend:{display:false}},scales:{x:{title:{display:true,text:'OSL — output length (tokens)',color:'#8b949e'},ticks:{color:'#8b949e'}},y:{min:0,max:1,title:{display:true,text:'disagg favorability (0–1)',color:'#8b949e'},ticks:{color:'#8b949e'}}}}});
  _sum('cFav_sum','Disagg favorability (0–1) as output length grows '+osls[0]+'→'+osls[osls.length-1]+' tokens: '+favs.map(x=>x.toFixed(2)).join(' → ')+'. Disaggregate ≥ '+r.thr_disagg.toFixed(2)+', hybrid ≥ '+r.thr_hybrid.toFixed(2)+'.');
  // KV vs ISL
  const isls=[256,512,1024,2048,4096,8192],kvs=isls.map(s=>analyze(g,m,{isl:s,osl:wl.osl}).kv_MB);
- bar('cKV',isls,kvs,isls.map(()=>'#58a6ff'),'KV cache per request vs ISL (MB)');
+ bar('cKV',isls,kvs,isls.map(()=>'#58a6ff'),'KV cache per request','ISL — input length (tokens)','KV cache (MB)');
  _sum('cKV_sum','KV cache per request (MB) as input length grows '+isls[0]+'→'+isls[isls.length-1]+' tokens: '+kvs.map(x=>x.toFixed(0)).join(' → ')+'.');
 
  // ---- COST / SLA panel + charts ----
@@ -743,7 +777,7 @@ function run(){
    ? "⚠ Cost and latency DISAGREE: latency favors "+r.v.toUpperCase()+", cost favors "+c.cheaper.toUpperCase()+". Disagg buys TTFT/SLA-attainment; agg buys $/token. Choose on your priority."
    : "Cost and latency agree on "+c.cheaper.toUpperCase()+".";
  bar('cCost',['aggregation ('+c.aggGpu+'gpu)','disaggregation ('+c.disGpu+'gpu)'],[c.aggC,c.disC],
-     ['#58a6ff', c.disC<=c.aggC?'#3fb950':'#f85149'],'Cost per 1M output tokens ($)');
+     ['#58a6ff', c.disC<=c.aggC?'#3fb950':'#f85149'],'Cost per 1M output tokens',null,'$ / 1M tok');
  _sum('cCost_sum','Cost per 1M output tokens: aggregation ($'+c.aggC.toFixed(2)+', '+c.aggGpu+' GPU) vs disaggregation ($'+c.disC.toFixed(2)+', '+c.disGpu+' GPU). Cheaper: '+c.cheaper+'.');
  // cost vs concurrency crossover (agg saturates at interference; disagg scales further)
  const concs=[1,4,16,64,256], base=(1000/r.itl)*0.9;

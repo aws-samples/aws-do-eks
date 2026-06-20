@@ -5,12 +5,26 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1"/>
 <title>Agg-vs-Disagg Calculator — work backwards from the model architecture</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Crect width=%2716%27 height=%2716%27 rx=%273%27 fill=%27%230d1117%27/%3E%3Crect x=%273%27 y=%279%27 width=%273%27 height=%274%27 fill=%27%2358a6ff%27/%3E%3Crect x=%277%27 y=%276%27 width=%273%27 height=%277%27 fill=%27%23d29922%27/%3E%3Crect x=%2711%27 y=%273%27 width=%273%27 height=%2710%27 fill=%27%233fb950%27/%3E%3C/svg%3E">
 <!-- Self-contained. NO API keys. Physics is a faithful JS port of analyze/calc.py + cost.py + optimizer.py
      (calibrated to MEASURED Nemotron-3 Ultra 550B / p5en anchors). Chart.js (CDN) for the two charts only. -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
  :root{--bg:#0d1117;--card:#161b22;--card2:#1c2230;--fg:#e6edf3;--mut:#8b949e;--acc:#58a6ff;--ok:#3fb950;--warn:#d29922;--bad:#f85149;--line:#30363d}
  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 system-ui,Segoe UI,Roboto,sans-serif}
+ .disclaimer{margin:10px 24px 0;padding:9px 13px;border:1px solid #c89b3c;border-left:4px solid #c89b3c;background:#2a2410;color:#e8d9a0;border-radius:6px;font-size:12px;line-height:1.5}
+ .disclaimer b{color:#f0c552}
+ .glossary{margin:8px 24px 0;font-size:12px;color:var(--mut)} .glossary summary{cursor:pointer;color:var(--acc)}
+ .gloss-grid{display:grid;grid-template-columns:1fr 1fr;gap:3px 24px;margin-top:6px} .gloss-grid b{color:var(--fg)}
+ @media(max-width:760px){.gloss-grid{grid-template-columns:1fr}}
+ @media print{
+   :root{--bg:#fff;--card:#fff;--card2:#fff;--fg:#111;--mut:#444}
+   body{background:#fff;color:#111}
+   details{display:block!important} details>summary{font-weight:600}
+   .disclaimer{border:1px solid #b8860b;background:#fff8e6;color:#5a4500;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+   button{display:none} .card,.step{border:1px solid #ccc;break-inside:avoid}
+ }
+ @media(prefers-reduced-motion:reduce){*{animation-duration:.001ms!important;transition-duration:.001ms!important}}  /* WCAG 2.3.3 */
  header{padding:16px 24px;border-bottom:1px solid var(--line)} h1{margin:0;font-size:19px} .sub{color:var(--mut);font-size:13px;margin-top:4px}
  .sub .honest{color:var(--fg)}                          /* the agg-vs-disagg honesty line reads as a feature, not a footnote (mirrors index.html) */
  .wrap{display:grid;grid-template-columns:340px 1fr;gap:18px;padding:18px 24px;align-items:start}
@@ -27,7 +41,7 @@
  .ad{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:6px}
  .ad>div{background:var(--card2);border-radius:6px;padding:8px 10px} .ad .h{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut)}
  .agg .h{color:var(--acc)} .dis .h{color:var(--ok)}
- .verdict{font-size:24px;font-weight:800;margin:2px 0} .disaggregate{color:var(--ok)} .hybrid{color:var(--warn)} .aggregate{color:var(--acc)}
+ .verdict{font-size:28px;font-weight:800;margin:2px 0;letter-spacing:-.3px} .disaggregate{color:var(--ok)} .hybrid{color:var(--warn)} .aggregate{color:var(--acc)}
  /* verdict carries a SHAPE prefix too (CSS ::before keyed on the verdict class the JS sets) — meaning is
     never color-only, so it passes a11y / colorblind. Pure presentation; no JS change. */
  .verdict::before{font-family:ui-monospace,Menlo,monospace;margin-right:9px;font-size:19px;vertical-align:1px}
@@ -116,13 +130,17 @@
    transfer-toll vs interference → <b>verdict</b> → $/Mtok → optimal operating point.
    <b class="honest">Disaggregation is not free — it helps for some workloads and regresses for others. This tool tells you which: when it helps, when it&rsquo;s a no-op, and when it costs you (at the 1P:1D floor it&rsquo;s a latency play, not a cost play).</b>
    Physics mirrors <code>analyze/calc.py</code> + <code>cost.py</code> + <code>optimizer.py</code>, calibrated to measured 550B/p5en.</div>
-  <div style="margin:10px 0;padding:8px 12px;border:1px solid #c89b3c;background:#2a2410;color:#e8d9a0;border-radius:6px;font-size:12px;line-height:1.45">
-    <b>Disclaimer.</b> Provided free of charge, as a utility, for quick <b>estimation and planning only</b>. AWS and the
-    authors make <b>no representation, warranty, or guarantee</b> of model performance, throughput, latency, or cost, and
-    <b>accept no liability</b> for any outcome arising from its use. Actual measured results will differ from the
-    calculated numbers — always validate on your own hardware with your own workload before deployment or purchasing
-    decisions. Provided <b>&ldquo;AS IS&rdquo;</b>.
-  </div>
+  <div class="disclaimer" role="note" aria-label="Disclaimer"><b>⚠ Disclaimer:</b> Provided free, as a utility, for quick <b>estimation and planning only</b>. AWS and the authors make <b>no representation, warranty, or guarantee</b> of model performance, throughput, latency, or cost, and <b>accept no liability</b> for any outcome of its use. Actual measured results will differ — always validate on your own hardware before deployment or purchasing decisions. Provided <b>&ldquo;AS IS&rdquo;</b>.</div>
+  <details class="glossary"><summary>Glossary — terms used below</summary>
+    <div class="gloss-grid">
+      <span><b>ISL</b> input seq length (prompt tokens)</span><span><b>OSL</b> output seq length (generated tokens)</span>
+      <span><b>KV</b> key/value attention cache</span><span><b>HBM</b> GPU high-bandwidth memory</span>
+      <span><b>TTFT</b> time to first token</span><span><b>ITL/TPOT</b> inter-token latency / time per output token</span>
+      <span><b>SLO/SLA</b> latency target / service-level agreement</span><span><b>TP/PP</b> tensor / pipeline parallelism</span>
+      <span><b>1P:1D</b> 1 prefill : 1 decode worker</span><span><b>MFU/MBU</b> model-FLOP / memory-bandwidth utilization</span>
+      <span><b>RDMA</b> remote direct memory access (EFA)</span><span><b>$/Mtok</b> cost per 1M output tokens</span>
+    </div>
+  </details>
 </header>
 <div class="wrap">
   <!-- ============ INPUTS (the architecture) ============ -->
@@ -356,6 +374,8 @@
 </div>
 
 <script>
+// a11y (WCAG 2.3.3): respect prefers-reduced-motion — disable Chart.js animation for motion-sensitive users.
+try{ if(window.Chart && window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches){ Chart.defaults.animation=false; } }catch(e){}
 // ============================ physics constants (mirror analyze/) ============================
 const INSTANCES = {
  "p5.48xlarge":     {gpu:"H100", gpus:8, hbm_GBs:3350, hbm_cap_GB:80,  fp16_TFLOPs:989,  efa_nics:32, efa_Gbps:100, nvlink_GBs:900},
