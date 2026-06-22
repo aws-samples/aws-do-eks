@@ -1,0 +1,752 @@
+<!DOCTYPE html>
+<!-- Author: Anton Alexander -->
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Agg-vs-Disagg Calculator — work backwards from the model architecture</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 16 16%27%3E%3Crect width=%2716%27 height=%2716%27 rx=%273%27 fill=%27%230d1117%27/%3E%3Crect x=%273%27 y=%279%27 width=%273%27 height=%274%27 fill=%27%2358a6ff%27/%3E%3Crect x=%277%27 y=%276%27 width=%273%27 height=%277%27 fill=%27%23d29922%27/%3E%3Crect x=%2711%27 y=%273%27 width=%273%27 height=%2710%27 fill=%27%233fb950%27/%3E%3C/svg%3E">
+<!-- Self-contained. NO API keys. Physics is a faithful JS port of analyze/calc.py + cost.py + optimizer.py
+     (calibrated to MEASURED Nemotron-3 Ultra 550B / p5en anchors). Chart.js (CDN) for the two charts only. -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+ :root{--bg:#0d1117;--card:#161b22;--card2:#1c2230;--fg:#e6edf3;--mut:#8b949e;--acc:#58a6ff;--ok:#3fb950;--warn:#d29922;--bad:#f85149;--line:#30363d}
+ *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--fg);font:14px/1.5 system-ui,Segoe UI,Roboto,sans-serif}
+ .disclaimer{margin:10px 24px 0;padding:9px 13px;border:1px solid #c89b3c;border-left:4px solid #c89b3c;background:#2a2410;color:#e8d9a0;border-radius:6px;font-size:12px;line-height:1.5}
+ .disclaimer b{color:#f0c552}
+ .glossary{margin:8px 24px 0;font-size:12px;color:var(--mut)} .glossary summary{cursor:pointer;color:var(--acc)}
+ .gloss-grid{display:grid;grid-template-columns:1fr 1fr;gap:3px 24px;margin-top:6px} .gloss-grid b{color:var(--fg)}
+ @media(max-width:760px){.gloss-grid{grid-template-columns:1fr}}
+ @media print{
+   :root{--bg:#fff;--card:#fff;--card2:#fff;--fg:#111;--mut:#444}
+   body{background:#fff;color:#111}
+   details{display:block!important} details>summary{font-weight:600}
+   .disclaimer{border:1px solid #b8860b;background:#fff8e6;color:#5a4500;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+   button{display:none} .card,.step{border:1px solid #ccc;break-inside:avoid}
+ }
+ @media(prefers-reduced-motion:reduce){*{animation-duration:.001ms!important;transition-duration:.001ms!important}}  /* WCAG 2.3.3 */
+ header{padding:16px 24px;border-bottom:1px solid var(--line)} h1{margin:0;font-size:19px} .sub{color:var(--mut);font-size:13px;margin-top:4px}
+ .sub .honest{color:var(--fg)}                          /* the agg-vs-disagg honesty line reads as a feature, not a footnote (mirrors index.html) */
+ .wrap{display:grid;grid-template-columns:340px 1fr;gap:18px;padding:18px 24px;align-items:start}
+ .card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:14px}
+ .card h3{margin:0 0 8px;font-size:13px;color:var(--acc);text-transform:uppercase;letter-spacing:.04em}
+ label{display:block;color:var(--mut);font-size:12px;margin:8px 0 2px} input,select{width:100%;background:#0d1117;color:var(--fg);border:1px solid var(--line);border-radius:6px;padding:6px}
+ .row{display:grid;grid-template-columns:1fr 1fr;gap:8px} .row3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+ button{margin-top:12px;width:100%;background:var(--acc);color:#06121f;border:0;border-radius:6px;padding:9px;font-weight:600;cursor:pointer}
+ /* derivation chain */
+ .step{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--acc);border-radius:8px;padding:12px 14px;margin-bottom:10px}
+ .step .n{display:inline-block;width:20px;height:20px;line-height:20px;text-align:center;background:var(--acc);color:#06121f;border-radius:50%;font-size:11px;font-weight:700;margin-right:8px}
+ .step .t{font-weight:600} .step .f{color:var(--mut);font-size:12px;font-family:ui-monospace,Menlo,monospace;margin:4px 0 6px}
+ .step .v{font-size:15px} .step .v b{color:var(--fg)}
+ .ad{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:6px}
+ .ad>div{background:var(--card2);border-radius:6px;padding:8px 10px} .ad .h{font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--mut)}
+ .agg .h{color:var(--acc)} .dis .h{color:var(--ok)}
+ .verdict{font-size:28px;font-weight:800;margin:2px 0;letter-spacing:-.3px} .disaggregate{color:var(--ok)} .hybrid{color:var(--warn)} .aggregate{color:var(--acc)}
+ /* verdict carries a SHAPE prefix too (CSS ::before keyed on the verdict class the JS sets) — meaning is
+    never color-only, so it passes a11y / colorblind. Pure presentation; no JS change. */
+ .verdict::before{font-family:ui-monospace,Menlo,monospace;margin-right:9px;font-size:19px;vertical-align:1px}
+ .verdict.disaggregate::before{content:"▲"} .verdict.hybrid::before{content:"◆"} .verdict.aggregate::before{content:"■"}
+ .mut{color:var(--mut)} .kpi{display:flex;justify-content:space-between;border-bottom:1px solid #21262d;padding:4px 0;font-size:13px} .kpi b{color:var(--fg)}
+ .pill{display:inline-block;padding:1px 8px;border-radius:10px;font-size:11px;font-weight:600}
+ .pill.fits{background:#13351f;color:var(--ok)} .pill.tight{background:#3a2f12;color:var(--warn)} .pill.nofit{background:#3a1718;color:var(--bad)}
+ canvas{max-height:230px} code{background:#0d1117;padding:1px 5px;border-radius:4px;font-size:12px} .warnote{color:var(--warn);font-size:12px;margin-top:6px}
+ .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+ .arch{font-size:12px;color:var(--mut)} .small{font-size:11px;color:var(--mut)}
+ .ucwrap{background:var(--card2);border:1px solid var(--acc);border-radius:8px;padding:8px 10px;margin:2px 0 8px}
+ .ucwrap label{margin-top:0} .ucsel{border-color:var(--acc)!important}
+ .uchint{font-size:11px;color:var(--mut);margin-top:5px;line-height:1.45}
+ .trustchip{display:inline-flex;align-items:center;gap:7px;background:#0c1f13;border:1px solid var(--ok);border-radius:999px;padding:4px 11px;margin:10px 0 0;font-size:11.5px;color:var(--fg);line-height:1.4}
+ .trustchip .dot{width:7px;height:7px;border-radius:50%;background:var(--ok);flex:none} .trustchip b{color:#56d364}
+ /* ---- topology explainer (3 cards + inline SVG diagrams) — shared verdict vocabulary with index.html ---- */
+ .topohead{font-size:15px;margin:2px 0 3px;color:var(--fg)} .topolead{color:var(--mut);font-size:12px;margin-bottom:10px;line-height:1.5}
+ .topo3{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+ @media(max-width:1080px){.topo3{grid-template-columns:1fr}}
+ .topo{background:var(--card2);border:1px solid var(--line);border-radius:10px;padding:12px;border-top:3px solid var(--line)}
+ .topo.agg{border-top-color:var(--acc)} .topo.hyb{border-top-color:var(--warn)} .topo.dis{border-top-color:var(--ok)}
+ .topo h4{margin:0 0 4px;font-size:14px} .topo.agg h4{color:var(--acc)} .topo.hyb h4{color:var(--warn)} .topo.dis h4{color:var(--ok)}
+ .topo svg.topodiag{display:block;width:100%;max-width:100%;height:auto;background:#0d1117;border:1px solid #21262d;border-radius:6px;margin:8px 0}
+ .topodiag .node{fill:#0d1117;stroke:#30363d;stroke-width:1.5}
+ .topodiag .gpu{fill:#161b22;stroke-width:1.4} .topodiag .lbl{fill:var(--fg);font:600 9px ui-monospace,Menlo,monospace} .topodiag .lbl-sm{fill:var(--mut);font:8px ui-monospace,Menlo,monospace}
+ .topodiag .tag{font:700 7.5px ui-monospace,Menlo,monospace} .topodiag .note{fill:var(--mut);font:italic 8px system-ui,sans-serif}
+ .topo.agg .topodiag .gpu{stroke:var(--acc)} .topo.hyb .topodiag .gpu{stroke:var(--warn)} .topo.dis .topodiag .gpu{stroke:var(--ok)}
+ .topo p{margin:6px 0;font-size:12px;color:var(--fg)} .topo .pick{color:var(--mut);font-size:11.5px;margin-top:6px} .topo .pick b{color:var(--fg)} .topo .def code{font-size:11px}
+ .collision{background:#11203a;border:1px solid var(--acc);border-radius:8px;padding:10px;margin:12px 0 0;font-size:12px;line-height:1.5}
+ /* ---- provenance badges (MEASURED / DERIVED / ASSUMED n=1) — shared vocabulary with index.html ---- */
+ .badge{font-size:10px;font-weight:700;padding:1px 6px;border-radius:4px;margin-left:6px;white-space:nowrap;letter-spacing:.02em;vertical-align:1px}
+ .badge.meas{background:#0f2a17;color:#56d364;border:1px solid var(--ok)} .badge.der{background:#10243a;color:#79c0ff;border:1px solid var(--acc)}
+ .badge.asm{background:#2a1e10;color:#e3b341;border:1px dashed var(--warn)} .badge.tiny{font-size:9px;padding:0 4px;margin-left:5px}
+ .provlegend{font-size:11px;color:var(--mut);margin:6px 0 0;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+ /* ---- provenance / honesty banner under the verdict ---- */
+ .provbar{background:#1d1505;border:1px solid var(--warn);border-left:4px solid var(--warn);border-radius:8px;padding:9px 11px;margin:10px 0 0;font-size:12px;color:var(--fg);line-height:1.5}
+ .provbar b{color:#e3b341} .provbar code{background:#0d1117;padding:1px 5px;border-radius:4px}
+ details.whatis{background:var(--card2);border:1px solid var(--acc);border-radius:8px;margin:10px 0 0;padding:0 12px}
+ details.whatis>summary{cursor:pointer;padding:10px 0;font-weight:600;font-size:13px;color:var(--acc);list-style:none}
+ details.whatis>summary::-webkit-details-marker{display:none}
+ details.whatis>summary::before{content:"▸ ";color:var(--acc)} details.whatis[open]>summary::before{content:"▾ "}
+ details.whatis .wbody{padding:0 0 12px;font-size:12px;color:var(--fg);line-height:1.55}
+ details.whatis .wcol{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+ details.whatis ul{margin:4px 0;padding-left:17px} details.whatis li{margin:3px 0}
+ details.whatis .is h4{color:var(--ok);margin:0 0 3px;font-size:12px} details.whatis .isnt h4{color:var(--bad);margin:0 0 3px;font-size:12px}
+ .chartsum{font-size:11px;color:var(--mut);margin-top:6px;line-height:1.4}
+ /* ---- "Does disaggregation help here?" readout — a SEPARATE axis from the ■◆▲ topology verdict.
+    Topology says WHICH layout; this says whether the agg→disagg SPLIT helps/hurts, per axis. The whole
+    point is to show where it REGRESSES, so that state is the loudest. Meaning is never color-only — the
+    band WORD (HELPS/NO-OP/MIXED/REGRESSES) + a leading glyph + the chip text all carry it. ---- */
+ .dva{border-radius:10px;padding:13px 15px;margin:12px 0 0;border:1px solid var(--line);border-left-width:5px;background:var(--card2)}
+ .dva.helps{border-color:var(--ok);background:#0c1f13} .dva.helps .dva-word{color:var(--ok)}
+ .dva.noop{border-color:var(--mut);background:#161b22} .dva.noop .dva-word{color:var(--mut)}
+ .dva.mixed{border-color:var(--warn);background:#1d1505} .dva.mixed .dva-word{color:var(--warn)}
+ .dva.regresses{border-color:var(--bad);background:#2a1213;box-shadow:inset 0 0 0 1px var(--bad)} .dva.regresses .dva-word{color:var(--bad)}
+ .dva-q{font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--mut);margin-bottom:3px}
+ .dva-word{font-size:23px;font-weight:800;line-height:1.1;letter-spacing:.01em;display:flex;align-items:baseline;gap:9px;flex-wrap:wrap}
+ .dva-word .gly{font-family:ui-monospace,Menlo,monospace;font-size:19px}
+ .dva-word .pct{font-size:12px;font-weight:600;color:var(--mut);letter-spacing:0}
+ .dva-sum{font-size:12.5px;color:var(--fg);margin:7px 0 9px;line-height:1.5}
+ .dva-chips{display:flex;flex-wrap:wrap;gap:8px}
+ .dva-chip{display:flex;align-items:center;gap:7px;background:#0d1117;border:1px solid var(--line);border-radius:7px;padding:5px 10px;font-size:12px}
+ .dva-chip .ax{color:var(--mut);font-weight:600;text-transform:uppercase;font-size:10px;letter-spacing:.03em}
+ .dva-chip .x{font-family:ui-monospace,Menlo,monospace;font-weight:700;color:var(--fg)}
+ .dva-chip .bd{font-size:10px;font-weight:700;padding:1px 6px;border-radius:4px;text-transform:uppercase;letter-spacing:.02em}
+ .dva-chip.helps{border-color:var(--ok)} .dva-chip.helps .bd{background:#0f2a17;color:#56d364} .dva-chip.helps .x{color:#56d364}
+ .dva-chip.regresses{border-color:var(--bad)} .dva-chip.regresses .bd{background:#3a1718;color:#ff7b72} .dva-chip.regresses .x{color:#ff7b72}
+ .dva-chip.noop .bd{background:#21262d;color:var(--mut)}
+ .dva-foot{font-size:11px;color:var(--mut);margin-top:9px;line-height:1.5;border-top:1px solid var(--line);padding-top:8px}
+ .dva-foot b{color:var(--fg)} .dva-foot .anchor{color:#e3b341}
+ /* keyboard focus must be visible on the dark theme (WCAG 2.4.7) */
+ input:focus-visible,select:focus-visible,button:focus-visible,summary:focus-visible,a:focus-visible{outline:2px solid var(--acc);outline-offset:2px}
+ /* ---- mobile: verdict first, single column, no horizontal scroll (~375px standup glance) ---- */
+ @media(max-width:760px){
+   header{padding:14px 16px} h1{font-size:17px} .verdict{font-size:21px}
+   .wrap{grid-template-columns:1fr;gap:14px;padding:14px 16px}
+   .wrap>div:nth-child(2){order:-1}        /* OUTPUT (verdict + chain) above the INPUT controls */
+   .grid2{grid-template-columns:1fr} .ad{grid-template-columns:1fr} details.whatis .wcol{grid-template-columns:1fr}
+   canvas{max-height:300px} .step .f{overflow-wrap:anywhere}
+ }
+</style></head>
+<body>
+<header>
+  <h1>Aggregation vs Disaggregation Calculator</h1>
+  <div class="sub">Work <b>backwards from the model architecture</b> → KV/token → memory fit → prefill/decode rooflines →
+   transfer-toll vs interference → <b>verdict</b> → $/Mtok → optimal operating point.
+   <b class="honest">Disaggregation is not free — it helps for some workloads and regresses for others. This tool tells you which: when it helps, when it&rsquo;s a no-op, and when it costs you (at the 1P:1D floor it&rsquo;s a latency play, not a cost play).</b>
+   Physics mirrors <code>analyze/calc.py</code> + <code>cost.py</code> + <code>optimizer.py</code>, calibrated to measured 550B/p5en.</div>
+  <div class="disclaimer" role="note" aria-label="Disclaimer"><b>⚠ Disclaimer:</b> Provided free, as a utility, for quick <b>estimation and planning only</b>. AWS and the authors make <b>no representation, warranty, or guarantee</b> of model performance, throughput, latency, or cost, and <b>accept no liability</b> for any outcome of its use. Actual measured results will differ — always validate on your own hardware before deployment or purchasing decisions. Provided <b>&ldquo;AS IS&rdquo;</b>.</div>
+  <details class="glossary"><summary>Glossary — terms used below</summary>
+    <div class="gloss-grid">
+      <span><b>ISL</b> input seq length (prompt tokens)</span><span><b>OSL</b> output seq length (generated tokens)</span>
+      <span><b>KV</b> key/value attention cache</span><span><b>HBM</b> GPU high-bandwidth memory</span>
+      <span><b>TTFT</b> time to first token</span><span><b>ITL/TPOT</b> inter-token latency / time per output token</span>
+      <span><b>SLO/SLA</b> latency target / service-level agreement</span><span><b>TP/PP</b> tensor / pipeline parallelism</span>
+      <span><b>1P:1D</b> 1 prefill : 1 decode worker</span><span><b>MFU/MBU</b> model-FLOP / memory-bandwidth utilization</span>
+      <span><b>RDMA</b> remote direct memory access (EFA)</span><span><b>$/Mtok</b> cost per 1M output tokens</span>
+    </div>
+  </details>
+</header>
+<div class="wrap">
+  <!-- ============ INPUTS (the architecture) ============ -->
+  <div>
+    <div class="card">
+      <h3>1 · Model architecture</h3>
+      <label for="preset">Preset (from verified HF config.json)</label>
+      <select id="preset"></select>
+      <div class="row">
+        <div><label for="family">family</label><select id="family"><option>dense</option><option>moe</option><option>moe-mla</option><option>hybrid-mamba</option></select></div>
+        <div><label for="wdtype">weight dtype</label><select id="wdtype"><option>bf16</option><option>fp16</option><option>fp8</option><option>fp4</option></select></div>
+      </div>
+      <div class="row">
+        <div><label for="ptot">params TOTAL (B) — fit</label><input id="ptot" type="number" value="550"></div>
+        <div><label for="pact">params ACTIVE (B) — compute</label><input id="pact" type="number" value="55"></div>
+      </div>
+      <div class="row3">
+        <div><label for="layers">layers</label><input id="layers" type="number" value="118"></div>
+        <div><label for="heads">attn heads</label><input id="heads" type="number" value="96"></div>
+        <div><label for="kvheads">KV heads</label><input id="kvheads" type="number" value="8"></div>
+      </div>
+      <div class="row3">
+        <div><label for="hidden">hidden</label><input id="hidden" type="number" value="12288"></div>
+        <div><label for="headdim">head dim</label><input id="headdim" type="number" value="128"></div>
+        <div><label for="maxctx">max ctx</label><input id="maxctx" type="number" value="131072"></div>
+      </div>
+      <div id="mlaBox" style="display:none">
+        <div class="row">
+          <div><label for="lora">kv_lora_rank (MLA)</label><input id="lora" type="number" value="512"></div>
+          <div><label for="rope">qk_rope_dim (MLA)</label><input id="rope" type="number" value="64"></div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <h3>2 · Compute + workload + targets</h3>
+      <label for="inst">AWS instance (8-GPU)</label><select id="inst"></select>
+      <div class="row">
+        <div><label for="tp">tensor-parallel (TP)</label><input id="tp" type="number" value="8"></div>
+        <div><label for="price">$/hr (whole instance, override)</label><input id="price" type="number" placeholder="(AWS list)"></div>
+      </div>
+      <div class="ucwrap">
+        <label for="usecase">Use case <span class="mut">— the workload IS the use case; it sets ISL:OSL, which drives the verdict</span></label>
+        <select id="usecase" class="ucsel"></select>
+        <div id="ucHint" class="uchint"></div>
+      </div>
+      <div class="row">
+        <div><label for="isl">input len (ISL)</label><input id="isl" type="number" value="512" oninput="ucCustom()"></div>
+        <div><label for="osl">output len (OSL)</label><input id="osl" type="number" value="128" oninput="ucCustom()"></div>
+      </div>
+      <div class="row">
+        <div><label for="slottft">SLO TTFT (ms)</label><input id="slottft" type="number" value="2000"></div>
+        <div><label for="slotpot">SLO TPOT/ITL (ms)</label><input id="slotpot" type="number" value="120"></div>
+      </div>
+      <button onclick="run()">Derive ▸</button>
+      <div class="small" id="archline" style="margin-top:8px"></div>
+    </div>
+  </div>
+
+  <!-- ============ OUTPUT: verdict + derivation chain ============ -->
+  <div>
+    <div class="card" style="border-left:3px solid var(--ok)">
+      <div class="mut">Latency verdict for <b id="vmodel"></b> on <b id="vinst"></b> @ ISL <b id="visl"></b>/OSL <b id="vosl"></b></div>
+      <div class="verdict" id="verdict" role="status" aria-live="polite" aria-atomic="true">—</div>
+      <div class="mut" id="why" style="font-size:13px"></div>
+      <div style="margin-top:8px" class="grid2">
+        <div class="kpi"><span class="mut">memory fit <span class="badge der tiny">DERIVED</span></span><b><span id="fitpill" class="pill"></span> <span id="fitnote"></span></b></div>
+        <div class="kpi"><span class="mut">cost — cheaper at SLA <span class="badge asm tiny" title="cost uses the calibrated ITL (n=1 family correction) + 2×-GPU disagg model">ASSUMED n=1</span></span><b id="cheaper"></b></div>
+        <div class="kpi"><span class="mut">favorability (vs chunked-prefill-rescaled thresholds) <span class="badge der tiny">DERIVED</span></span><b id="fav"></b></div>
+        <div class="kpi"><span class="mut">optimal operating point <span class="badge asm tiny" title="goodput knee b=32 + ITL floor 78ms are MEASURED 550B/p5en anchors; off-anchor it is a KV-budget estimate">ASSUMED n=1</span></span><b id="optpt"></b></div>
+      </div>
+      <div class="warnote" id="costwarn"></div>
+      <!-- ===== Does disaggregation HELP here? — a SEPARATE axis from the ■◆▲ topology verdict above.
+           Topology = WHICH layout; this = does the agg→disagg SPLIT help / do nothing / hurt, per axis. ===== -->
+      <div class="dva" id="dva" role="group" aria-labelledby="dvaQ">
+        <div class="dva-q" id="dvaQ">Does disaggregation help here?</div>
+        <div class="dva-word" id="dvaWord">—</div>
+        <div class="dva-sum" id="dvaSum"></div>
+        <div class="dva-chips" id="dvaChips"></div>
+        <div class="dva-foot">
+          Each axis is a speedup = <b>aggregation ÷ disaggregation</b>: <b>&gt;1</b> = disagg is better, <b>&lt;1</b> = disagg <b>regresses</b>, within ±10% = no-op.
+          <span class="anchor">Measured proof both outcomes are real:</span> 550B short-chat <b>regresses on cost ~0.5×</b> (agg won the live A/B 2.1×); a long-context agent workload <b>helps on ITL</b>.
+          At the 1P:1D floor disagg is a <b>latency play, not a cost play</b> — cost tops out ~0.59× (2× GPUs is a hard 2×), TTFT always pays the KV hop, ITL is the win. The cost win needs P:D right-sizing (<code>pd_pool_scaling.py</code>), not this floor — so an <b>overall &ldquo;HELPS&rdquo; is an at-scale / right-sized outcome, not a 1P:1D-floor one</b> (at the floor you trade cost+TTFT for ITL → MIXED).
+        </div>
+      </div>
+      <div class="trustchip"><span class="dot" aria-hidden="true"></span><span>Honest by design — across our 240-cell catalog the verdict splits roughly evenly: <b>~52% disaggregate, ~48% aggregate-or-hybrid</b> (reproduce: <code>tests/catalog_distribution.py</code>). On cost at the 1P:1D floor, disagg almost always regresses — a no-op or a regression is a real result, not a failure.</span></div>
+      <div class="provbar">
+        <b>How to read this:</b> a <b>directional L0 screen</b>, calibrated to a single measured anchor
+        (<b>n=1</b>): Nemotron-3 Ultra 550B, <b>bf16</b>, <b>H200 / p5en</b>, <b>TP8</b>. It models per-request
+        single-stream latency — <b>not</b> a validated multi-tenant simulator. Confirm any verdict with
+        <code>a live GPU sweep</code> on real GPUs before acting.
+        <div class="provlegend">Number provenance:
+          <span class="badge meas tiny">MEASURED</span> real GPU benchmark
+          <span class="badge der tiny">DERIVED</span> computed from your inputs
+          <span class="badge asm tiny">ASSUMED n=1</span> single-anchor calibration / heuristic
+        </div>
+      </div>
+      <details class="whatis">
+        <summary>What this tool is — and what it is not</summary>
+        <div class="wbody">
+          <div class="wcol">
+            <div class="is"><h4>✓ It IS</h4>
+              <ul>
+                <li>A fast, auditable <b>first-pass screen</b> that derives agg / hybrid / disaggregate from the model architecture.</li>
+                <li>Calibrated to <b>real measured anchors</b> (550B/p5en ITL 82ms, KV-over-EFA ~127ms hop).</li>
+                <li>Every term a first-order roofline you can read in the derivation chain below and challenge.</li>
+              </ul>
+            </div>
+            <div class="isnt"><h4>✗ It is NOT</h4>
+              <ul>
+                <li>A <b>benchmark</b> / validated simulator — every "predicted" number is calibrated, not measured.</li>
+                <li>A <b>batched, load-dependent goodput</b> model (queueing, EP all-to-all are out of L0 scope).</li>
+                <li>Generalizable off the anchor without re-calibration — the <b>n=1</b> family correction is honest, not universal.</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </details>
+    </div>
+
+    <!-- ============ TOPOLOGY EXPLAINER: what aggregate / hybrid / disaggregate actually look like ============ -->
+    <div class="card">
+      <h3>What the three verdicts look like</h3>
+      <div class="topolead">Every request has two phases — <b>prefill</b> (read the whole prompt, compute-bound, bursty) and
+        <b>decode</b> (emit one token at a time, memory-bandwidth-bound, steady). The verdict is <i>where you run those two phases relative to each other</i>.</div>
+      <div class="topo3">
+        <div class="topo agg">
+          <h4><span aria-hidden="true">■</span> Aggregate</h4>
+          <svg class="topodiag" viewBox="0 0 260 150" role="img" aria-label="Aggregate topology: one node holding four GPUs. Every GPU runs both prefill and decode for a request, in place. No KV cache is moved between nodes.">
+            <title>Aggregate — prefill and decode co-located on the same GPUs, no KV move</title>
+            <rect class="node" x="14" y="24" width="232" height="92" rx="8"/>
+            <text class="lbl" x="24" y="40">NODE — 1 GPU pool</text>
+            <g>
+              <rect class="gpu" x="24" y="50" width="48" height="50" rx="5"/>
+              <rect class="gpu" x="80" y="50" width="48" height="50" rx="5"/>
+              <rect class="gpu" x="136" y="50" width="48" height="50" rx="5"/>
+              <rect class="gpu" x="192" y="50" width="48" height="50" rx="5"/>
+            </g>
+            <g class="tag" fill="var(--warn)" text-anchor="middle">
+              <text x="48" y="68">prefill</text><text x="104" y="68">prefill</text><text x="160" y="68">prefill</text><text x="216" y="68">prefill</text>
+            </g>
+            <g class="tag" fill="var(--ok)" text-anchor="middle">
+              <text x="48" y="92">decode</text><text x="104" y="92">decode</text><text x="160" y="92">decode</text><text x="216" y="92">decode</text>
+            </g>
+            <text class="note" x="130" y="134" text-anchor="middle">↻ both phases in place — no KV move</text>
+          </svg>
+          <p>Prefill + decode fully co-located on the same GPUs. <b>No KV transfer.</b> A prefill burst <i>can</i> stall the decode stream of co-batched requests.</p>
+          <p class="pick">Picked when: <b>prefill is cheap vs decode</b> (little interference), or the KV toll would cost more than it saves. Cheapest $/token at low–moderate load.</p>
+        </div>
+        <div class="topo hyb">
+          <h4><span aria-hidden="true">◆</span> Hybrid</h4>
+          <svg class="topodiag" viewBox="0 0 260 150" role="img" aria-label="Hybrid topology: one node with shared GPUs, still co-located. Prefill is chopped into small chunks that are interleaved between decode steps on the same GPUs' timeline, so a prefill burst can never monopolize a step. Interference is bounded and there is no cross-node KV hop.">
+            <title>Hybrid — chunked prefill interleaved with decode on the same GPUs, no cross-node hop</title>
+            <rect class="node" x="14" y="22" width="232" height="96" rx="8"/>
+            <text class="lbl" x="24" y="38">NODE — shared GPUs (chunked schedule)</text>
+            <text class="lbl-sm" x="24" y="58">one GPU step timeline ▸</text>
+            <g>
+              <rect class="gpu" x="24"  y="64" width="20" height="26" rx="3" fill="#0f2a17"/>
+              <rect class="gpu" x="76"  y="64" width="20" height="26" rx="3" fill="#0f2a17"/>
+              <rect class="gpu" x="128" y="64" width="20" height="26" rx="3" fill="#0f2a17"/>
+              <rect class="gpu" x="180" y="64" width="20" height="26" rx="3" fill="#0f2a17"/>
+              <rect class="gpu" x="218" y="64" width="20" height="26" rx="3" fill="#0f2a17"/>
+              <rect x="48"  y="68" width="24" height="18" rx="3" fill="#3a2f12" stroke="var(--warn)" stroke-width="1.3"/>
+              <rect x="100" y="68" width="24" height="18" rx="3" fill="#3a2f12" stroke="var(--warn)" stroke-width="1.3"/>
+              <rect x="152" y="68" width="24" height="18" rx="3" fill="#3a2f12" stroke="var(--warn)" stroke-width="1.3"/>
+              <rect x="204" y="68" width="10" height="18" rx="2" fill="#3a2f12" stroke="var(--warn)" stroke-width="1.3"/>
+            </g>
+            <g class="tag" text-anchor="middle">
+              <text x="34" y="81" fill="var(--ok)">d</text><text x="86" y="81" fill="var(--ok)">d</text><text x="138" y="81" fill="var(--ok)">d</text><text x="190" y="81" fill="var(--ok)">d</text><text x="228" y="81" fill="var(--ok)">d</text>
+              <text x="60" y="80" fill="var(--warn)">P</text><text x="112" y="80" fill="var(--warn)">P</text><text x="164" y="80" fill="var(--warn)">P</text>
+            </g>
+            <text class="lbl-sm" x="24" y="104"><tspan fill="var(--ok)">d</tspan> = decode step &#160; <tspan fill="var(--warn)">P</tspan> = prefill chunk (sliced)</text>
+            <text class="note" x="130" y="134" text-anchor="middle">chunked-prefill — bursts can't block decode · no cross-node hop</text>
+          </svg>
+          <p class="def">The <b>middle verdict</b> — hybrid when <code>0.30·(1−cpr) ≤ fav &lt; 0.55·(1−cpr)</code>, i.e. <code>0.090 ≤ fav &lt; 0.165</code> at the default <code>cpr=0.7</code>. Interference is real but a full split isn't justified (KV toll too high, or imbalance only moderate).</p>
+          <p class="def">TaiChi's <b>differentiated P/D</b> regime: prefill is <b>chunked</b> and interleaved with decode on the <b>same</b> GPUs so a burst can't monopolize a step — <b>no cross-node KV hop</b>. Exactly what <code>chunked_prefill_recovery=0.7</code> models.</p>
+          <p class="pick">Picked when: <b>in between</b> — enough interference to want separation, but not enough (or too high a KV toll) for a full split.</p>
+        </div>
+        <div class="topo dis">
+          <h4><span aria-hidden="true">▲</span> Disaggregate</h4>
+          <svg class="topodiag" viewBox="0 0 260 150" role="img" aria-label="Disaggregate topology: two separate nodes. A prefill pool on the left and a decode pool on the right, each with its own GPUs. The KV cache is shipped from the prefill pool to the decode pool over EFA / NIXL RDMA. Decode never sees a prefill burst.">
+            <title>Disaggregate — separate prefill and decode pools, KV cache shipped over EFA / NIXL RDMA</title>
+            <rect class="node" x="10" y="34" width="96" height="78" rx="8"/>
+            <text class="lbl" x="20" y="50" fill="var(--warn)">PREFILL pool</text>
+            <rect class="gpu" x="20" y="58" width="36" height="44" rx="5"/>
+            <rect class="gpu" x="62" y="58" width="36" height="44" rx="5"/>
+            <text class="tag" x="38" y="84" fill="var(--warn)" text-anchor="middle">P</text>
+            <text class="tag" x="80" y="84" fill="var(--warn)" text-anchor="middle">P</text>
+            <rect class="node" x="154" y="34" width="96" height="78" rx="8"/>
+            <text class="lbl" x="164" y="50" fill="var(--ok)">DECODE pool</text>
+            <rect class="gpu" x="164" y="58" width="36" height="44" rx="5"/>
+            <rect class="gpu" x="206" y="58" width="36" height="44" rx="5"/>
+            <text class="tag" x="182" y="84" fill="var(--ok)" text-anchor="middle">d</text>
+            <text class="tag" x="224" y="84" fill="var(--ok)" text-anchor="middle">d</text>
+            <defs><marker id="kvarrow2" markerWidth="9" markerHeight="9" refX="6" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="var(--ok)"/></marker></defs>
+            <line x1="106" y1="72" x2="150" y2="72" stroke="var(--ok)" stroke-width="2.4" marker-end="url(#kvarrow2)"/>
+            <text class="tag" x="130" y="66" fill="var(--ok)" text-anchor="middle" font-size="8">KV cache</text>
+            <text class="lbl-sm" x="130" y="88" text-anchor="middle">EFA / NIXL</text>
+            <text class="lbl-sm" x="130" y="98" text-anchor="middle">RDMA</text>
+            <text class="note" x="130" y="134" text-anchor="middle">separate nodes — decode never sees a prefill burst</text>
+          </svg>
+          <p>Separate prefill + decode pools; the KV cache is <b>shipped over EFA / NIXL RDMA</b>. Decode never sees a prefill burst → clean, steady latency.</p>
+          <p class="pick">Picked when: <b>prefill bursts would stall many decode steps</b> (high interference) <b>and</b> KV transfer is cheap. Wins on SLO-attainment / tail latency, and on $/token at scale.</p>
+        </div>
+      </div>
+      <div class="collision">
+        <b>⚠ One word, two meanings — don't confuse them.</b> “Hybrid” above is a <b>serving topology</b> (the middle verdict).
+        Separately, <b>“hybrid-Mamba”</b> is a <b>model architecture</b> (e.g. Nemotron-3 Ultra 550B — attention + Mamba layers),
+        selectable in the <i>family</i> dropdown. They are unrelated: a hybrid-Mamba <i>model</i> can be served with an
+        aggregate, hybrid, <i>or</i> disaggregate <i>topology</i>.
+      </div>
+    </div>
+
+    <div class="card"><h3>The derivation — backwards from architecture</h3>
+      <div id="chain"></div>
+    </div>
+
+    <div class="grid2">
+      <div class="card"><h3>Favorability vs context (ISL sweep)</h3><canvas id="cFav" role="img" aria-label="Disaggregation favorability vs input length"></canvas>
+        <div class="chartsum" id="cFav_sum" role="note"></div>
+        <div class="small">Disagg-favored where the curve crosses the (chunked-prefill-rescaled) disagg threshold. Non-monotonic: drops again at extreme prefill+short output (KV toll un-amortized).</div></div>
+      <div class="card"><h3>Cost vs concurrency — find the knee</h3><canvas id="cKnee" role="img" aria-label="Cost per Mtok vs concurrency"></canvas>
+        <div class="chartsum" id="cKnee_sum" role="note"></div>
+        <div class="small">$/Mtok falls until the goodput knee (KV-budget / batch ceiling), then flat. Past it, TTFT explodes for no throughput gain.</div></div>
+    </div>
+
+    <div class="card"><h3>Where does disaggregation flip? — help/regress vs context (ISL sweep)</h3>
+      <canvas id="cDva" role="img" aria-label="Disaggregation cost, TTFT and ITL speedup versus aggregation as input length grows. Three lines on a y-axis of speedup ratio, with a parity reference line at 1.0 and a shaded plus or minus ten percent no-op band. Where each line crosses 1.0 is where that axis flips between disaggregation helping and regressing."></canvas>
+      <div class="chartsum" id="cDva_sum" role="note"></div>
+      <div class="small">Speedup = aggregation ÷ disaggregation per axis (current model/instance/OSL, ISL swept). Above the dashed <b>1.0</b> line = disagg <b>helps</b>; inside the shaded ±10% band = <b>no-op</b>; below = disagg <b>regresses</b>. <b>ITL</b> (green) is the axis disagg buys as prefill grows; <b>cost</b> (blue) and <b>TTFT</b> (amber) sit below 1.0 — the 2×-GPU and KV-hop tolls that no ISL repays at the 1P:1D floor.</div></div>
+  </div>
+</div>
+
+<script>
+// a11y (WCAG 2.3.3): respect prefers-reduced-motion — disable Chart.js animation for motion-sensitive users.
+try{ if(window.Chart && window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches){ Chart.defaults.animation=false; } }catch(e){}
+// ============================ physics constants (mirror analyze/) ============================
+const INSTANCES = {
+ "p5.48xlarge":     {gpu:"H100", gpus:8, hbm_GBs:3350, hbm_cap_GB:80,  fp16_TFLOPs:989,  efa_nics:32, efa_Gbps:100, nvlink_GBs:900},
+ "p5en.48xlarge":   {gpu:"H200", gpus:8, hbm_GBs:4800, hbm_cap_GB:141, fp16_TFLOPs:989,  efa_nics:16, efa_Gbps:200, nvlink_GBs:900},
+ "p6-b200.48xlarge":{gpu:"B200", gpus:8, hbm_GBs:8000, hbm_cap_GB:180, fp16_TFLOPs:2250, efa_nics:8,  efa_Gbps:400, nvlink_GBs:1800},
+ "p4d.24xlarge":    {gpu:"A100", gpus:8, hbm_GBs:2039, hbm_cap_GB:40,  fp16_TFLOPs:312,  efa_nics:4,  efa_Gbps:100, nvlink_GBs:600},
+};
+const PRICE = {"p5.48xlarge":55.04,"p5en.48xlarge":63.296,"p4d.24xlarge":21.9576,"p6-b200.48xlarge":113.9328}; // AWS, 2026-06-14
+const DB  = {fp16:2,bf16:2,fp8:1,fp4:0.5,int8:1};
+const CAL = {kv_transfer_efficiency:0.0095, mfu_prefill:0.45, mbu_decode:0.65, UTIL_CEILING:0.98};
+const DTYPE_PEAK_MULT={fp16:1.0,bf16:1.0,fp8:2.0,int8:2.0,fp4:4.0};
+const DECISION={interference_scale:4.0,toll_scale:4.0,threshold_disagg:0.55,threshold_hybrid:0.30,chunked_prefill_recovery:0.7};
+// measured calibration correction factors (median measured/predicted from analyze/calibration.py ledger)
+const ITL_CORRECTION={"hybrid-mamba":18.636,"dense":0.887,"moe":1.0,"moe-mla":1.0}; // measured medians from analyze/calibration.py ledger (dense from live 70B A/B; moe/mla unmeasured=1.0)
+// optimizer.py measured anchors (550B/p5en): ITL floor + goodput knee + CUDA-graph-OOM + disagg penalties
+const ANCHOR = {itl0_ms:78.0, b_knee:32.0, tput_sat_tok_s:292.0, tp8_cudagraph_oom:true,
+                disagg_ttft_penalty_ms:127.0, disagg_tput_factor:0.95};
+// arch params VERIFIED from each HF config.json (2026-06-14)
+const PRESETS = {
+ "Nemotron-3 Ultra 550B (hybrid-Mamba)":{family:"hybrid-mamba",ptot:550,pact:55,layers:108,n_attn_layers:12,n_mamba_layers:48,heads:64,kvheads:2,hidden:8192,headdim:128,wdtype:"bf16",maxctx:262144,tp:8,isl:512,osl:128,mamba_num_heads:256,mamba_head_dim:64,mamba_d_state:128,mamba_d_conv:4,mamba_cache_dtype:"fp32"},
+ "Llama-3.1-8B (dense)":   {family:"dense",ptot:8,  pact:8,  layers:32, heads:32, kvheads:8, hidden:4096, headdim:128,wdtype:"bf16",maxctx:131072,tp:1,isl:512,osl:128},
+ "Llama-3.1-70B (dense)":  {family:"dense",ptot:70, pact:70, layers:80, heads:64, kvheads:8, hidden:8192, headdim:128,wdtype:"bf16",maxctx:131072,tp:8,isl:512,osl:128},
+ "Qwen2.5-72B (dense)":    {family:"dense",ptot:72, pact:72, layers:80, heads:64, kvheads:8, hidden:8192, headdim:128,wdtype:"bf16",maxctx:131072,tp:8,isl:512,osl:128},
+ "Llama-3.1-405B (dense)": {family:"dense",ptot:405,pact:405,layers:126,heads:128,kvheads:8, hidden:16384,headdim:128,wdtype:"bf16",maxctx:131072,tp:8,isl:512,osl:128},
+ "Mixtral-8x22B (MoE)":    {family:"moe",  ptot:141,pact:39, layers:56, heads:48, kvheads:8, hidden:6144, headdim:128,wdtype:"bf16",maxctx:65536, tp:8,isl:512,osl:128},
+ "Qwen3-235B-A22B (MoE)":  {family:"moe",  ptot:235,pact:22, layers:94, heads:64, kvheads:4, hidden:4096, headdim:128,wdtype:"bf16",maxctx:32768, tp:8,isl:512,osl:128},
+ "DeepSeek-V3 (MoE+MLA)":  {family:"moe-mla",ptot:671,pact:37,layers:61,heads:128,kvheads:128,hidden:7168,headdim:56, wdtype:"fp8", maxctx:163840,tp:8,isl:512,osl:128,lora:512,rope:64},
+};
+// ---- USE CASES: the workload IS the use case. ISL:OSL ratio drives the verdict, so we make it pickable. ----
+// lean = which topology the ISL:OSL pressure points toward (the model still computes the real verdict).
+const USECASES={
+ "🤖 Agent / tool-use (long context, short actions)":{isl:8192,osl:128,lean:"dis",
+   note:"Agents accumulate a big, growing context (history+tools+RAG) but each step emits a short action/tool-call. Huge prefill, tiny decode → heavy prefill interference → disaggregation territory."},
+ "📚 RAG / Q&A (retrieved docs in, short answer)":{isl:4096,osl:256,lean:"dis",
+   note:"Several retrieved chunks go in; a concise grounded answer comes out. Big prefill, modest decode → disaggregation usually wins (especially at scale)."},
+ "📝 Summarization (long doc in, short summary)":{isl:8192,osl:256,lean:"dis",
+   note:"Long document in, short summary out. Very prefill-heavy → disaggregation-favored, but watch the TTFT budget (a huge prompt + KV transfer can blow it)."},
+ "💬 Chat / assistant (short turn, medium reply)":{isl:512,osl:256,lean:"hyb",
+   note:"Balanced conversational turn. Middle of the road — often hybrid, and aggregation is cheapest at low–moderate load."},
+ "🧠 Reasoning / chain-of-thought (short Q, long answer)":{isl:512,osl:2048,lean:"agg",
+   note:"Short question, long generated reasoning. Decode dominates, prefill is tiny → little interference to remove → aggregate."},
+ "🧑‍💻 Code generation (medium prompt, long code)":{isl:1024,osl:1024,lean:"hyb",
+   note:"Medium prompt, long code output. Roughly balanced → hybrid/aggregate; verdict shifts with model + GPU."},
+ "✍️ Custom (set ISL/OSL by hand)":{isl:null,osl:null,lean:null,
+   note:"Enter your own input/output lengths above."},
+};
+
+// ============================ the model (faithful to calc.py) ============================
+function kvBytesPerToken(m){            // ATTENTION KV/token — GQA-aware, MLA-branched — calc.py:kv_bytes_per_token
+ const db = DB[m.kv_dtype||m.wdtype]||2;
+ if(m.family==="moe-mla") return (m.lora + m.rope) * m.layers * db;     // compressed latent, NOT full heads
+ const hd = m.headdim || m.hidden/Math.max(m.heads,1);
+ // attention KV scales with the ATTENTION layers only (hybrid-Mamba: n_attn_layers << layers)
+ const attn = m.n_attn_layers!=null ? m.n_attn_layers : m.layers;
+ return 2 * m.kvheads * hd * attn * db;
+}
+function mambaStateBytes(m){            // constant Mamba-2 SSM+conv state per request — calc.py:mamba_state_bytes
+ if(m.family!=="hybrid-mamba") return 0;
+ const nm = m.n_mamba_layers||0;
+ const cdb = DB[m.mamba_cache_dtype||"fp32"]||4;
+ if(m.mamba_num_heads && m.mamba_head_dim && nm){
+   const ssm  = m.mamba_num_heads*m.mamba_head_dim*(m.mamba_d_state||128)*cdb;
+   const conv = m.mamba_num_heads*m.mamba_head_dim*(m.mamba_d_conv||4)*cdb;
+   return (ssm+conv)*nm;
+ }
+ return 0;
+}
+function derive(g, m, wl){            // faithful JS port of calc.py:analyze()
+ const tp = m.tp, pp = m.pp||1, gpus_in_group = tp*pp, isl = wl.isl, osl = wl.osl;
+ const pAct = m.pact, pTot = m.ptot, wdb = DB[m.wdtype]||2;
+ const n_attn = m.n_attn_layers!=null ? m.n_attn_layers : m.layers;
+ // (A) KV per request: ATTENTION KV (grows with ISL) + constant Mamba SSM state (if hybrid-mamba)
+ const kv_bpt = kvBytesPerToken(m);
+ const attn_kv_bytes = kv_bpt * isl;
+ const mamba_bytes = mambaStateBytes(m);
+ const kv_bytes_req = attn_kv_bytes + mamba_bytes;     // total bytes disagg must ship prefill->decode
+ const kv_MB = kv_bytes_req/1e6;
+ const attn_MB = attn_kv_bytes/1e6, mamba_MB = mamba_bytes/1e6;
+ // (B) fabric + KV-transfer time (disagg only pays this) — fabric_aggregate default; uses TOTAL kv bytes
+ const line_GBs = g.efa_nics * g.efa_Gbps / 8.0;
+ const achieved_GBs = Math.max(line_GBs * CAL.kv_transfer_efficiency, 1.0);
+ const kv_transfer_ms = (kv_bytes_req/1e9)/achieved_GBs*1000.0;
+ // (C) prefill compute (ACTIVE params): linear GEMM term + quadratic attention term, dtype-peak-scaled
+ const flops_prefill_linear = 2*pAct*1e9*isl;
+ const flops_prefill_attn   = 4.0*(isl*isl)*m.hidden*n_attn;
+ const flops_prefill = flops_prefill_linear + flops_prefill_attn;
+ // ARCH GATE (live-corrected 2026-06-19): fp4 4x is Blackwell-only (native FP4 GEMM). On Hopper/Ampere an
+ // NVFP4 ckpt runs via Marlin W4A16 (dequant→bf16 compute) => peak ~1x, NOT 4x. fp8 native sm89+ (Hopper/Blackwell).
+ const _bw = (g.gpu==="B200"||g.gpu==="B100"||g.gpu==="GB200");
+ const _hop = _bw || g.gpu==="H100" || g.gpu==="H200";
+ const _raw = DTYPE_PEAK_MULT[m.wdtype]||1.0;
+ const dtype_peak_mult = (m.wdtype==="fp4" && !_bw) ? 1.0
+                       : ((m.wdtype==="fp8"||m.wdtype==="int8") && !_hop) ? 1.0 : _raw;
+ const compute_GFLOPs = g.fp16_TFLOPs*dtype_peak_mult*1e3*tp*CAL.mfu_prefill;
+ const prefill_ms = flops_prefill/(compute_GFLOPs*1e9)*1000.0;
+ const prefill_attn_quadratic_frac = flops_prefill_attn/Math.max(flops_prefill,1e-9);
+ // (D) decode per-token (ACTIVE params + KV-read so far, HBM-bound), then CALIBRATION correction
+ const param_bytes = pAct*1e9*wdb;
+ const avg_ctx = isl + osl/2.0;
+ const kv_read = kv_bpt * avg_ctx;                               // attention KV re-read each decode step (avg)
+ const hbm_GBs = g.hbm_GBs*tp*CAL.mbu_decode;
+ const itl_roofline = (param_bytes+kv_read)/1e9/hbm_GBs*1000.0;
+ const corr = ITL_CORRECTION[m.family]||1.0;                     // measured-anchor correction (calibration.py)
+ const decode_step_ms = itl_roofline*corr;                       // CALIBRATION WIRED IN
+ // (E) MEMORY FIT (TOTAL params vs aggregate HBM capacity)
+ const weights_GB = pTot*wdb, hbm_cap = g.hbm_cap_GB, total_hbm_GB = gpus_in_group*hbm_cap;
+ const min_util = weights_GB/Math.max(total_hbm_GB,1e-9);
+ const kv_budget_GB = total_hbm_GB*CAL.UTIL_CEILING - weights_GB;
+ const fits = kv_budget_GB>0.5, tight = fits && min_util>0.90;
+ const fit_status = !fits?"no-fit":(tight?"tight":"fits");
+ const min_gpus_to_fit = Math.ceil(weights_GB/Math.max(hbm_cap*0.85,1e-9));
+ const max_kv_tokens = (fits&&kv_bpt>0)? kv_budget_GB*1e9/kv_bpt : 0;
+ const conc_at_wl = max_kv_tokens/Math.max(isl+osl,1);
+ // (F) decision: interference removed (favors disagg) vs transfer toll added; chunked-prefill discounts interference
+ const cpr = (wl.chunked_prefill_recovery!=null)?wl.chunked_prefill_recovery:DECISION.chunked_prefill_recovery;
+ const decode_phase_ms = decode_step_ms*osl;
+ const transfer_overhead_frac = kv_transfer_ms/Math.max(decode_phase_ms,1e-6);
+ const imbalance = prefill_ms/Math.max(decode_step_ms,1e-6);
+ const interference_raw = 1.0 - Math.exp(-imbalance/DECISION.interference_scale);
+ const interference = interference_raw*(1.0-cpr);
+ const toll = 1.0/(1.0+transfer_overhead_frac*DECISION.toll_scale);
+ const fav = toll*interference;
+ // thresholds rescaled onto the capped [0, 1-cpr] interference axis (preserves verdict shape)
+ const thr_disagg = DECISION.threshold_disagg*(1.0-cpr);
+ const thr_hybrid = DECISION.threshold_hybrid*(1.0-cpr);
+ let verdict,why;
+ if(fav>=thr_disagg){verdict="disaggregate";why="cheap KV transfer; prefill bursts would stall many decode steps under aggregation (high TPOT-interference, even after chunked-prefill).";}
+ else if(fav>=thr_hybrid){verdict="hybrid";why="non-trivial interference but transfer/imbalance moderate — TaiChi hybrid (differentiated P/D instances) likely best.";}
+ else{verdict="aggregate";why="prefill is cheap relative to decode (low interference, incl. chunked-prefill) and/or KV-transfer toll high — colocate.";}
+ // (F2) SLO gate (mirror calc.py): the verdict above is latency-physics-only. Respect the TTFT budget — if
+ // shipping the KV would eat >50% of it, disagg is not viable regardless of favorability. Also surface when
+ // prefill+transfer blows TTFT or predicted ITL blows TPOT (any topology).
+ const verdict_pre_slo = verdict; const slo_notes=[]; let disagg_slo_viable=true;
+ if(wl.slo_ttft_ms!=null){
+   if(prefill_ms+kv_transfer_ms > wl.slo_ttft_ms){disagg_slo_viable=false; slo_notes.push("prefill+transfer "+(prefill_ms+kv_transfer_ms).toFixed(0)+"ms exceeds TTFT budget "+wl.slo_ttft_ms.toFixed(0)+"ms — disagg can't meet the TTFT SLO");}
+ }
+ if(wl.slo_tpot_ms!=null && decode_step_ms > wl.slo_tpot_ms) slo_notes.push("predicted ITL "+decode_step_ms.toFixed(0)+"ms exceeds TPOT budget "+wl.slo_tpot_ms.toFixed(0)+"ms (model/hardware too slow at this op-point)");
+ if(verdict==="disaggregate" && !disagg_slo_viable){verdict="aggregate"; why="favorability prefers disagg, but KV transfer would breach the TTFT SLO — colocate (no transfer hop).";}
+ // (G) cost (cost.py): est tok/s/gpu uses the CALIBRATED ITL; agg uses tp GPUs, disagg 2·tp with interference uplift
+ const itl = decode_step_ms;        // calibrated ITL (measured-corrected) — used by cost/throughput panel
+ const itl_floor = decode_step_ms;  // kept for archline display (now the calibrated value)
+ const est_tok_s_gpu = (1000.0/Math.max(itl,1e-6))*0.90;
+ const gpu_hr = (wl.price||PRICE[wl.instName])/8.0;
+ const aggTps = est_tok_s_gpu*tp, aggGpu = gpus_in_group;
+ const aggCost = (gpu_hr*aggGpu)/(Math.max(aggTps,1e-9)*3600.0)*1e6;
+ const uplift = 1.0/Math.max(1.0-0.5*interference, 0.3), disGpu = gpus_in_group*2, disTps = est_tok_s_gpu*tp*uplift;
+ const disCost = (gpu_hr*disGpu)/(Math.max(disTps,1e-9)*3600.0)*1e6;
+ const cheaper = disCost<aggCost?"disaggregate":"aggregate";
+ const savings = aggCost? (aggCost-disCost)/aggCost*100 : 0;
+ // (H) optimal operating point (optimizer.py): knee = min(KV-budget conc, b_knee) ; ITL uses measured floor
+ const knee = Math.max(1, Math.min(Math.round(conc_at_wl), ANCHOR.b_knee));
+ // (I) DOES DISAGGREGATION HELP HERE? — per-axis speedup = aggregation/disaggregation (>1 disagg BETTER,
+ //     <1 disagg REGRESSES). Bit-identical to calc.py:analyze() disagg_vs_agg block. Reuses the already-
+ //     computed interference / prefill_ms / kv_transfer_ms — adds NOTHING to the physics, only reads it.
+ const DISAGG_BAND = 0.10;                                       // ±10% around parity = NO-OP (within n=1 noise)
+ const _band = sp => sp >= 1.0+DISAGG_BAND ? "helps" : (sp <= 1.0-DISAGG_BAND ? "regresses" : "no-op");
+ const dva_itl  = 1.0 + interference;                            // agg ITL inflated by co-batch stall; disagg removes it
+ const dva_ttft = prefill_ms / Math.max(prefill_ms + kv_transfer_ms, 1e-9);  // disagg adds KV hop to first-token path
+ const cost_uplift = 1.0 / Math.max(1.0 - 0.5*interference, 0.3);            // cost.py decode-goodput uplift
+ const dva_cost = cost_uplift / 2.0;                            // 1P:1D floor: uplift vs 2× GPUs (price-independent)
+ const dva_bands = {cost: _band(dva_cost), ttft: _band(dva_ttft), itl: _band(dva_itl)};
+ const _b = [dva_bands.cost, dva_bands.ttft, dva_bands.itl];
+ let dva_overall, dva_summary;
+ const _ax = {cost_per_token:{sp:dva_cost,band:dva_bands.cost}, ttft:{sp:dva_ttft,band:dva_bands.ttft}, itl:{sp:dva_itl,band:dva_bands.itl}};
+ const _list = sep => Object.entries(_ax).map(([k,v])=>`${k} ${v.sp.toFixed(3)}x`).join(sep);
+ if(_b.includes("regresses") && !_b.includes("helps")){
+   dva_overall="regresses"; dva_summary="disaggregation REGRESSES here vs aggregation — "+_list(", ");
+ } else if(_b.includes("helps") && !_b.includes("regresses")){
+   dva_overall="helps"; dva_summary="disaggregation HELPS here vs aggregation — "+_list(", ");
+ } else if(_b.includes("helps") && _b.includes("regresses")){
+   dva_overall="mixed";
+   dva_summary="MIXED: disagg helps on "+Object.entries(_ax).filter(([k,v])=>v.band==="helps").map(([k])=>k).join("/")
+     +" but regresses on "+Object.entries(_ax).filter(([k,v])=>v.band==="regresses").map(([k])=>k).join("/")
+     +" — pick on your priority axis (cost vs latency)";
+ } else {
+   dva_overall="no-op";
+   dva_summary="disaggregation is roughly a NO-OP here (within ±"+Math.round(DISAGG_BAND*100)+"% of aggregation on every axis) — the split's cost ≈ its benefit; stay aggregated for simplicity";
+ }
+ return {kv_bpt,kv_MB,attn_MB,mamba_MB,line_GBs,achieved_GBs,kv_transfer_ms,
+   dva_cost,dva_ttft,dva_itl,dva_overall,dva_summary,dva_bands,dva_band_pct:Math.round(DISAGG_BAND*100),
+   prefill_ms,prefill_attn_quadratic_frac,dtype_peak_mult,
+   itl_roofline,corr,decode_step_ms,itl,decode_phase_ms,avg_ctx,
+   weights_GB,total_hbm_GB,min_util,kv_budget_GB,fits,tight,fit_status,min_gpus_to_fit,max_kv_tokens,conc_at_wl,
+   cpr,transfer_overhead_frac,imbalance,interference,interference_raw,toll,fav,thr_disagg,thr_hybrid,verdict,why,
+   verdict_pre_slo,disagg_slo_viable,slo_notes,
+   aggTps,aggGpu,aggCost,disTps,disGpu,disCost,cheaper,savings,uplift,knee,gpu_hr,itl_floor,est_tok_s_gpu};
+}
+
+// ============================ UI ============================
+function fillSelects(){
+ const p=document.getElementById('preset'); Object.keys(PRESETS).forEach(k=>p.add(new Option(k,k)));
+ const i=document.getElementById('inst'); Object.keys(INSTANCES).forEach(k=>i.add(new Option(k,k))); i.value="p5en.48xlarge";
+ const uc=document.getElementById('usecase'); Object.keys(USECASES).forEach(k=>uc.add(new Option(k,k)));
+ uc.value="💬 Chat / assistant (short turn, medium reply)";
+ uc.onchange=()=>{const x=USECASES[uc.value];if(!x)return;if(x.isl!=null){document.getElementById('isl').value=x.isl;document.getElementById('osl').value=x.osl;}showUcHint();run();};
+ p.onchange=loadPreset; loadPreset();
+}
+// reflect the current ISL/OSL onto the use-case dropdown: match a known use case or show Custom
+function syncUseCase(){
+ const uc=document.getElementById('usecase'); if(!uc)return;
+ const isl=+document.getElementById('isl').value, osl=+document.getElementById('osl').value;
+ let match="✍️ Custom (set ISL/OSL by hand)";
+ for(const[k,v]of Object.entries(USECASES))if(v.isl===isl&&v.osl===osl){match=k;break;}
+ if(uc.value!==match)uc.value=match; showUcHint();
+}
+function ucCustom(){ const uc=document.getElementById('usecase'); if(uc)uc.value="✍️ Custom (set ISL/OSL by hand)"; showUcHint(); }
+function showUcHint(){
+ const uc=document.getElementById('usecase'); if(!uc)return;
+ const x=USECASES[uc.value], el=document.getElementById('ucHint');
+ if(!el)return; el.innerHTML = x&&x.note ? x.note : "";
+}
+// fields with no form input (attention/mamba split + Mamba SSM geometry) are carried from the active preset.
+// stored per family so a user manually flipping `family` away doesn't drag stale mamba fields onto another model.
+let _presetExtra={family:null, n_attn_layers:null, n_mamba_layers:null,
+  mamba_num_heads:null, mamba_head_dim:null, mamba_d_state:null, mamba_d_conv:null, mamba_cache_dtype:null};
+function loadPreset(){
+ const x=PRESETS[document.getElementById('preset').value]; if(!x)return;
+ for(const id of ["ptot","pact","layers","heads","kvheads","hidden","headdim","maxctx","tp","isl","osl"]) document.getElementById(id).value=x[id];
+ document.getElementById('wdtype').value=x.wdtype; document.getElementById('family').value=x.family;
+ if(x.family==="moe-mla"){document.getElementById('lora').value=x.lora; document.getElementById('rope').value=x.rope;}
+ document.getElementById('mlaBox').style.display = x.family==="moe-mla"?"block":"none";
+ _presetExtra={family:x.family, n_attn_layers:x.n_attn_layers??null, n_mamba_layers:x.n_mamba_layers??null,
+   mamba_num_heads:x.mamba_num_heads??null, mamba_head_dim:x.mamba_head_dim??null,
+   mamba_d_state:x.mamba_d_state??null, mamba_d_conv:x.mamba_d_conv??null, mamba_cache_dtype:x.mamba_cache_dtype??null};
+ run();
+}
+document.addEventListener('change',e=>{ if(e.target.id==='family') document.getElementById('mlaBox').style.display=e.target.value==="moe-mla"?"block":"none"; });
+
+function readModel(){
+ const f=document.getElementById('family').value;
+ const m={family:f, ptot:+ptot.value, pact:+pact.value, layers:+layers.value, heads:+heads.value, kvheads:+kvheads.value,
+   hidden:+hidden.value, headdim:+headdim.value, wdtype:wdtype.value, maxctx:+maxctx.value, tp:+tp.value,
+   lora:+ (document.getElementById('lora')?.value||512), rope:+ (document.getElementById('rope')?.value||64)};
+ // carry the attention/mamba split + Mamba geometry from the active preset (no form inputs for these),
+ // but only while the form family still matches the preset's family (else they don't apply to this arch).
+ if(_presetExtra && _presetExtra.family===f){
+   if(_presetExtra.n_attn_layers!=null)  m.n_attn_layers=_presetExtra.n_attn_layers;
+   if(_presetExtra.n_mamba_layers!=null) m.n_mamba_layers=_presetExtra.n_mamba_layers;
+   for(const k of ["mamba_num_heads","mamba_head_dim","mamba_d_state","mamba_d_conv","mamba_cache_dtype"])
+     if(_presetExtra[k]!=null) m[k]=_presetExtra[k];
+ }
+ return m;
+}
+const fmt=(v,d=1)=> (v>=1000?Math.round(v).toLocaleString():(+v).toFixed(d));
+function step(n,t,f,body){return `<div class="step"><div><span class="n">${n}</span><span class="t">${t}</span></div><div class="f">${f}</div><div class="v">${body}</div></div>`;}
+function ad(aH,aV,dH,dV){return `<div class="ad"><div class="agg"><div class="h">${aH}</div>${aV}</div><div class="dis"><div class="h">${dH}</div>${dV}</div></div>`;}
+
+let charts={};
+// a11y: write a one-line text summary under a chart (screen-reader / no-canvas fallback).
+// pure DOM text write; touches no physics. no-op if the element is absent.
+function _sum(id,txt){ const el=document.getElementById(id); if(el) el.textContent=txt; }
+function run(){
+ syncUseCase();   // keep the use-case dropdown + hint in sync with whatever ISL/OSL currently are
+ const g=INSTANCES[document.getElementById('inst').value]; const m=readModel();
+ const slottft=+document.getElementById('slottft').value, slotpot=+document.getElementById('slotpot').value;
+ const wl={isl:+isl.value, osl:+osl.value, instName:document.getElementById('inst').value, price:parseFloat(price.value)||null,
+           slo_ttft_ms: slottft>0?slottft:null, slo_tpot_ms: slotpot>0?slotpot:null};   // SLO gate now feeds the verdict
+ const r=derive(g,m,wl);
+ const instName=wl.instName;
+
+ // header
+ document.getElementById('vmodel').textContent=(document.getElementById('preset').value)+" ("+m.family+")";
+ document.getElementById('vinst').textContent=instName+" ("+g.gpu+", TP"+m.tp+")";
+ visl.textContent=wl.isl; vosl.textContent=wl.osl;
+ const vEl=document.getElementById('verdict'); vEl.textContent=r.verdict.toUpperCase(); vEl.className="verdict "+r.verdict;
+ document.getElementById('why').textContent=r.why;
+ const fp=document.getElementById('fitpill'); fp.textContent=r.fit_status; fp.className="pill "+(r.fit_status==="no-fit"?"nofit":r.fit_status);
+ document.getElementById('fitnote').textContent = r.fits? `KV budget ${fmt(r.kv_budget_GB)}GB · ~${fmt(r.conc_at_wl,0)} concurrent` : `need ≥${r.min_gpus_to_fit*g.gpus} GPUs / quantize`;
+ const ch=document.getElementById('cheaper'); ch.textContent=r.cheaper.toUpperCase()+" ("+(r.savings>=0?"+":"")+fmt(r.savings,0)+"%)"; ch.className=r.cheaper;
+ document.getElementById('fav').textContent=fmt(r.fav,3)+"  (toll "+fmt(r.toll,2)+" × interf "+fmt(r.interference,2)+" · disagg ≥"+fmt(r.thr_disagg,2)+" hybrid ≥"+fmt(r.thr_hybrid,2)+")";
+ document.getElementById('optpt').textContent = r.fits? ("concurrency ≈ "+r.knee+(r.knee>=ANCHOR.b_knee?" (measured knee)":" (KV-budget cap)")) : "n/a (doesn't fit)";
+ document.getElementById('costwarn').textContent = (r.cheaper!==r.verdict)
+   ? "⚠ Latency favors "+r.verdict.toUpperCase()+" but cost favors "+r.cheaper.toUpperCase()+" — disagg buys TTFT/SLA-attainment; agg buys $/token. Choose on your priority."
+   : "Latency and cost agree on "+r.cheaper.toUpperCase()+".";
+ document.getElementById('archline').innerHTML = `KV/req = <b>${fmt(r.kv_MB,1)} MB</b> <span class="badge der tiny">DERIVED</span> · weights = <b>${fmt(r.weights_GB,0)} GB</b> <span class="badge der tiny">DERIVED</span> · ITL ≈ <b>${fmt(r.decode_step_ms,1)} ms</b> <span class="small">(roofline ${fmt(r.itl_roofline,1)} × measured ${fmt(r.corr,1)}×)</span> <span class="badge asm tiny" title="roofline (DERIVED) × measured family correction (ASSUMED n=1)">ASSUMED n=1</span>`;
+
+ // ---- the derivation chain (backwards from architecture) ----
+ const mla = m.family==="moe-mla";
+ const isMamba = m.family==="hybrid-mamba";
+ const nAttn = m.n_attn_layers!=null ? m.n_attn_layers : m.layers;
+ let H="";
+ H+=step(1,"KV cache per token","memory the model must hold/ship per token (ATTENTION layers only)",
+   mla ? `MLA (compressed latent): (lora ${m.lora} + rope ${m.rope}) × layers ${m.layers} × ${DB[m.wdtype]}B = <b>${fmt(r.kv_bpt,0)} B/token</b> <span class="small">(naive GQA would be ${fmt(2*m.kvheads*m.headdim*m.layers*DB[m.wdtype],0)} B — MLA avoids that)</span>`
+       : `GQA: 2 × kv_heads ${m.kvheads} × head_dim ${m.headdim} × <b>attn-layers ${nAttn}</b>${isMamba?` <span class="small">(of ${m.layers} total — Mamba layers carry no growing KV)</span>`:` (= layers)`} × ${DB[m.wdtype]}B = <b>${fmt(r.kv_bpt,0)} B/token</b>`);
+ H+=step(2,"KV cache per request","attention KV (grows with ISL)"+(isMamba?" + constant Mamba SSM state":""),
+   isMamba
+     ? `attention KV = ${fmt(r.kv_bpt,0)} B × ${wl.isl} = <b>${fmt(r.attn_MB,1)} MB</b> + Mamba state = <b>${fmt(r.mamba_MB,1)} MB</b> <span class="small">(${m.n_mamba_layers||0} mamba layers × ${m.mamba_num_heads}×${m.mamba_head_dim}×(d_state ${m.mamba_d_state||128}+d_conv ${m.mamba_d_conv||4}) ${m.mamba_cache_dtype||"fp32"}, ISL-independent)</span> = <b>${fmt(r.kv_MB,1)} MB/request</b>`
+     : `${fmt(r.kv_bpt,0)} B × ${wl.isl} = <b>${fmt(r.kv_MB,1)} MB/request</b>`);
+ H+=step(3,"Memory fit — the gate","TOTAL weights vs aggregate HBM (= the KV budget = concurrency ceiling)",
+   `weights = ${m.ptot}B × ${DB[m.wdtype]}B = <b>${fmt(r.weights_GB,0)} GB</b> vs ${m.tp*(m.pp||1)}×${g.hbm_cap_GB} = <b>${fmt(r.total_hbm_GB,0)} GB</b>${(m.pp||1)>1?` (tp${m.tp}/pp${m.pp})`:''} → util-for-weights <b>${fmt(r.min_util*100,1)}%</b> → KV budget <b>${fmt(r.kv_budget_GB,0)} GB</b> → <span class="pill ${r.fit_status==='no-fit'?'nofit':r.fit_status}">${r.fit_status}</span>`);
+ H+=step(4,"Prefill compute time","(2 × P_active × ISL linear + 4 × ISL² × hidden × attn-layers quadratic) ÷ (TP × peak×dtype-mult × MFU 0.45) — same on agg & disagg",
+   `linear 2 × ${m.pact}B × ${wl.isl} + quadratic O(ISL²) attn (×${nAttn} layers, <b>${fmt(r.prefill_attn_quadratic_frac*100,1)}%</b> of FLOPs) ÷ (${m.tp} × ${fmt(g.fp16_TFLOPs,0)}T<b>×${fmt(r.dtype_peak_mult,0)}</b> ${m.wdtype} peak × 0.45) = <b>${fmt(r.prefill_ms,1)} ms</b>`);
+ H+=step(5,"Decode per-token (ITL = roofline × measured correction)","read P_active + KV-so-far from HBM ÷ (TP × HBM-BW × MBU 0.65), then × measured calibration factor",
+   `roofline = (${m.pact}B × ${DB[m.wdtype]}B + KV-read @ ctx ${fmt(r.avg_ctx,0)}) ÷ (${m.tp} × ${fmt(g.hbm_GBs,0)} × 0.65) = <b>${fmt(r.itl_roofline,2)} ms</b> × measured correction <b>${fmt(r.corr,2)}×</b>${r.corr>1?` <span class="small">(family '${m.family}' calibration ledger — eager/conc-1 penalty)</span>`:``} = <b>${fmt(r.decode_step_ms,2)} ms/token</b> → decode phase ${fmt(r.decode_phase_ms,0)} ms`);
+ H+=step(6,"Where agg & disagg DIVERGE","disagg ships the KV over the fabric; agg co-locates (no transfer)",
+   ad("AGGREGATION", `<div class="kpi"><span>KV transfer</span><b>none (co-located)</b></div><div class="kpi"><span>cost: interference toll</span><b>prefill stalls decode</b></div>`,
+      "DISAGGREGATION", `<div class="kpi"><span>KV transfer</span><b>${fmt(r.kv_transfer_ms,1)} ms</b></div><div class="kpi"><span>@ ${fmt(r.achieved_GBs,1)} GB/s</span><b>(0.013×line ${fmt(r.line_GBs,0)})</b></div>`));
+ H+=step(7,"Interference removed vs transfer toll added","TaiChi: disagg removes the prefill→decode interference (less chunked-prefill recovery) but pays the KV toll",
+   `imbalance = prefill ÷ ITL = ${fmt(r.imbalance,1)} → raw interference = 1−e^(−imb/4) = ${fmt(r.interference_raw,3)} × (1−chunked-prefill recovery ${fmt(r.cpr,2)}) = <b>${fmt(r.interference,3)}</b><br>`+
+   `transfer toll frac = xfer ÷ decode-phase = ${fmt(r.transfer_overhead_frac,3)} → toll = 1/(1+frac×4) = <b>${fmt(r.toll,3)}</b>`);
+ H+=step(8,"Favorability → verdict","fav = toll × interference, vs thresholds RESCALED by (1−chunked-prefill recovery) onto the capped interference axis",
+   `${fmt(r.toll,3)} × ${fmt(r.interference,3)} = <b style="font-size:18px" class="${r.verdict}">${fmt(r.fav,3)} → ${r.verdict.toUpperCase()}</b> <span class="small">(disagg ≥ ${fmt(r.thr_disagg,3)} · hybrid ≥ ${fmt(r.thr_hybrid,3)} — base 0.55/0.30 × (1−${fmt(r.cpr,2)}))</span>`);
+ H+=step(9,"Cost $/Mtok (work-back to $)","(per-GPU $/hr × GPUs) ÷ (tok/s × 3600) × 1e6 · disagg = 2×GPUs, interference uplift",
+   ad("AGGREGATION ("+r.aggGpu+" GPU)", `<div class="kpi"><span>~tok/s</span><b>${fmt(r.aggTps,0)}</b></div><div class="kpi"><span>$/Mtok</span><b>$${fmt(r.aggCost,2)}</b></div>`,
+      "DISAGGREGATION ("+r.disGpu+" GPU)", `<div class="kpi"><span>~tok/s (×${fmt(r.uplift,2)} uplift)</span><b>${fmt(r.disTps,0)}</b></div><div class="kpi"><span>$/Mtok</span><b>$${fmt(r.disCost,2)}</b></div>`));
+ document.getElementById('chain').innerHTML=H;
+
+ // ---- chart 1: favorability vs ISL (context sweep) ----
+ const isls=[256,512,1024,2048,4096,8192,16384];
+ const favs=isls.map(s=>derive(g,m,{...wl,isl:s}).fav);
+ if(charts.cFav)charts.cFav.destroy();
+ charts.cFav=new Chart(document.getElementById('cFav'),{type:'line',data:{labels:isls,datasets:[{label:'favorability',data:favs,borderColor:'#3fb950',tension:.3,pointRadius:3}]},
+   options:{plugins:{legend:{display:false},annotation:false},scales:{x:{title:{display:true,text:'ISL (OSL fixed)',color:'#8b949e'},ticks:{color:'#8b949e'}},y:{min:0,max:1,ticks:{color:'#8b949e'},grid:{color:'#21262d'}}}}});
+ _sum('cFav_sum','Favorability (0–1) as input length grows '+isls[0]+'→'+isls[isls.length-1]+' tokens (OSL fixed): '+favs.map(x=>x.toFixed(2)).join(' → ')+'. Disaggregate ≥ '+fmt(r.thr_disagg,2)+', hybrid ≥ '+fmt(r.thr_hybrid,2)+'. Non-monotonic — can dip at extreme prefill + short output.');
+
+ // ---- chart 2: cost vs concurrency knee (optimizer-style) ----
+ const concs=[1,2,4,8,16,32,64,128];
+ const kneeC=r.knee;
+ const cost_at=concs.map(c=>{const eff=Math.min(c,kneeC); const tps=r.est_tok_s_gpu*m.tp*eff/Math.max(kneeC,1)* (eff>=kneeC?kneeC: eff)/Math.max(eff,1); // simple ramp to knee then flat
+   const realTps=r.aggTps*Math.min(c,kneeC)/Math.max(kneeC,1)* (kneeC); return (r.gpu_hr*m.tp)/(Math.max(r.aggTps*Math.min(c,kneeC)/1,1e-9)*3600)*1e6;});
+ // simpler + faithful: throughput grows ∝ min(c,knee); $/Mtok = fixed cost / throughput
+ const cmtok=concs.map(c=>{const tp_eff=Math.min(c,kneeC); const tps=r.est_tok_s_gpu*m.tp*tp_eff; return (r.gpu_hr*m.tp)/(Math.max(tps,1e-9)*3600)*1e6;});
+ if(charts.cKnee)charts.cKnee.destroy();
+ charts.cKnee=new Chart(document.getElementById('cKnee'),{type:'line',data:{labels:concs,datasets:[{label:'$/Mtok (agg)',data:cmtok,borderColor:'#58a6ff',tension:.3,pointRadius:3}]},
+   options:{plugins:{legend:{display:false}},scales:{x:{type:'logarithmic',title:{display:true,text:'concurrency (knee ≈ '+kneeC+')',color:'#8b949e'},ticks:{color:'#8b949e'}},y:{title:{display:true,text:'$/Mtok',color:'#8b949e'},ticks:{color:'#8b949e'},grid:{color:'#21262d'}}}}});
+ _sum('cKnee_sum','Aggregation $/Mtok over concurrency '+concs[0]+'→'+concs[concs.length-1]+' (knee ≈ '+kneeC+'): '+cmtok.map(x=>'$'+fmt(x,0)).join(' → ')+'. Falls to the knee, then flat.');
+
+ // ---- "Does disaggregation help here?" banner (reads r.dva_* — bit-identical to calc.py disagg_vs_agg) ----
+ renderDva(r);
+ // ---- chart 3: where does disagg flip? cost/TTFT/ITL speedup vs ISL, parity line @1.0 + ±10% band ----
+ const dIsls=[256,512,1024,2048,4096,8192,16384,32768];
+ const dRows=dIsls.map(s=>derive(g,m,{...wl,isl:s}));
+ const dCost=dRows.map(x=>x.dva_cost), dTtft=dRows.map(x=>x.dva_ttft), dItl=dRows.map(x=>x.dva_itl);
+ const band=r.dva_band_pct/100, lo=1-band, hi=1+band;
+ const allv=dCost.concat(dTtft,dItl,[1]); const yMax=Math.max(hi+0.05, Math.max(...allv)*1.08), yMin=Math.min(lo-0.05, Math.min(...allv)*0.92);
+ // parity 1.0 line + shaded no-op band as filled datasets behind the 3 axis lines
+ const flat=(v)=>dIsls.map(()=>v);
+ if(charts.cDva)charts.cDva.destroy();
+ charts.cDva=new Chart(document.getElementById('cDva'),{type:'line',
+   data:{labels:dIsls,datasets:[
+     {label:'no-op band +10%',data:flat(hi),borderColor:'rgba(139,148,158,.35)',borderWidth:1,borderDash:[2,3],pointRadius:0,fill:'+1',backgroundColor:'rgba(139,148,158,.12)',order:9},
+     {label:'no-op band −10%',data:flat(lo),borderColor:'rgba(139,148,158,.35)',borderWidth:1,borderDash:[2,3],pointRadius:0,fill:false,order:9},
+     {label:'parity (1.0)',data:flat(1),borderColor:'#8b949e',borderWidth:1.5,borderDash:[6,4],pointRadius:0,order:8},
+     {label:'Cost (÷2× GPUs)',data:dCost,borderColor:'#58a6ff',backgroundColor:'#58a6ff',tension:.25,pointRadius:2,order:1},
+     {label:'TTFT (+KV hop)',data:dTtft,borderColor:'#d29922',backgroundColor:'#d29922',tension:.25,pointRadius:2,order:1},
+     {label:'ITL (−interference)',data:dItl,borderColor:'#3fb950',backgroundColor:'#3fb950',tension:.25,pointRadius:2,borderWidth:2.4,order:0}]},
+   options:{responsive:true,interaction:{mode:'index',intersect:false},
+     plugins:{legend:{labels:{color:'#8b949e',boxWidth:12,filter:i=>!i.text.startsWith('no-op band')}},
+       tooltip:{callbacks:{label:c=>c.dataset.label+': '+(+c.parsed.y).toFixed(3)+'× '+(c.parsed.y>=hi?'(helps)':c.parsed.y<=lo?'(regresses)':'(no-op)')}}},
+     scales:{x:{type:'logarithmic',title:{display:true,text:'ISL — input length (OSL fixed)',color:'#8b949e'},ticks:{color:'#8b949e'}},
+       y:{min:yMin,max:yMax,title:{display:true,text:'speedup  (agg ÷ disagg) — >1 disagg better',color:'#8b949e'},ticks:{color:'#8b949e'},grid:{color:'#21262d'}}}}});
+ // text/crossover fallback: report where each axis crosses 1.0 across the swept ISLs
+ const cross=(arr)=>{for(let i=1;i<arr.length;i++){if((arr[i-1]-1)*(arr[i]-1)<0)return 'crosses 1.0 between ISL '+dIsls[i-1]+' and '+dIsls[i];}return (arr[arr.length-1]>=1?'stays ≥1 (helps) across the sweep':'stays <1 (regresses) across the sweep');};
+ _sum('cDva_sum','Disagg-vs-agg speedup as ISL grows '+dIsls[0]+'→'+dIsls[dIsls.length-1]+' (OSL '+wl.osl+'): '+
+   'Cost '+dCost[0].toFixed(2)+'→'+dCost[dCost.length-1].toFixed(2)+'× ('+cross(dCost)+'); '+
+   'TTFT '+dTtft[0].toFixed(2)+'→'+dTtft[dTtft.length-1].toFixed(2)+'× ('+cross(dTtft)+'); '+
+   'ITL '+dItl[0].toFixed(2)+'→'+dItl[dItl.length-1].toFixed(2)+'× ('+cross(dItl)+'). '+
+   'Above 1.0 = disagg helps, below = disagg regresses, ±10% band = no-op.');
+}
+// populate the help/regress banner from a derive() result (pure DOM; physics already done in derive)
+function renderDva(r){
+ const box=document.getElementById('dva'); if(!box)return;
+ box.className='dva '+(r.dva_overall==='no-op'?'noop':r.dva_overall);
+ const word={helps:'HELPS',regresses:'REGRESSES','no-op':'NO-OP',mixed:'MIXED'}[r.dva_overall]||'—';
+ const gly={helps:'▲',regresses:'▼','no-op':'＝',mixed:'◆'}[r.dva_overall]||'';
+ document.getElementById('dvaWord').innerHTML='<span class="gly" aria-hidden="true">'+gly+'</span><span>'+word+'</span><span class="pct">disaggregation vs aggregation, here</span>';
+ document.getElementById('dvaSum').textContent=r.dva_summary;
+ const chip=(ax,sp,bd)=>'<span class="dva-chip '+(bd==='no-op'?'noop':bd)+'"><span class="ax">'+ax+'</span><span class="x">'+fmt(sp,2)+'×</span><span class="bd">'+bd+'</span></span>';
+ document.getElementById('dvaChips').innerHTML=
+   chip('Cost',r.dva_cost,r.dva_bands.cost)+chip('TTFT',r.dva_ttft,r.dva_bands.ttft)+chip('ITL',r.dva_itl,r.dva_bands.itl);
+}
+fillSelects();
+</script>
+</body></html>
