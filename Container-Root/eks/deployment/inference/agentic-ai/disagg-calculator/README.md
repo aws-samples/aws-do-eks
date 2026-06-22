@@ -1,5 +1,7 @@
 # Disaggregation Calculator — agg vs. disagg decision tool for LLM serving
 
+Quick Start: [bit.ly/aws-calc-disagg](https://bit.ly/aws-calc-disagg)
+
 Author: Anton Alexander
 
 > **Disclaimer.** This calculator is provided **free of charge, as a utility** to help quickly
@@ -73,6 +75,9 @@ Open `web/index.html` in a browser (or serve the `web/` folder statically). Pick
 `config.json`), choose the GPU and workload, and read the verdict. `web/calculator.html` is the same engine
 as a single shareable page. The browser pages mirror `analyze/calc.py` exactly — a parity harness in the
 source project asserts they agree on a model × workload grid, so the link you share computes what the CLI does.
+
+You can directly use the following [link](https://rawcdn.githack.com/aws-samples/aws-do-eks/refs/heads/main/Container-Root/eks/deployment/inference/agentic-ai/disagg-calculator/web/index.html)
+or this short-link: [https://bit.ly/aws-calc-disagg](https://bit.ly/aws-calc-disagg)
 
 ## How it stays honest (calibration)
 
