@@ -21,7 +21,10 @@ B64_BODY=$(echo -n "$REQUEST_BODY" | base64 -w0)
 
 CURL_CMD="echo $B64_BODY | base64 -d | curl -s $API_URL -H 'Content-Type: application/json' -d @- | jq ."
 
-if [ "$verbose" != "false" ]; then echo -e "\n${CURL_CMD}\n"; fi
+if [ ! "$VERBOSE" == "false" ]; then echo -e "\n${CURL_CMD}\n"; fi
 
-kubectl run -it --rm do-curl --image=iankoulski/do-curl --restart=Never -- bash -c "$CURL_CMD"
+export CMD="kubectl run -it --rm do-curl --image=iankoulski/do-curl --restart=Never -- bash -c \"$CURL_CMD\""
 
+if [ ! "$VERBOSE" == "false" ]; then echo -e "\n${CMD}\n"; fi
+
+eval "${CMD}"
