@@ -26,7 +26,7 @@ version: 0.2
 
 env:
   variables:
-    IMAGE_TAG: "disagg-1.2.0"
+    IMAGE_TAG: "disagg-1.2.0-scale"
     VLLM_EFA_IMAGE: "nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.2.0-efa"
     ENABLE_DISAGG_PATCHES: "1"
     GATE_SEVERITY: "CRITICAL"

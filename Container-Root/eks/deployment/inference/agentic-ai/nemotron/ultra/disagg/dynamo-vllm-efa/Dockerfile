@@ -10,14 +10,30 @@
 
 ARG VLLM_EFA_IMAGE=nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.2.0-efa
 FROM ${VLLM_EFA_IMAGE}
+
+# Apply disagg patches
 SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 USER root
 ARG ENABLE_DISAGG_PATCHES=1
 # Record the base vLLM version (informational; patches apply --fuzz=0 across 0.19.0/0.20.1).
 RUN python3 -c "import vllm; print('[base] vllm', vllm.__version__)"
-COPY patches/pr-disagg-*.patch /tmp/dp/
+COPY patch/pr-disagg-*.patch /tmp/dp/
 COPY apply-disagg-patches.sh /tmp/apply-disagg-patches.sh
 RUN if [ "${ENABLE_DISAGG_PATCHES}" = "1" ]; then bash /tmp/apply-disagg-patches.sh; else echo "[disagg] skipped"; fi && rm -rf /tmp/dp /tmp/apply-disagg-patches.sh
+
+# Apply worker/metadata fix
+# NOTE: if your NGC base path/tag differs, swap the FROM. The patches target
+# vllm/distributed/kv_transfer/kv_connector/v1/nixl/{worker,metadata}.py.
+USER root
+ARG NIXLDIR=/usr/local/lib/python3.12/dist-packages/vllm/distributed/kv_transfer/kv_connector/v1/nixl
+COPY fix/worker.py    "$NIXLDIR/worker.py"
+COPY fix/metadata.py  "$NIXLDIR/metadata.py"
+# build-time sanity gates
+RUN python3 -c "import ast; ast.parse(open('$NIXLDIR/worker.py').read()); ast.parse(open('$NIXLDIR/metadata.py').read()); print('[gate] AST OK')"
+RUN grep -q "ssm_on_mamba_region" "$NIXLDIR/worker.py" && echo "[gate] #46407 multi-member recovery present"
+RUN grep -q "BUG-10" "$NIXLDIR/worker.py" && echo "[gate] asymmetric-PP filter present"
+RUN cd "$NIXLDIR" && python3 -m py_compile worker.py metadata.py && echo "[gate] py_compile OK"
+RUN python3 -c "import vllm; print('[gate] vllm', vllm.__version__)"
 
 # -----------------------------------------------------------------------------
 # CVE hardening - remove non-runtime Go binaries the WORKER/FRONTEND never runs.
