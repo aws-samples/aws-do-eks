@@ -8,7 +8,7 @@
 # apply-disagg-patches.sh. Override base for an older tag with --build-arg VLLM_EFA_IMAGE=...
 # ================================================================================================
 
-ARG VLLM_EFA_IMAGE=nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.2.0-efa
+ARG VLLM_EFA_IMAGE=nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.2.1-efa-amd64
 FROM ${VLLM_EFA_IMAGE}
 
 # Apply disagg patches
@@ -25,7 +25,7 @@ RUN if [ "${ENABLE_DISAGG_PATCHES}" = "1" ]; then bash /tmp/apply-disagg-patches
 # NOTE: if your NGC base path/tag differs, swap the FROM. The patches target
 # vllm/distributed/kv_transfer/kv_connector/v1/nixl/{worker,metadata}.py.
 USER root
-ARG NIXLDIR=/usr/local/lib/python3.12/dist-packages/vllm/distributed/kv_transfer/kv_connector/v1/nixl
+ARG NIXLDIR=/opt/dynamo/venv/lib/python3.12/site-packages/vllm/distributed/kv_transfer/kv_connector/v1/nixl
 COPY fix/worker.py    "$NIXLDIR/worker.py"
 COPY fix/metadata.py  "$NIXLDIR/metadata.py"
 # build-time sanity gates

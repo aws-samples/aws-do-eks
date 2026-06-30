@@ -16,7 +16,7 @@ version: 0.2
 #
 # Required project env vars (PLAINTEXT unless noted):
 #   AWS_ACCOUNT_ID, AWS_DEFAULT_REGION, ECR_REPO   (e.g. nemotron-3-disagg)
-#   IMAGE_TAG        (default: disagg-1.2.0)
+#   TAG        (default: disagg-1.2.0)
 # Optional:
 #   VLLM_EFA_IMAGE   (override base; default 1.2.0-efa)
 #   NGC_API_KEY      (SECRETS_MANAGER) - only if NGC ever gates the -efa pull;
@@ -26,13 +26,12 @@ version: 0.2
 
 env:
   variables:
-    IMAGE_TAG: "disagg-1.2.0-scale"
-    VLLM_EFA_IMAGE: "nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.2.0-efa"
+    VLLM_EFA_IMAGE: "nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.2.1-efa-amd64"
     ENABLE_DISAGG_PATCHES: "1"
     GATE_SEVERITY: "CRITICAL"
     REGISTRY: "public.ecr.aws/hpc-cloud/"
     IMAGE: "dynamo-vllm-efa"
-    TAG: "disagg-1.2.0"
+    TAG: "disagg-1.2.1-amd64"
 
 phases:
   install:
