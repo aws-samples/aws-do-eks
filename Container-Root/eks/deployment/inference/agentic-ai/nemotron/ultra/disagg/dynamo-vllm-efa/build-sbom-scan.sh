@@ -28,6 +28,7 @@ IMAGE="${IMAGE:-dynamo-vllm-efa:disagg-1.2.0}"
 VLLM_EFA_IMAGE="${VLLM_EFA_IMAGE:-nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.2.0-efa}"
 ENABLE_DISAGG_PATCHES="${ENABLE_DISAGG_PATCHES:-1}"
 GATE_SEVERITY="${GATE_SEVERITY:-CRITICAL}"     # fail the build on these severities
+VEX_FILE="${VEX_FILE:-$HERE/vex.openvex.json}"   # OpenVEX justifications (e.g. CVE-2026-48746)
 OUTDIR="${OUTDIR:-$HERE/sbom}"
 SCAN_ONLY=0
 [ "${1:-}" = "--scan-only" ] && SCAN_ONLY=1
@@ -77,9 +78,11 @@ echo "[2/3 SBOM] OK -> $SBOM_SPDX ($PKG_COUNT packages), $SBOM_CDX"
 # previously left CVE_JSON unwritten and silently passed the gate. Scanning the
 # SBOM is filesystem-free (seconds) and covers the exact same package set syft
 # already enumerated. --timeout is belt-and-suspenders.
+VEX_ARG=""
+[ -s "$VEX_FILE" ] && VEX_ARG="--vex $VEX_FILE" && echo "[3/3 GATE] applying VEX: $VEX_FILE"
 echo "[3/3 GATE] trivy SBOM scan ($SBOM_CDX) ..."
-trivy sbom --scanners vuln --timeout 30m --format json  -o "$CVE_JSON" "$SBOM_CDX" || true
-trivy sbom --scanners vuln --timeout 30m --severity "$GATE_SEVERITY" --format table -o "$CVE_TXT" "$SBOM_CDX" || true
+trivy sbom --scanners vuln --timeout 30m $VEX_ARG --format json  -o "$CVE_JSON" "$SBOM_CDX" || true
+trivy sbom --scanners vuln --timeout 30m $VEX_ARG --severity "$GATE_SEVERITY" --format table -o "$CVE_TXT" "$SBOM_CDX" || true
 
 # FAIL-LOUD: a missing/empty CVE report is a gate FAILURE, never a silent pass.
 # (The old code let a trivy timeout -> absent JSON -> empty count -> `[ "" -gt 0 ]`

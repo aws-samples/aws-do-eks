@@ -1,0 +1,23 @@
+{
+  "@context": "https://openvex.dev/ns/v0.2.0",
+  "@id": "https://github.com/aws-samples/aws-do-eks/security/vex/nemotron-disagg-dynamo-vllm-efa",
+  "author": "AWS aws-do-eks Nemotron-3 disagg (dynamo-vllm-efa)",
+  "role": "Image maintainer",
+  "timestamp": "2026-06-30T01:55:00Z",
+  "version": 1,
+  "statements": [
+    {
+      "vulnerability": {
+        "name": "CVE-2026-48746",
+        "description": "vLLM starlette/ASGI authentication bypass of the OpenAI API AuthenticationMiddleware (GHSA-94f4-hr76-p5j6, CWE-444). Affects vLLM 0.3.0 through 0.22.0; fixed in 0.22.0 (vllm PR #43426)."
+      },
+      "products": [
+        { "@id": "pkg:pypi/vllm@0.20.1+cu129" }
+      ],
+      "status": "not_affected",
+      "justification": "vulnerable_code_cannot_be_controlled_by_adversary",
+      "impact_statement": "The vulnerability lets an unauthenticated network caller bypass the vLLM OpenAI-API key check (VLLM_API_KEY/--api-key). In this disaggregated-inference deployment that attack surface is not reachable by an adversary: pods run unprivileged with NO hostNetwork, NO Service or container port is published to 0.0.0.0/0, and the frontend is accessed only via a 127.0.0.1 kubectl port-forward for benchmarking. The deployment does not rely on VLLM_API_KEY as a security boundary, so bypassing it grants access to no otherwise-protected resource. NOTE: this justification is conditional on the network posture above. If the vLLM/frontend API is ever exposed beyond the local node (LoadBalancer, NodePort, Ingress, or an intra-cluster Service relied upon for isolation), this VEX statement MUST be revisited and the image upgraded to a vLLM build that includes PR #43426 (i.e. NVIDIA's next -efa tag rebased on a patched vLLM, or a backport)."
+    }
+  ]
+}
+
