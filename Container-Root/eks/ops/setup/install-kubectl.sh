@@ -1,7 +1,11 @@
 #!/bin/bash
 
+# Version of kubectl to install
+KUBECTL_VERSION=v1.36.0
+
 echo ""
-echo "Installing kubectl ..."
+echo "Installing kubectl ${KUBECTL_VERSION} ..."
+
 
 ARCH=$(uname -m)
 if [ "$ARCH" = "aarch64" ]; then
@@ -10,10 +14,13 @@ else
   GOARCH=amd64
 fi
 
+OS=$(uname)
+OS_LOWER=$(echo $OS | tr '[:upper:]' '[:lower:]')
+
 # Install kubectl
 # Reference: https://kubernetes.io/docs/tasks/tools/install-kubectl-linux/
 # curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-URL=https://dl.k8s.io/release/v1.34.0/bin/linux/${GOARCH}/kubectl
+URL=https://dl.k8s.io/release/${KUBECTL_VERSION}/bin/${OS_LOWER}/${GOARCH}/kubectl
 echo "$URL"
 curl -Lo kubectl $URL
 chmod +x ./kubectl
