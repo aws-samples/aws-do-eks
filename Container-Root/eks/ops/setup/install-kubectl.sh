@@ -8,7 +8,7 @@ echo "Installing kubectl ${KUBECTL_VERSION} ..."
 
 
 ARCH=$(uname -m)
-if [ "$ARCH" = "aarch64" ]; then
+if [ "$ARCH" == "aarch64" ]; then
   GOARCH=arm64
 else
   GOARCH=amd64
