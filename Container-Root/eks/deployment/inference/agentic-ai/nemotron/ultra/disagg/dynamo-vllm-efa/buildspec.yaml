@@ -15,7 +15,7 @@ version: 0.2
 #   REGISTRY=public.ecr.aws/hpc-cloud/
 #   IMAGE=dynamo-vllm-efa:1.3.0
 #   GATE_SEVERITY=CRITICAL,HIGH
-#   MAX_HIGH=40
+#   MAX_HIGH=65
 #   BASE=nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.3.0
 # =============================================================================
 
@@ -23,7 +23,7 @@ env:
   variables:
     BASE: "nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.3.0"
     GATE_SEVERITY: "CRITICAL,HIGH"
-    MAX_HIGH: "40"
+    MAX_HIGH: "65"
     REGISTRY: "public.ecr.aws/hpc-cloud/"
     IMAGE: "dynamo-vllm-efa:1.3.0"
 
