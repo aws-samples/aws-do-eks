@@ -1,74 +1,135 @@
-# ================================================================================================
-# Nemotron-3 disagg image on NVIDIA's official -efa base (current: 1.2.0-efa = vLLM 0.20.1).
+# Nemotron-550B disagg on Dynamo 1.3.0 GA + vLLM 0.23 + EFA 1.49 — ONE GOLDEN IMAGE.
+#
 # Author: Anton Alexander
-# Only addition: 5 disagg anchor-patches (vLLM PR#42522 folded into PR#43935), rebased to 0.20.1.
-# No pip vllm pin (track NVIDIA's base). No AWS EFA overlay (NVIDIA ships EFA + NIXL LIBFABRIC).
-# When vLLM #43935 merges + ships in this -efa image -> ENABLE_DISAGG_PATCHES=0 (zero patches).
-# Patches verified --fuzz=0 against vLLM 0.19.0 AND 0.20.1; rebase + synthetic-config test in
-# apply-disagg-patches.sh. Override base for an older tag with --build-arg VLLM_EFA_IMAGE=...
-# ================================================================================================
+#
+# Covers every scenario: aggregated, EP16 (DP2/TP8), and PP>1 hybrid-Mamba disagg (NIXL).
+#
+# FULLY PUBLIC, DOCKERFILE-ONLY REPRODUCIBLE: no gist, no external files, no patch step,
+# no fork refs. Anyone can `docker build` this with only public network access.
+#
+#   docker build -t $REGISTRY/nemotron-disagg:dynamo13-golden .
+#   ./build-sbom-scan.sh          # SBOM (SPDX + CycloneDX) + CVE gate, pipeline-ready
+#
+# The PP>1 fix is fetched at build time from vLLM PR #48263's own pull-ref on UPSTREAM
+# github.com/vllm-project/vllm (the PR head IS the E2E-tested revision, SHA-pinned).
+# When #48263 merges into the Dynamo-pinned vLLM, delete the OVERLAY stage entirely.
+#
+# ---------------------------------------------------------------------------------------
+# BASE: 1.3.0 GA. Verified contents (docker run --rm, 2026-07-30) — this drove which
+# layers below survived and which were deleted as redundant:
+#
+#     vllm 0.23.0 | ai-dynamo 1.3.0 | transformers 5.12.0 | runai-model-streamer 0.16.0
+#     flashinfer-jit-cache 0.6.12+cu130 | flashinfer-python 0.6.12
+#     ray ABSENT | /opt/amazon/efa ABSENT | default USER dynamo | nats-server 16MB baked
+#
+# Do NOT assume a newer base fixes a layer — measure it. Three separate GA layers were
+# each assumed-fixed and were not (transformers, flashinfer, nats-server).
+# ---------------------------------------------------------------------------------------
+ARG BASE=nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.3.0
+FROM ${BASE}
 
-ARG VLLM_EFA_IMAGE=nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.2.1-efa-amd64
-FROM ${VLLM_EFA_IMAGE}
-
-# Apply disagg patches
-SHELL ["/bin/bash", "-euo", "pipefail", "-c"]
 USER root
-ARG ENABLE_DISAGG_PATCHES=1
-# Record the base vLLM version (informational; patches apply --fuzz=0 across 0.19.0/0.20.1).
-RUN python3 -c "import vllm; print('[base] vllm', vllm.__version__)"
-COPY patch/pr-disagg-*.patch /tmp/dp/
-COPY apply-disagg-patches.sh /tmp/apply-disagg-patches.sh
-RUN if [ "${ENABLE_DISAGG_PATCHES}" = "1" ]; then bash /tmp/apply-disagg-patches.sh; else echo "[disagg] skipped"; fi && rm -rf /tmp/dp /tmp/apply-disagg-patches.sh
+SHELL ["/bin/bash", "-c"]
 
-# Apply worker/metadata fix
-# NOTE: if your NGC base path/tag differs, swap the FROM. The patches target
-# vllm/distributed/kv_transfer/kv_connector/v1/nixl/{worker,metadata}.py.
-USER root
-ARG NIXLDIR=/opt/dynamo/venv/lib/python3.12/site-packages/vllm/distributed/kv_transfer/kv_connector/v1/nixl
-COPY fix/worker.py    "$NIXLDIR/worker.py"
-COPY fix/metadata.py  "$NIXLDIR/metadata.py"
-# build-time sanity gates
-RUN python3 -c "import ast; ast.parse(open('$NIXLDIR/worker.py').read()); ast.parse(open('$NIXLDIR/metadata.py').read()); print('[gate] AST OK')"
-RUN grep -q "ssm_on_mamba_region" "$NIXLDIR/worker.py" && echo "[gate] #46407 multi-member recovery present"
-RUN grep -q "BUG-10" "$NIXLDIR/worker.py" && echo "[gate] asymmetric-PP filter present"
-RUN cd "$NIXLDIR" && python3 -m py_compile worker.py metadata.py && echo "[gate] py_compile OK"
-RUN python3 -c "import vllm; print('[gate] vllm', vllm.__version__)"
+# ---- 0) Assert the base is what we think it is ---------------------------------------
+#    GA ships vLLM 0.23.0 natively, so the old `pip install vllm==0.23.0` force-install
+#    layer is DELETED. That makes the base's own version load-bearing: if a future BASE
+#    arg regresses it, every scenario below is silently wrong. Fail at build, not serve.
+RUN set -eux; \
+    python3 - <<'PY'
+import importlib.metadata as m
+v = m.version("vllm");      assert v.startswith("0.23"), f"base vllm {v} != 0.23.x"
+d = m.version("ai-dynamo"); assert d.startswith("1.3"),  f"base ai-dynamo {d} != 1.3.x"
+print(f"[base] vllm={v} ai-dynamo={d} OK")
+PY
 
-# -----------------------------------------------------------------------------
-# CVE hardening - remove non-runtime Go binaries the WORKER/FRONTEND never runs.
-# The official -efa base vendors etcd/etcdctl/etcdutl (~57MB) and nats-server
-# (~16MB). In the blog deployment, etcd + NATS run as their OWN dynamo-platform
-# pods; the worker/frontend connect via ETCD_ENDPOINTS / NATS_SERVER env (no
-# exec of these binaries - verified: zero references in the dynamo python pkg).
-# Gated + reversible: build --build-arg STRIP_UNUSED_SERVERS=0 to keep them
-# (e.g. an all-in-one single-pod dev image that embeds etcd/NATS locally).
-ARG STRIP_UNUSED_SERVERS=1
-RUN if [ "${STRIP_UNUSED_SERVERS}" = "1" ]; then \
-        rm -rf /usr/local/bin/etcd /usr/local/bin/etcdctl /usr/local/bin/etcdutl \
-               /usr/bin/etcd /usr/bin/etcdctl /usr/bin/etcdutl \
-               /usr/bin/nats-server /usr/local/bin/nats-server && \
-        echo "[harden] removed unused etcd/* + nats-server (worker connects via env endpoints)"; \
-    else \
-        echo "[harden] STRIP_UNUSED_SERVERS=0 - keeping embedded servers (all-in-one image)"; \
-    fi
-# git-lfs 3.4.1 (compiled with go1.22.2) is the SOLE remaining source of the
-# image's CRITICAL CVEs: CVE-2024-24790 (go <1.22.4 netip) and CVE-2025-68121
-# (go <1.24.13). No published git-lfs release is yet built on go>=1.24.13, so an
-# upgrade can't clear CVE-2025-68121 - removal is the genuine fix, not a
-# .trivyignore suppression. The serving path does NOT use the git-lfs binary:
-# huggingface_hub/lfs.py is a pure-Python HTTPS LFS implementation and
-# snapshot_download/hf_hub_download fetch over HTTP; the binary is only invoked
-# by `git clone` of an LFS repo, which is not our weight-loading flow (weights
-# are FSx/HF-cache mounted). Independently gated + reversible: build
-# --build-arg STRIP_GIT_LFS=0 to keep it (e.g. a build that git-clones weights).
-ARG STRIP_GIT_LFS=1
-RUN if [ "${STRIP_GIT_LFS}" = "1" ]; then \
-        git lfs uninstall --system >/dev/null 2>&1 || true; \
-        rm -f /usr/bin/git-lfs /usr/local/bin/git-lfs && \
-        echo "[harden] removed git-lfs binary (serving uses huggingface_hub pure-python LFS over HTTPS)"; \
-    else \
-        echo "[harden] STRIP_GIT_LFS=0 — keeping git-lfs (git-clone weight-loading flow)"; \
-    fi
+# ---- 1) AWS EFA 1.49 userspace (public installer, no kmod) --------------------------
+#    Still required: GA has NO /opt/amazon/efa. The `1.3.0-efa` tag bakes EFA 1.47, not
+#    1.49, so this layer's retire condition is still unmet (ai-dynamo/dynamo#12105).
+ARG EFA_INSTALLER_VER=1.49.0
+RUN set -eux; \
+    apt-get update && apt-get install -y --no-install-recommends \
+      curl ca-certificates git environment-modules tcl libhwloc-dev; \
+    curl -fsSL https://efa-installer.amazonaws.com/aws-efa-installer-${EFA_INSTALLER_VER}.tar.gz \
+      -o /tmp/efa.tar.gz; \
+    tar -xzf /tmp/efa.tar.gz -C /tmp; \
+    cd /tmp/aws-efa-installer && ./efa_installer.sh -y --skip-kmod --skip-limit-conf --no-verify; \
+    echo "${EFA_INSTALLER_VER}" > /opt/efa-installer.version; \
+    /opt/amazon/efa/bin/fi_info --version; \
+    rm -rf /tmp/efa.tar.gz /tmp/aws-efa-installer /var/lib/apt/lists/*
+ENV FI_PROVIDER=efa FI_EFA_USE_DEVICE_RDMA=1 \
+    NCCL_NET_PLUGIN=ofi NCCL_NVLS_ENABLE=0
+# NOTE: FLASHINFER_DISABLE_VERSION_CHECK=1 was DELETED. It existed because the dev base
+# baked jit-cache 0.6.11.post2 while pip vllm==0.23.0 floated flashinfer to 0.6.12 — a
+# skew that failed NemotronH registry inspection at SERVE time. GA ships jit-cache
+# 0.6.12+cu130 AND flashinfer-python 0.6.12 (verified), so the skew is gone and the fence
+# is no longer needed. Re-add only if a base bump reintroduces a mismatch.
+# Upstream: https://github.com/ai-dynamo/dynamo/issues/12355
+
+# ---- 2) Scenario deps GA does NOT satisfy -------------------------------------------
+#    ray       : PP>1 needs `--distributed-executor-backend ray`. ABSENT from BOTH NGC
+#                bases (dev pin and GA alike) — never a GA regression, just never shipped.
+#                2.55.1 matches the PP2-proven image disagg-pd:pp2-...-20260710-dyn2.
+#    transformers 5.13.0 : GA ships 5.12.0, which cannot inspect NemotronHForCausalLM.
+#                Still required — GA did NOT converge this.
+RUN set -eux; \
+    pip install --no-cache-dir "ray==2.55.1" "transformers==5.13.0"; \
+    python3 - <<'PY'
+import importlib.metadata as m
+assert m.version("ray") == "2.55.1", m.version("ray")
+assert m.version("transformers") == "5.13.0", m.version("transformers")
+assert m.version("vllm").startswith("0.23"), "dep pin drifted vllm off 0.23.x"
+import ray  # import, not just metadata — a broken wheel passes a version check
+print("[deps] ray=2.55.1 transformers=5.13.0 vllm intact")
+PY
+
+# ---- 3) OVERLAY: fetch vLLM PR #48263 DIRECTLY FROM UPSTREAM, copy 5 nixl files ------
+#    The PR head IS the E2E-tested revision (validated Nemotron-550B PP>1 disagg on
+#    p5en/EFA). Fetched from vllm-project's own pull-ref — no fork, no gist, no patch.
+#    SHA-pinned: the build fails loud if the PR head moves past the tested revision.
+#    Verified 2026-07-30: refs/pull/48263/head == this SHA, PR still open (unmerged).
+ARG VLLM_PR=48263
+ARG VLLM_FIX_SHA=c370902c1243bb09f5729310662aceb7c3dd3737
+RUN set -eux; \
+    NIXLSRC="vllm/distributed/kv_transfer/kv_connector/v1/nixl"; \
+    mkdir /tmp/vllm-fix; cd /tmp/vllm-fix; \
+    git init -q .; git remote add origin https://github.com/vllm-project/vllm.git; \
+    git fetch --depth 1 origin "refs/pull/${VLLM_PR}/head"; \
+    GOT="$(git rev-parse FETCH_HEAD)"; \
+    [ "${GOT}" = "${VLLM_FIX_SHA}" ] || { echo "FAIL: PR#${VLLM_PR} head ${GOT} != tested pin ${VLLM_FIX_SHA} — PR moved; re-validate before bumping the pin"; exit 1; }; \
+    git checkout -q FETCH_HEAD -- "${NIXLSRC}"; \
+    NIXL="$(python3 -c 'import importlib.util,os; s=importlib.util.find_spec("vllm"); b=s.submodule_search_locations[0]; print(os.path.join(b,"distributed","kv_transfer","kv_connector","v1","nixl"))')"; \
+    cp -a /tmp/vllm-fix/${NIXLSRC}/*.py "${NIXL}/"; \
+    python3 -c "import os,py_compile; n='${NIXL}'; \
+      assert 'NIXL_CONNECTOR_VERSION: int = 8' in open(os.path.join(n,'metadata.py')).read(), 'v8 marker missing after overlay'; \
+      [py_compile.compile(os.path.join(n,f), doraise=True) for f in ['connector.py','metadata.py','worker.py','scheduler.py','pp_layer_map.py']]; \
+      print('[overlay] tested fix branch applied + v8 marker present + all compile')"; \
+    rm -rf /tmp/vllm-fix
+
+# ---- 4) CVE remediation: drop worker-UNUSED /usr/bin/nats-server --------------------
+#    Carries the image's sole CRITICAL (CVE-2025-68121, Go stdlib). GA STILL bakes it
+#    (16MB, verified) — not converged. The deploy uses an EXTERNAL nats pod, so this
+#    baked server binary is never executed. Removing it -> 0 CRITICAL, zero functional
+#    impact. Removal (not .trivyignore) is what makes the 0-CRITICAL claim honest.
+#    Upstream: https://github.com/ai-dynamo/dynamo/issues/12356
+RUN rm -f /usr/bin/nats-server || true
+
+# ---- 5) Final assert: every scenario's prerequisites present in ONE image ------------
+RUN set -eux; \
+    python3 - <<'PY'
+import importlib.metadata as m, importlib.util, os, subprocess
+need = {"vllm": "0.23", "ai-dynamo": "1.3", "ray": "2.55.1", "transformers": "5.13.0"}
+for p, want in need.items():
+    got = m.version(p); assert got.startswith(want), f"{p} {got} !~ {want}"
+b = importlib.util.find_spec("vllm").submodule_search_locations[0]
+md = os.path.join(b, "distributed/kv_transfer/kv_connector/v1/nixl/metadata.py")
+assert "NIXL_CONNECTOR_VERSION: int = 8" in open(md).read(), "PP>1 overlay missing"
+assert os.path.exists("/opt/amazon/efa/bin/fi_info"), "EFA userspace missing"
+assert not os.path.exists("/usr/bin/nats-server"), "nats-server still present (CRITICAL CVE)"
+print("[golden] agg + EP16 + PP>1 prerequisites all present; EFA present; 0-CRITICAL precondition met")
+PY
 
 USER dynamo
+LABEL org.opencontainers.image.description="Golden image: Dynamo 1.3.0 GA + vLLM 0.23 + ray 2.55.1 + EFA 1.49 + vLLM PR#48263 overlay (agg + EP16 + PP>1, Dockerfile-only reproducible)"
+LABEL org.opencontainers.image.source="https://github.com/vllm-project/vllm/pull/48263"
+
