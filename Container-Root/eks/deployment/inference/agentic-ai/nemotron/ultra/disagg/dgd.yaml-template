@@ -34,7 +34,10 @@ spec:
     - { name: DYNAMO_BACKEND, value: vllm }
     - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }
     - { name: NATS_SERVER,    value: "${NATS_URL}" }
-    - { name: HF_HOME,        value: /shared/hf_cache }
+    # /tmp, NOT /shared: pods run uid 1000 and /shared is root-owned - the frontend
+    # dies registering the model ("Failed to create cache directory /shared/hf_cache/hub:
+    # Permission denied") and /v1/models stays empty -> every request 404s.
+    - { name: HF_HOME,        value: /tmp/hf_cache }
   services:
     # ---- Frontend (router, CPU-only) --------------------------------------
     Frontend:
@@ -43,6 +46,11 @@ spec:
       resources:
         requests: { cpu: "2", memory: 4Gi }
         limits:   { cpu: "4", memory: 8Gi }
+      # The frontend reads the model dir (config/tokenizer, not weights) to build the
+      # preprocessor when workers register a local path - without this mount the model
+      # never appears in /v1/models.
+      volumeMounts:
+        - { name: fsx-pvc, mountPoint: /shared }
       extraPodSpec:
         nodeSelector: { node.kubernetes.io/instance-type: ${INSTANCE_TYPE_FRONTEND} }
         mainContainer:
