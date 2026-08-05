@@ -120,7 +120,10 @@ spec:
             - { name: NCCL_NET_PLUGIN, value: ofi }
             - { name: NCCL_TUNER_PLUGIN, value: ofi }
             - { name: OFI_NCCL_FORCE_NUM_RAILS, value: "4" }
-          ports: [{ containerPort: 9091, name: dyn-system }]
+          # Port MUST be named "system": the operator injects readiness/liveness probes
+          # that target the named port; any other name fails with
+          # 'strconv.Atoi: parsing "system"' and the worker never goes Ready.
+          ports: [{ containerPort: 9091, name: system }]
           startupProbe:
             httpGet: { path: /health, port: 9091 }
             periodSeconds: 30
@@ -192,7 +195,7 @@ spec:
             - { name: NCCL_NET_PLUGIN, value: ofi }
             - { name: NCCL_TUNER_PLUGIN, value: ofi }
             - { name: OFI_NCCL_FORCE_NUM_RAILS, value: "4" }
-          ports: [{ containerPort: 9092, name: dyn-system }]
+          ports: [{ containerPort: 9092, name: system }]
           startupProbe:
             httpGet: { path: /health, port: 9092 }
             periodSeconds: 30
