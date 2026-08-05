@@ -1,0 +1,200 @@
+# =============================================================================
+# Nemotron-3 Ultra disaggregated P/D — DynamoGraphDeployment (Dynamo operator)
+# =============================================================================
+#
+# Author: Anton Alexander
+#
+# Requires the Dynamo platform 1.3.0 (operator + etcd + NATS) from
+# eks/deployment/nvidia-dynamo. The operator turns this single resource into
+# the frontend + prefill + decode deployments and owns their lifecycle, so
+# `kubectl delete -f dgd.yaml` (or ./stop.sh) removes everything it created.
+#
+# Topology: 1 prefill node + 1 decode node, TP=${GPU_PER_WORKER}/PP=1 each -
+# the validated single-node-per-role serving shape. KV moves prefill->decode
+# over EFA RDMA via NIXL LIBFABRIC.
+#
+# API version: nvidia.com/v1alpha1 - on the 1.3.0 operator this is the storage
+# version and admits cleanly (with a deprecation warning). v1beta1 is a
+# DIFFERENT schema (spec.components array), not a rename of this one.
+# =============================================================================
+---
+apiVersion: nvidia.com/v1alpha1
+kind: DynamoGraphDeployment
+metadata:
+  name: ${DEPLOYMENT_NAME}
+  namespace: ${NAMESPACE}
+  labels:
+    app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
+spec:
+  backendFramework: vllm
+  pvcs:
+    - name: fsx-pvc
+      create: false
+  envs:
+    - { name: DYNAMO_BACKEND, value: vllm }
+    - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }
+    - { name: NATS_SERVER,    value: "${NATS_URL}" }
+    - { name: HF_HOME,        value: /shared/hf_cache }
+  services:
+    # ---- Frontend (router, CPU-only) --------------------------------------
+    Frontend:
+      componentType: frontend
+      replicas: 1
+      resources:
+        requests: { cpu: "2", memory: 4Gi }
+        limits:   { cpu: "4", memory: 8Gi }
+      extraPodSpec:
+        nodeSelector: { node.kubernetes.io/instance-type: ${INSTANCE_TYPE_FRONTEND} }
+        mainContainer:
+          image: ${REGISTRY}${IMAGE}${TAG}
+          imagePullPolicy: Always
+          command: ["/bin/bash", "-c"]
+          # 1.3.0-era images have no /opt/dynamo/venv - activate only when present.
+          args:
+            - |-
+              if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
+              exec python3 -m dynamo.frontend --http-port 8000 --http-host 0.0.0.0
+          ports: [{ containerPort: 8000, name: http }]
+          # NOTE: no readinessProbe here - the operator injects its own frontend
+          # probe; adding ours makes the API server reject the generated pod
+          # ("may not specify more than 1 handler type").
+    # ---- Prefill worker (TP${GPU_PER_WORKER}/PP1, 1 node) -----------------
+    VllmPrefillWorker:
+      componentType: worker
+      subComponentType: prefill
+      replicas: 1
+      resources:
+        requests: { cpu: "96", memory: 1000Gi, gpu: "${GPU_PER_WORKER}", custom: { vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" } }
+        limits:   { cpu: "96", memory: 1000Gi, gpu: "${GPU_PER_WORKER}", custom: { vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" } }
+      volumeMounts:
+        - { name: fsx-pvc, mountPoint: /shared }
+      extraPodSpec:
+        nodeSelector: { node.kubernetes.io/instance-type: ${INSTANCE_TYPE_WORKER} }
+        tolerations:
+          - { key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
+          - { key: vpc.amazonaws.com/efa, operator: Exists, effect: NoSchedule }
+        affinity:
+          podAntiAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector: { matchLabels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME} } }
+                topologyKey: kubernetes.io/hostname
+        volumes:
+          - { name: dshm,       emptyDir: { medium: Memory, sizeLimit: 64Gi } }
+          - { name: infiniband, hostPath: { path: /dev/infiniband, type: DirectoryOrCreate } }
+          - { name: gdrdrv,     hostPath: { path: /dev/gdrdrv, type: CharDevice } }
+        mainContainer:
+          image: ${REGISTRY}${IMAGE}${TAG}
+          imagePullPolicy: Always
+          securityContext: { capabilities: { add: ["IPC_LOCK"] } }
+          command: ["/bin/bash", "-c"]
+          args:
+            - |-
+              set -u
+              unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
+                    HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
+              if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
+              exec python3 -m dynamo.vllm \
+                --model ${MODEL_PATH} \
+                --served-model-name ${MODEL_NAME} \
+                --tensor-parallel-size ${GPU_PER_WORKER} --pipeline-parallel-size 1 \
+                --max-model-len 4096 --gpu-memory-utilization 0.97 --enforce-eager \
+                --trust-remote-code --mamba-cache-mode align \
+                --disaggregation-mode prefill \
+                --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_connector_extra_config":{"backends":["LIBFABRIC"]}}'
+          env:
+            - { name: DYN_SYSTEM_ENABLED, value: "true" }
+            - { name: DYN_SYSTEM_PORT, value: "9091" }
+            - { name: VLLM_LOGGING_LEVEL, value: INFO }
+            - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
+            - { name: FLASHINFER_DISABLE_VERSION_CHECK, value: "1" }
+            - { name: FI_PROVIDER, value: efa }
+            - { name: FI_EFA_USE_DEVICE_RDMA, value: "1" }
+            - { name: FI_EFA_FORK_SAFE, value: "1" }
+            - { name: FI_HMEM_CUDA_USE_DMABUF, value: "1" }
+            - { name: FI_EFA_ENABLE_SHM, value: "0" }
+            - { name: FI_EFA_ENABLE_SHM_TRANSFER, value: "0" }
+            - { name: NIXL_LIBFABRIC_MAX_RAILS, value: "1" }
+            - { name: NIXL_SKIP_TOPOLOGY_CHECK, value: "1" }
+            - { name: NCCL_NET_PLUGIN, value: ofi }
+            - { name: NCCL_TUNER_PLUGIN, value: ofi }
+            - { name: OFI_NCCL_FORCE_NUM_RAILS, value: "4" }
+          ports: [{ containerPort: 9091, name: dyn-system }]
+          startupProbe:
+            httpGet: { path: /health, port: 9091 }
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 240
+          volumeMounts:
+            - { name: dshm,       mountPath: /dev/shm }
+            - { name: infiniband, mountPath: /dev/infiniband }
+            - { name: gdrdrv,     mountPath: /dev/gdrdrv }
+    # ---- Decode worker (TP${GPU_PER_WORKER}/PP1, 1 node) ------------------
+    VllmDecodeWorker:
+      componentType: worker
+      subComponentType: decode
+      replicas: 1
+      resources:
+        requests: { cpu: "96", memory: 1000Gi, gpu: "${GPU_PER_WORKER}", custom: { vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" } }
+        limits:   { cpu: "96", memory: 1000Gi, gpu: "${GPU_PER_WORKER}", custom: { vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" } }
+      volumeMounts:
+        - { name: fsx-pvc, mountPoint: /shared }
+      extraPodSpec:
+        nodeSelector: { node.kubernetes.io/instance-type: ${INSTANCE_TYPE_WORKER} }
+        tolerations:
+          - { key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
+          - { key: vpc.amazonaws.com/efa, operator: Exists, effect: NoSchedule }
+        affinity:
+          podAntiAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector: { matchLabels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME} } }
+                topologyKey: kubernetes.io/hostname
+        volumes:
+          - { name: dshm,       emptyDir: { medium: Memory, sizeLimit: 64Gi } }
+          - { name: infiniband, hostPath: { path: /dev/infiniband, type: DirectoryOrCreate } }
+          - { name: gdrdrv,     hostPath: { path: /dev/gdrdrv, type: CharDevice } }
+        mainContainer:
+          image: ${REGISTRY}${IMAGE}${TAG}
+          imagePullPolicy: Always
+          securityContext: { capabilities: { add: ["IPC_LOCK"] } }
+          command: ["/bin/bash", "-c"]
+          args:
+            - |-
+              set -u
+              unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
+                    HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
+              if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
+              exec python3 -m dynamo.vllm \
+                --model ${MODEL_PATH} \
+                --served-model-name ${MODEL_NAME} \
+                --tensor-parallel-size ${GPU_PER_WORKER} --pipeline-parallel-size 1 \
+                --max-model-len 4096 --gpu-memory-utilization 0.97 --enforce-eager \
+                --trust-remote-code --mamba-cache-mode align \
+                --disaggregation-mode decode \
+                --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_connector_extra_config":{"backends":["LIBFABRIC"]}}'
+          env:
+            - { name: DYN_SYSTEM_ENABLED, value: "true" }
+            - { name: DYN_SYSTEM_PORT, value: "9092" }
+            - { name: VLLM_LOGGING_LEVEL, value: INFO }
+            - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
+            - { name: FLASHINFER_DISABLE_VERSION_CHECK, value: "1" }
+            - { name: FI_PROVIDER, value: efa }
+            - { name: FI_EFA_USE_DEVICE_RDMA, value: "1" }
+            - { name: FI_EFA_FORK_SAFE, value: "1" }
+            - { name: FI_HMEM_CUDA_USE_DMABUF, value: "1" }
+            - { name: FI_EFA_ENABLE_SHM, value: "0" }
+            - { name: FI_EFA_ENABLE_SHM_TRANSFER, value: "0" }
+            - { name: NIXL_LIBFABRIC_MAX_RAILS, value: "1" }
+            - { name: NIXL_SKIP_TOPOLOGY_CHECK, value: "1" }
+            - { name: NCCL_NET_PLUGIN, value: ofi }
+            - { name: NCCL_TUNER_PLUGIN, value: ofi }
+            - { name: OFI_NCCL_FORCE_NUM_RAILS, value: "4" }
+          ports: [{ containerPort: 9092, name: dyn-system }]
+          startupProbe:
+            httpGet: { path: /health, port: 9092 }
+            periodSeconds: 30
+            timeoutSeconds: 10
+            failureThreshold: 240
+          volumeMounts:
+            - { name: dshm,       mountPath: /dev/shm }
+            - { name: infiniband, mountPath: /dev/infiniband }
+            - { name: gdrdrv,     mountPath: /dev/gdrdrv }
