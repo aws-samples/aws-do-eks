@@ -82,12 +82,16 @@ spec:
                 set -u
                 unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
                       HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
-                source /opt/dynamo/venv/bin/activate
+                # Dynamo images differ in python layout: 1.2.0-era images ship /opt/dynamo/venv,
+                # 1.3.0-era images (NGC vllm-runtime:1.3.0 and derivatives) install into the system
+                # python and have NO venv. Activate only when present so one manifest serves both.
+                if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
                 LOG=/shared/disagg-prefill-p5en-$(date -u +%FT%TZ).log
                 echo "[prefill-leader p5en] starting; piping to ${DOLLAR}LOG"
                 python3 -c "import vllm; print(f'vllm {vllm.__version__}')" 2>&1 | tee -a "${DOLLAR}LOG"
                 # Verify the PR #42522 patch is present
-                grep -A2 "is_kv_consumer" /opt/dynamo/venv/lib/python3.12/site-packages/vllm/model_executor/models/config.py 2>&1 | tee -a "${DOLLAR}LOG"
+                VLLM_DIR=${DOLLAR}(python3 -c "import vllm, os; print(os.path.dirname(vllm.__file__))")
+                grep -A2 "is_kv_consumer" "${DOLLAR}VLLM_DIR/model_executor/models/config.py" 2>&1 | tee -a "${DOLLAR}LOG"
                 for i in ${DOLLAR}(seq 1 60); do
                   if getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" >/dev/null 2>&1; then break; fi
                   sleep 2
@@ -194,7 +198,10 @@ spec:
                 set -u
                 unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
                       HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
-                source /opt/dynamo/venv/bin/activate
+                # Dynamo images differ in python layout: 1.2.0-era images ship /opt/dynamo/venv,
+                # 1.3.0-era images (NGC vllm-runtime:1.3.0 and derivatives) install into the system
+                # python and have NO venv. Activate only when present so one manifest serves both.
+                if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
                 for i in ${DOLLAR}(seq 1 60); do
                   if getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" >/dev/null 2>&1; then break; fi
                   sleep 2
@@ -280,10 +287,14 @@ spec:
                 set -u
                 unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
                       HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
-                source /opt/dynamo/venv/bin/activate
+                # Dynamo images differ in python layout: 1.2.0-era images ship /opt/dynamo/venv,
+                # 1.3.0-era images (NGC vllm-runtime:1.3.0 and derivatives) install into the system
+                # python and have NO venv. Activate only when present so one manifest serves both.
+                if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
                 LOG=/shared/disagg-decode-p5en-$(date -u +%FT%TZ).log
                 python3 -c "import vllm; print(f'vllm {vllm.__version__}')" 2>&1 | tee -a "${DOLLAR}LOG"
-                grep -A2 "is_kv_consumer" /opt/dynamo/venv/lib/python3.12/site-packages/vllm/model_executor/models/config.py 2>&1 | tee -a "${DOLLAR}LOG"
+                VLLM_DIR=${DOLLAR}(python3 -c "import vllm, os; print(os.path.dirname(vllm.__file__))")
+                grep -A2 "is_kv_consumer" "${DOLLAR}VLLM_DIR/model_executor/models/config.py" 2>&1 | tee -a "${DOLLAR}LOG"
                 for i in ${DOLLAR}(seq 1 60); do
                   if getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" >/dev/null 2>&1; then break; fi
                   sleep 2
@@ -383,7 +394,10 @@ spec:
                 set -u
                 unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
                       HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
-                source /opt/dynamo/venv/bin/activate
+                # Dynamo images differ in python layout: 1.2.0-era images ship /opt/dynamo/venv,
+                # 1.3.0-era images (NGC vllm-runtime:1.3.0 and derivatives) install into the system
+                # python and have NO venv. Activate only when present so one manifest serves both.
+                if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
                 for i in ${DOLLAR}(seq 1 60); do
                   if getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" >/dev/null 2>&1; then break; fi
                   sleep 2
@@ -449,12 +463,13 @@ spec:
         - name: frontend
           image: ${REGISTRY}${IMAGE}${TAG}
           imagePullPolicy: Always
-          command: ["/opt/dynamo/venv/bin/python3", "-m", "dynamo.frontend"]
+          command: ["/bin/bash", "-c"]
+          # 1.3.0-era images have no /opt/dynamo/venv - exec of its python3 fails with
+          # "no such file or directory" and the pod CrashLoops. Activate only when present.
           args:
-            - --http-port
-            - "8000"
-            - --http-host
-            - "0.0.0.0"
+            - |-
+              if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
+              exec python3 -m dynamo.frontend --http-port 8000 --http-host 0.0.0.0
           env:
             - { name: DYNAMO_BACKEND, value: vllm }
             - { name: DYN_NAMESPACE, value: dynamo-disagg }
