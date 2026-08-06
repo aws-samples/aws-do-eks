@@ -8,9 +8,9 @@
 # In-place upgrades are not supported (etcd 3.5->3.6 data-dir and kai-scheduler CRD conflicts).
 
 export DYNAMO_NAMESPACE=${DYNAMO_NAMESPACE:-dynamo-system}
-export DYNAMO_VERSION=${DYNAMO_VERSION:-"1.3.0"}
+export DYNAMO_VERSION=${DYNAMO_VERSION:-"1.3.1"}
 
-# The 1.3.0 operator reconciles PodSnapshot/PodSnapshotContent but the chart tarball does not
+# The 1.3.x operator reconciles PodSnapshot/PodSnapshotContent but the chart tarball does not
 # ship those two CRDs (they normally come from a crd-apply init container). Apply them from the
 # matching upstream tag first so the operator can never CrashLoop on a missing restmapping.
 # This is additive and idempotent - existing CRDs are left as-is.
