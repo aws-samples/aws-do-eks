@@ -1,4 +1,4 @@
-# Nemotron-550B disagg on Dynamo 1.3.0 GA + vLLM 0.23 + EFA 1.49 — ONE GOLDEN IMAGE.
+# Nemotron-550B disagg on Dynamo 1.3.1 (-efa base) + vLLM 0.23 — ONE GOLDEN IMAGE.
 #
 # Author: Anton Alexander
 #
@@ -7,7 +7,7 @@
 # FULLY PUBLIC, DOCKERFILE-ONLY REPRODUCIBLE: no gist, no external files, no patch step,
 # no fork refs. Anyone can `docker build` this with only public network access.
 #
-#   docker build -t $REGISTRY/nemotron-disagg:dynamo13-golden .
+#   docker build -t $REGISTRY/nemotron-disagg:dynamo131-golden .
 #   ./build-sbom-scan.sh          # SBOM (SPDX + CycloneDX) + CVE gate, pipeline-ready
 #
 # The PP>1 fix is fetched at build time from vLLM PR #48263's own pull-ref on UPSTREAM
@@ -15,17 +15,21 @@
 # When #48263 merges into the Dynamo-pinned vLLM, delete the OVERLAY stage entirely.
 #
 # ---------------------------------------------------------------------------------------
-# BASE: 1.3.0 GA. Verified contents (docker run --rm, 2026-07-30) — this drove which
-# layers below survived and which were deleted as redundant:
+# BASE: 1.3.1-efa. Verified contents (docker run --rm, 2026-08-06) — this drove which
+# layers below survived and which were retired:
 #
-#     vllm 0.23.0 | ai-dynamo 1.3.0 | transformers 5.12.0 | runai-model-streamer 0.16.0
+#     vllm 0.23.0 (build commit IDENTICAL to 1.3.0) | ai-dynamo 1.3.1
+#     transformers 5.12.0 | runai-model-streamer 0.16.0
 #     flashinfer-jit-cache 0.6.12+cu130 | flashinfer-python 0.6.12
-#     ray ABSENT | /opt/amazon/efa ABSENT | default USER dynamo | nats-server 16MB baked
+#     EFA installer 1.49.0 BAKED (+ libfabric 2.4.0amzn + /opt/amazon/ofi-nccl) -> our
+#       EFA install layer RETIRED, replaced by an assert (#12105 retire condition met)
+#     ray ABSENT | no /opt/dynamo/venv | default USER dynamo | nats-server 16MB STILL baked
+#     nixl NIXL_CONNECTOR_VERSION 4 -> PR#48263 overlay (v8) STILL REQUIRED
 #
 # Do NOT assume a newer base fixes a layer — measure it. Three separate GA layers were
 # each assumed-fixed and were not (transformers, flashinfer, nats-server).
 # ---------------------------------------------------------------------------------------
-ARG BASE=nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.3.0
+ARG BASE=nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.3.1-efa
 FROM ${BASE}
 
 USER root
@@ -43,20 +47,21 @@ d = m.version("ai-dynamo"); assert d.startswith("1.3"),  f"base ai-dynamo {d} !=
 print(f"[base] vllm={v} ai-dynamo={d} OK")
 PY
 
-# ---- 1) AWS EFA 1.49 userspace (public installer, no kmod) --------------------------
-#    Still required: GA has NO /opt/amazon/efa. The `1.3.0-efa` tag bakes EFA 1.47, not
-#    1.49, so this layer's retire condition is still unmet (ai-dynamo/dynamo#12105).
-ARG EFA_INSTALLER_VER=1.49.0
+# ---- 1) AWS EFA userspace: NOW FROM THE BASE (install layer RETIRED at 1.3.1) --------
+#    History: GA 1.3.0 had NO /opt/amazon/efa and 1.3.0-efa baked 1.47, so this used to
+#    be a full efa_installer.sh layer (ai-dynamo/dynamo#12105). The 1.3.1-efa tag bakes
+#    EFA installer 1.49.0 + libfabric 2.4.0amzn + /opt/amazon/ofi-nccl (measured in-image
+#    2026-08-06), which meets the retire condition. Keep a build-time assert so a future
+#    BASE bump that regresses EFA fails here, not on a p5en at serve time.
+ARG EFA_INSTALLER_MIN=1.49.0
 RUN set -eux; \
-    apt-get update && apt-get install -y --no-install-recommends \
-      curl ca-certificates git environment-modules tcl libhwloc-dev; \
-    curl -fsSL https://efa-installer.amazonaws.com/aws-efa-installer-${EFA_INSTALLER_VER}.tar.gz \
-      -o /tmp/efa.tar.gz; \
-    tar -xzf /tmp/efa.tar.gz -C /tmp; \
-    cd /tmp/aws-efa-installer && ./efa_installer.sh -y --skip-kmod --skip-limit-conf --no-verify; \
-    echo "${EFA_INSTALLER_VER}" > /opt/efa-installer.version; \
-    /opt/amazon/efa/bin/fi_info --version; \
-    rm -rf /tmp/efa.tar.gz /tmp/aws-efa-installer /var/lib/apt/lists/*
+    test -x /opt/amazon/efa/bin/fi_info || { echo "FAIL: base has no /opt/amazon/efa - use an -efa base tag or restore the efa_installer.sh layer (see #12105)"; exit 1; }; \
+    VER="$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+' /opt/amazon/efa_installed_packages | head -1)"; \
+    printf '%s\n%s\n' "${EFA_INSTALLER_MIN}" "${VER}" | sort -V -C || { echo "FAIL: base EFA ${VER} < required ${EFA_INSTALLER_MIN}"; exit 1; }; \
+    test -f /opt/amazon/ofi-nccl/lib/libnccl-net-ofi.so || { echo "FAIL: aws-ofi-nccl plugin missing from base"; exit 1; }; \
+    echo "${VER}" > /opt/efa-installer.version; \
+    /opt/amazon/efa/bin/fi_info --version
+# The base bakes the bits but NOT the env contract - keep ours.
 ENV FI_PROVIDER=efa FI_EFA_USE_DEVICE_RDMA=1 \
     NCCL_NET_PLUGIN=ofi NCCL_NVLS_ENABLE=0
 # NOTE: FLASHINFER_DISABLE_VERSION_CHECK=1 was DELETED. It existed because the dev base
@@ -91,6 +96,9 @@ PY
 ARG VLLM_PR=48263
 ARG VLLM_FIX_SHA=c370902c1243bb09f5729310662aceb7c3dd3737
 RUN set -eux; \
+    # git used to arrive as a side-effect of the (now retired) efa_installer apt line; \
+    # the -efa base doesn't ship it. Self-supply so this stage owns its own deps. \
+    command -v git >/dev/null || { apt-get update && apt-get install -y --no-install-recommends git ca-certificates && rm -rf /var/lib/apt/lists/*; }; \
     NIXLSRC="vllm/distributed/kv_transfer/kv_connector/v1/nixl"; \
     mkdir /tmp/vllm-fix; cd /tmp/vllm-fix; \
     git init -q .; git remote add origin https://github.com/vllm-project/vllm.git; \
@@ -130,6 +138,6 @@ print("[golden] agg + EP16 + PP>1 prerequisites all present; EFA present; 0-CRIT
 PY
 
 USER dynamo
-LABEL org.opencontainers.image.description="Golden image: Dynamo 1.3.0 GA + vLLM 0.23 + ray 2.55.1 + EFA 1.49 + vLLM PR#48263 overlay (agg + EP16 + PP>1, Dockerfile-only reproducible)"
+LABEL org.opencontainers.image.description="Golden image: Dynamo 1.3.1 (-efa base, EFA 1.49 baked) + vLLM 0.23 + ray 2.55.1 + vLLM PR#48263 overlay (agg + EP16 + PP>1, Dockerfile-only reproducible)"
 LABEL org.opencontainers.image.source="https://github.com/vllm-project/vllm/pull/48263"
 

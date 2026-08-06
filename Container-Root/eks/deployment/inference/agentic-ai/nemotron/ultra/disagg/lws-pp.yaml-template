@@ -1,31 +1,22 @@
 # =============================================================================
-# Nemotron-3 Ultra disagg using LeaderWorkerSet manifest
+# Nemotron-3 Ultra disaggregated P/D with PP>1 prefill — LeaderWorkerSet manifest
 # =============================================================================
 #
 # Author: Anton Alexander
 #
-# Two LWS roles (prefill + decode), each TP=8 PP=2 across 2x nodes
-# 4 pods total, 32 GPUs, 64 EFAv3 NICs.
+# Topology (4 GPU nodes + 1 CPU node):
+#   - prefill: 1 LWS group of size 2 -> TP=${GPU_PER_WORKER} PP=2 across 2 nodes
+#              (Ray distributed executor, Ray V2 executor backend)
+#   - decode:  1 LWS with 2 single-node groups -> 2x independent TP=${GPU_PER_WORKER} PP=1 workers
+#              (asymmetric BY DESIGN: PP>1 on the decode side of the hybrid-Mamba
+#              550B deadlocks the Ray static DAG; prefill-PP2 -> decode-PP1 is the
+#              upstream-aligned shape and is validated end-to-end on Dynamo 1.3.0)
+#   - frontend: CPU-only router Deployment + Service
 #
-#   - kv_role: kv_both             (BOTH sides; producer/consumer split broken in 1.1.0)
-#   - kv_connector_extra_config:
-#       backends: ["LIBFABRIC"]    (NIXL on EFA, NOT UCX)
-#   - ${MAMBA_FLAGS} (hybrid-Mamba only; derived from MODEL_NAME in .env - empty on pure transformers)
-#
-# -----------------------------------------------------------------------------
-# FIXED here vs the upstream aws-do-eks copy (2026-06-07):
-#   (1) leaders now set DYN_SYSTEM_ENABLED=true + DYN_SYSTEM_PORT - the startupProbe
-#       httpGet /health:{9091,9092} gates on this; without it pods load but never go Ready.
-#   (2) decode worker now uses ${DOLLAR}LEADER_IP (was a bare $LEADER_IP that envsubst
-#       collapsed to /dev/tcp//6379, wasting the Ray-join wait).
-#
-# KNOWN-UNPROVEN (verified live on cgk, 2026-06-07): this TP8/PP2, 4-pod, multi-node-per-role
-#   + Ray-compiled-graph topology DEADLOCKS in decode for the hybrid-Mamba model. KV DOES transfer
-#   over EFA (decode rdma_read_bytes climbs), but all decode GPUs stay 0% and output_tokens=0 —
-#   the per-stage Mamba SSM state never passes across the 2 PP stages via the Ray static DAG.
-#   *** For a PROVEN serving path use the sibling deployment.yaml-template (TP8/PP1, single
-#   node per role) - that returns real chat completions with KV over EFA (510MB rdma_read). ***
-#   If PP2 is required, try VLLM_USE_RAY_COMPILED_DAG=0 (untested lead).
+# KV is transferred prefill->decode over EFA RDMA via NIXL LIBFABRIC.
+# etcd/NATS come from the Dynamo platform (see ../../../nvidia-dynamo): ${ETCD_URL} / ${NATS_URL}.
+# Scheduling uses resource requests + instance-type nodeSelector + podAntiAffinity
+# only - no node hostnames, so the manifest is portable across clusters.
 # =============================================================================
 ---
 apiVersion: leaderworkerset.x-k8s.io/v1
@@ -42,7 +33,7 @@ spec:
   rolloutStrategy:
     type: RollingUpdate
   leaderWorkerTemplate:
-    restartPolicy: None
+    restartPolicy: RecreateGroupOnPodRestart
     size: 2
     leaderTemplate:
       metadata:
@@ -51,27 +42,20 @@ spec:
           app.kubernetes.io/component: prefill
           dynamo-role: leader
       spec:
-        hostNetwork: true
-        dnsPolicy: ClusterFirstWithHostNet
-        nodeSelector:
-          node.kubernetes.io/instance-type: ${INSTANCE_TYPE_WORKER}
+        nodeSelector: { node.kubernetes.io/instance-type: ${INSTANCE_TYPE_WORKER} }
         tolerations:
           - { key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
           - { key: vpc.amazonaws.com/efa, operator: Exists, effect: NoSchedule }
         affinity:
           podAntiAffinity:
             requiredDuringSchedulingIgnoredDuringExecution:
-              - labelSelector:
-                  matchLabels:
-                    app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
+              - labelSelector: { matchLabels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME} } }
                 topologyKey: kubernetes.io/hostname
-        #imagePullSecrets:
-        #  - name: dynamo-efa-pull
         volumes:
-          - { name: dshm,        emptyDir: { medium: Memory, sizeLimit: 64Gi } }
-          - { name: infiniband,  hostPath: { path: /dev/infiniband, type: DirectoryOrCreate } }
-          - { name: gdrdrv,      hostPath: { path: /dev/gdrdrv, type: CharDevice } }
-          - { name: shared,      persistentVolumeClaim: { claimName: fsx-pvc } }
+          - { name: dshm,       emptyDir: { medium: Memory, sizeLimit: 64Gi } }
+          - { name: infiniband, hostPath: { path: /dev/infiniband, type: DirectoryOrCreate } }
+          - { name: gdrdrv,     hostPath: { path: /dev/gdrdrv, type: CharDevice } }
+          - { name: shared,     persistentVolumeClaim: { claimName: fsx-pvc } }
         containers:
           - name: vllm
             image: ${REGISTRY}${IMAGE}${TAG}
@@ -84,21 +68,17 @@ spec:
                 unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
                       HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
                 # Dynamo images differ in python layout: 1.2.0-era images ship /opt/dynamo/venv,
-                # 1.3.0-era images (NGC vllm-runtime:1.3.0 and derivatives) install into the system
-                # python and have NO venv. Activate only when present so one manifest serves both.
+                # 1.3.0-era images install into the system python and have NO venv.
                 if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
-                LOG=/shared/disagg-prefill-p5en-$(date -u +%FT%TZ).log
-                echo "[prefill-leader p5en] starting; piping to ${DOLLAR}LOG"
+                LOG=/shared/${DEPLOYMENT_NAME}-prefill-pp2-${DOLLAR}(date -u +%FT%TZ).log
+                echo "[prefill-leader] starting; piping to ${DOLLAR}LOG"
                 python3 -c "import vllm; print(f'vllm {vllm.__version__}')" 2>&1 | tee -a "${DOLLAR}LOG"
-                # Verify the PR #42522 patch is present
-                VLLM_DIR=${DOLLAR}(python3 -c "import vllm, os; print(os.path.dirname(vllm.__file__))")
-                grep -A2 "is_kv_consumer" "${DOLLAR}VLLM_DIR/model_executor/models/config.py" 2>&1 | tee -a "${DOLLAR}LOG"
                 for i in ${DOLLAR}(seq 1 60); do
                   if getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" >/dev/null 2>&1; then break; fi
                   sleep 2
                 done
                 LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk '{print ${DOLLAR}1}')
-                echo "[prefill-leader p5en] LEADER_IP=${DOLLAR}LEADER_IP" | tee -a "${DOLLAR}LOG"
+                echo "[prefill-leader] LEADER_IP=${DOLLAR}LEADER_IP MY_IP=${DOLLAR}MY_IP" | tee -a "${DOLLAR}LOG"
                 ray start --head --port=6379 --node-ip-address="${DOLLAR}LEADER_IP" --num-gpus=${GPU_PER_WORKER} 2>&1 | tee -a "${DOLLAR}LOG"
                 for i in ${DOLLAR}(seq 1 120); do
                   N=${DOLLAR}(ray status 2>/dev/null | awk '/Active:/{flag=1; next} /Pending:|Recent failures:|Resources/{flag=0} flag' | grep -c node_ || true)
@@ -126,12 +106,12 @@ spec:
               - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }
               - { name: NATS_SERVER, value: "${NATS_URL}" }
               - { name: HF_HOME, value: /shared/hf_cache }
-              # FIX: start the dyn-system health server the startupProbe (httpGet /health:9091) gates on
               - { name: DYN_SYSTEM_ENABLED, value: "true" }
               - { name: DYN_SYSTEM_PORT, value: "9091" }
               - { name: VLLM_LOGGING_LEVEL, value: INFO }
+              - { name: VLLM_USE_RAY_V2_EXECUTOR_BACKEND, value: "1" }
               - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
-              - { name: VLLM_USE_RAY_COMPILED_DAG, value: "0"}
+              - { name: FLASHINFER_DISABLE_VERSION_CHECK, value: "1" }
               - { name: FI_PROVIDER, value: efa }
               - { name: FI_EFA_USE_DEVICE_RDMA, value: "1" }
               - { name: FI_EFA_FORK_SAFE, value: "1" }
@@ -144,13 +124,12 @@ spec:
               - { name: NCCL_RUNTIME_CONNECT, value: "0" }
               - { name: NCCL_NVLS_ENABLE, value: "1" }
               - { name: NCCL_CUMEM_ENABLE, value: "1" }
-            ports:
-              - { containerPort: 9091, name: dyn-system }
+            ports: [{ containerPort: 9091, name: dyn-system }]
             startupProbe:
               httpGet: { path: /health, port: 9091 }
               periodSeconds: 30
               timeoutSeconds: 10
-              failureThreshold: 120
+              failureThreshold: 240
             resources:
               requests: { cpu: "96", memory: 1000Gi, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
               limits:   { cpu: "96", memory: 1000Gi, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
@@ -166,22 +145,15 @@ spec:
           app.kubernetes.io/component: prefill
           dynamo-role: worker
       spec:
-        hostNetwork: true
-        dnsPolicy: ClusterFirstWithHostNet
-        nodeSelector:
-          node.kubernetes.io/instance-type: ${INSTANCE_TYPE_WORKER}
+        nodeSelector: { node.kubernetes.io/instance-type: ${INSTANCE_TYPE_WORKER} }
         tolerations:
           - { key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
           - { key: vpc.amazonaws.com/efa, operator: Exists, effect: NoSchedule }
         affinity:
           podAntiAffinity:
             requiredDuringSchedulingIgnoredDuringExecution:
-              - labelSelector:
-                  matchLabels:
-                    app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
+              - labelSelector: { matchLabels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME} } }
                 topologyKey: kubernetes.io/hostname
-        #imagePullSecrets:
-        #  - name: dynamo-efa-pull
         volumes:
           - { name: dshm,       emptyDir: { medium: Memory, sizeLimit: 64Gi } }
           - { name: infiniband, hostPath: { path: /dev/infiniband, type: DirectoryOrCreate } }
@@ -198,9 +170,6 @@ spec:
                 set -u
                 unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
                       HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
-                # Dynamo images differ in python layout: 1.2.0-era images ship /opt/dynamo/venv,
-                # 1.3.0-era images (NGC vllm-runtime:1.3.0 and derivatives) install into the system
-                # python and have NO venv. Activate only when present so one manifest serves both.
                 if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
                 for i in ${DOLLAR}(seq 1 60); do
                   if getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" >/dev/null 2>&1; then break; fi
@@ -216,7 +185,7 @@ spec:
               - { name: MY_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
               - { name: HF_HOME, value: /shared/hf_cache }
               - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
-              - { name: VLLM_USE_RAY_COMPILED_DAG, value: "0" }
+              - { name: FLASHINFER_DISABLE_VERSION_CHECK, value: "1" }
               - { name: FI_PROVIDER, value: efa }
               - { name: FI_EFA_USE_DEVICE_RDMA, value: "1" }
               - { name: FI_EFA_FORK_SAFE, value: "1" }
@@ -237,6 +206,9 @@ spec:
               - { name: gdrdrv,     mountPath: /dev/gdrdrv }
               - { name: shared,     mountPath: /shared }
 ---
+# Decode: one LWS with 2 single-node groups (size: 1 => each group is just its
+# leader pod, built from workerTemplate). Each runs an independent TP8/PP1 decode
+# worker; the frontend round-robins across them via etcd/NATS registration.
 apiVersion: leaderworkerset.x-k8s.io/v1
 kind: LeaderWorkerSet
 metadata:
@@ -246,22 +218,19 @@ metadata:
     app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
     app.kubernetes.io/component: decode
 spec:
-  replicas: 1
+  replicas: 2
   startupPolicy: LeaderCreated
   rolloutStrategy:
     type: RollingUpdate
   leaderWorkerTemplate:
-    restartPolicy: None
-    size: 2
-    leaderTemplate:
+    restartPolicy: RecreateGroupOnPodRestart
+    size: 1
+    workerTemplate:
       metadata:
         labels:
           app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
           app.kubernetes.io/component: decode
-          dynamo-role: leader
       spec:
-        hostNetwork: true
-        dnsPolicy: ClusterFirstWithHostNet
         nodeSelector: { node.kubernetes.io/instance-type: ${INSTANCE_TYPE_WORKER} }
         tolerations:
           - { key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
@@ -271,7 +240,6 @@ spec:
             requiredDuringSchedulingIgnoredDuringExecution:
               - labelSelector: { matchLabels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME} } }
                 topologyKey: kubernetes.io/hostname
-        #imagePullSecrets: [{ name: dynamo-efa-pull }]
         volumes:
           - { name: dshm,       emptyDir: { medium: Memory, sizeLimit: 64Gi } }
           - { name: infiniband, hostPath: { path: /dev/infiniband, type: DirectoryOrCreate } }
@@ -288,33 +256,17 @@ spec:
                 set -u
                 unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
                       HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
-                # Dynamo images differ in python layout: 1.2.0-era images ship /opt/dynamo/venv,
-                # 1.3.0-era images (NGC vllm-runtime:1.3.0 and derivatives) install into the system
-                # python and have NO venv. Activate only when present so one manifest serves both.
                 if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
-                LOG=/shared/disagg-decode-p5en-$(date -u +%FT%TZ).log
+                LOG=/shared/${DEPLOYMENT_NAME}-decode-pp1-${DOLLAR}(date -u +%FT%TZ).log
                 python3 -c "import vllm; print(f'vllm {vllm.__version__}')" 2>&1 | tee -a "${DOLLAR}LOG"
-                VLLM_DIR=${DOLLAR}(python3 -c "import vllm, os; print(os.path.dirname(vllm.__file__))")
-                grep -A2 "is_kv_consumer" "${DOLLAR}VLLM_DIR/model_executor/models/config.py" 2>&1 | tee -a "${DOLLAR}LOG"
-                for i in ${DOLLAR}(seq 1 60); do
-                  if getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" >/dev/null 2>&1; then break; fi
-                  sleep 2
-                done
-                LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk '{print ${DOLLAR}1}')
-                ray start --head --port=6379 --node-ip-address="${DOLLAR}LEADER_IP" --num-gpus=8 2>&1 | tee -a "${DOLLAR}LOG"
-                for i in ${DOLLAR}(seq 1 120); do
-                  N=${DOLLAR}(ray status 2>/dev/null | awk '/Active:/{flag=1; next} /Pending:|Recent failures:|Resources/{flag=0} flag' | grep -c node_ || true)
-                  if [ "${DOLLAR}{N:-0}" -ge 2 ]; then break; fi
-                  sleep 5
-                done
+                # Single-node decode: TP8/PP1, no Ray - the validated decode shape for hybrid-Mamba.
                 exec python3 -m dynamo.vllm \
                   --model ${MODEL_PATH} \
                   --served-model-name ${MODEL_NAME} \
                   --tensor-parallel-size ${GPU_PER_WORKER} \
-                  --pipeline-parallel-size 2 \
-                  --distributed-executor-backend ray \
+                  --pipeline-parallel-size 1 \
                   --max-model-len 8192 \
-                  --gpu-memory-utilization 0.92 \
+                  --gpu-memory-utilization 0.98 \
                   --enforce-eager \
                   --trust-remote-code \
                   ${MAMBA_FLAGS} \
@@ -328,11 +280,11 @@ spec:
               - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }
               - { name: NATS_SERVER, value: "${NATS_URL}" }
               - { name: HF_HOME, value: /shared/hf_cache }
-              # FIX: start the dyn-system health server the startupProbe (httpGet /health:9092) gates on
               - { name: DYN_SYSTEM_ENABLED, value: "true" }
               - { name: DYN_SYSTEM_PORT, value: "9092" }
+              - { name: VLLM_LOGGING_LEVEL, value: INFO }
               - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
-              - { name: VLLM_USE_RAY_COMPILED_DAG, value: "0" }
+              - { name: FLASHINFER_DISABLE_VERSION_CHECK, value: "1" }
               - { name: FI_PROVIDER, value: efa }
               - { name: FI_EFA_USE_DEVICE_RDMA, value: "1" }
               - { name: FI_EFA_FORK_SAFE, value: "1" }
@@ -342,7 +294,6 @@ spec:
               - { name: NCCL_NET_PLUGIN, value: ofi }
               - { name: NCCL_TUNER_PLUGIN, value: ofi }
               - { name: OFI_NCCL_FORCE_NUM_RAILS, value: "4" }
-              - { name: NCCL_RUNTIME_CONNECT, value: "0" }
               - { name: NCCL_NVLS_ENABLE, value: "1" }
               - { name: NCCL_CUMEM_ENABLE, value: "1" }
             ports: [{ containerPort: 9092, name: dyn-system }]
@@ -350,80 +301,7 @@ spec:
               httpGet: { path: /health, port: 9092 }
               periodSeconds: 30
               timeoutSeconds: 10
-              failureThreshold: 120
-            resources:
-              requests: { cpu: "96", memory: 1000Gi, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
-              limits:   { cpu: "96", memory: 1000Gi, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
-            volumeMounts:
-              - { name: dshm,       mountPath: /dev/shm }
-              - { name: infiniband, mountPath: /dev/infiniband }
-              - { name: gdrdrv,     mountPath: /dev/gdrdrv }
-              - { name: shared,     mountPath: /shared }
-    workerTemplate:
-      metadata:
-        labels:
-          app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
-          app.kubernetes.io/component: decode
-          dynamo-role: worker
-      spec:
-        hostNetwork: true
-        dnsPolicy: ClusterFirstWithHostNet
-        nodeSelector: { node.kubernetes.io/instance-type: ${INSTANCE_TYPE_WORKER} }
-        tolerations:
-          - { key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
-          - { key: vpc.amazonaws.com/efa, operator: Exists, effect: NoSchedule }
-        affinity:
-          podAntiAffinity:
-            requiredDuringSchedulingIgnoredDuringExecution:
-              - labelSelector: { matchLabels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME} } }
-                topologyKey: kubernetes.io/hostname
-        #imagePullSecrets: [{ name: dynamo-efa-pull }]
-        volumes:
-          - { name: dshm,       emptyDir: { medium: Memory, sizeLimit: 64Gi } }
-          - { name: infiniband, hostPath: { path: /dev/infiniband, type: DirectoryOrCreate } }
-          - { name: gdrdrv,     hostPath: { path: /dev/gdrdrv, type: CharDevice } }
-          - { name: shared,     persistentVolumeClaim: { claimName: fsx-pvc } }
-        containers:
-          - name: vllm
-            image: ${REGISTRY}${IMAGE}${TAG}
-            imagePullPolicy: Always
-            securityContext: { capabilities: { add: ["IPC_LOCK"] } }
-            command: ["/bin/bash", "-c"]
-            args:
-              - |-
-                set -u
-                unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
-                      HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
-                # Dynamo images differ in python layout: 1.2.0-era images ship /opt/dynamo/venv,
-                # 1.3.0-era images (NGC vllm-runtime:1.3.0 and derivatives) install into the system
-                # python and have NO venv. Activate only when present so one manifest serves both.
-                if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
-                for i in ${DOLLAR}(seq 1 60); do
-                  if getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" >/dev/null 2>&1; then break; fi
-                  sleep 2
-                done
-                LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk '{print ${DOLLAR}1}')
-                for i in ${DOLLAR}(seq 1 60); do
-                  if (echo > /dev/tcp/${DOLLAR}LEADER_IP/6379) 2>/dev/null; then break; fi
-                  sleep 5
-                done
-                exec ray start --address="${DOLLAR}LEADER_IP:6379" --node-ip-address="${DOLLAR}MY_IP" --num-gpus=8 --block
-            env:
-              - { name: MY_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
-              - { name: HF_HOME, value: /shared/hf_cache }
-              - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
-              - { name: VLLM_USE_RAY_COMPILED_DAG, value: "0" }
-              - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }
-              - { name: NATS_SERVER, value: "${NATS_URL}" }
-              - { name: FI_PROVIDER, value: efa }
-              - { name: FI_EFA_USE_DEVICE_RDMA, value: "1" }
-              - { name: FI_EFA_FORK_SAFE, value: "1" }
-              - { name: FI_HMEM_CUDA_USE_DMABUF, value: "1" }
-              - { name: NIXL_LIBFABRIC_MAX_RAILS, value: "1" }
-              - { name: NIXL_SKIP_TOPOLOGY_CHECK, value: "1" }
-              - { name: NCCL_NET_PLUGIN, value: ofi }
-              - { name: NCCL_TUNER_PLUGIN, value: ofi }
-              - { name: OFI_NCCL_FORCE_NUM_RAILS, value: "4" }
+              failureThreshold: 240
             resources:
               requests: { cpu: "96", memory: 1000Gi, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
               limits:   { cpu: "96", memory: 1000Gi, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
@@ -433,7 +311,6 @@ spec:
               - { name: gdrdrv,     mountPath: /dev/gdrdrv }
               - { name: shared,     mountPath: /shared }
 ---
-# Frontend Deployment (separate from LWS, runs on cpu).
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -454,18 +331,15 @@ spec:
         app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
         app.kubernetes.io/component: frontend
     spec:
-      nodeSelector:
-        node.kubernetes.io/instance-type: ${INSTANCE_TYPE_FRONTEND}
+      nodeSelector: { node.kubernetes.io/instance-type: ${INSTANCE_TYPE_FRONTEND} }
       volumes:
-        - name: shared
-          persistentVolumeClaim: { claimName: fsx-pvc }
+        - { name: shared, persistentVolumeClaim: { claimName: fsx-pvc } }
       containers:
         - name: frontend
           image: ${REGISTRY}${IMAGE}${TAG}
           imagePullPolicy: Always
           command: ["/bin/bash", "-c"]
-          # 1.3.0-era images have no /opt/dynamo/venv - exec of its python3 fails with
-          # "no such file or directory" and the pod CrashLoops. Activate only when present.
+          # 1.3.0-era images have no /opt/dynamo/venv - activate only when present.
           args:
             - |-
               if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
@@ -475,17 +349,14 @@ spec:
             - { name: DYN_NAMESPACE, value: dynamo-disagg }
             - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }
             - { name: NATS_SERVER, value: "${NATS_URL}" }
-          ports:
-            - { containerPort: 8000, name: http }
-          readinessProbe:
-            tcpSocket: { port: 8000 }
-            periodSeconds: 10
-            failureThreshold: 30
+            - { name: HF_HOME, value: /tmp/hf_cache }
+          ports: [{ containerPort: 8000, name: http }]
+          readinessProbe: { tcpSocket: { port: 8000 }, periodSeconds: 10, failureThreshold: 30 }
           resources:
             requests: { cpu: "2", memory: 4Gi }
-            limits: { cpu: "4", memory: 8Gi }
+            limits:   { cpu: "4", memory: 8Gi }
           volumeMounts:
-            - { name: shared, mountPath: /shared }
+            - { name: shared, mountPath: /shared, readOnly: true }
 ---
 apiVersion: v1
 kind: Service
@@ -494,13 +365,8 @@ metadata:
   namespace: ${NAMESPACE}
   labels:
     app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
-    app.kubernetes.io/component: frontend
 spec:
   selector:
     app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
     app.kubernetes.io/component: frontend
-  ports:
-    - port: 8000
-      targetPort: 8000
-      name: http
-
+  ports: [{ port: 8000, targetPort: 8000, name: http }]
