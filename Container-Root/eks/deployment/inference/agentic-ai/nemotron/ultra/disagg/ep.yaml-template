@@ -80,9 +80,8 @@ spec:
                   --gpu-memory-utilization 0.95 \
                   --enforce-eager \
                   --trust-remote-code \
-                  --mamba-cache-mode align \
                   --load-format runai_streamer \
-                  --no-disable-hybrid-kv-cache-manager \
+                  ${MAMBA_FLAGS} \
                   --host 0.0.0.0 --port 8000
             env:
               - { name: MY_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
@@ -181,9 +180,8 @@ spec:
                   --gpu-memory-utilization 0.95 \
                   --enforce-eager \
                   --trust-remote-code \
-                  --mamba-cache-mode align \
                   --load-format runai_streamer \
-                  --no-disable-hybrid-kv-cache-manager
+                  ${MAMBA_FLAGS}
             env:
               - { name: MY_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
               - { name: HF_HOME, value: /tmp/hf_cache }
