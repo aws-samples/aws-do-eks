@@ -95,9 +95,8 @@ spec:
                   --gpu-memory-utilization 0.92 \
                   --enforce-eager \
                   --trust-remote-code \
-                  --mamba-cache-mode align \
+                  ${MAMBA_FLAGS} \
                   --load-format runai_streamer \
-                  --no-disable-hybrid-kv-cache-manager \
                   --disaggregation-mode prefill \
                   --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_connector_extra_config":{"backends":["LIBFABRIC"]}}' 2>&1 | tee -a "${DOLLAR}LOG"
             env:
@@ -270,9 +269,8 @@ spec:
                   --gpu-memory-utilization 0.98 \
                   --enforce-eager \
                   --trust-remote-code \
-                  --mamba-cache-mode align \
+                  ${MAMBA_FLAGS} \
                   --load-format runai_streamer \
-                  --no-disable-hybrid-kv-cache-manager \
                   --disaggregation-mode decode \
                   --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_connector_extra_config":{"backends":["LIBFABRIC"]}}' 2>&1 | tee -a "${DOLLAR}LOG"
             env:

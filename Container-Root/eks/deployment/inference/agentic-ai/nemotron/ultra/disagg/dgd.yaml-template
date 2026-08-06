@@ -106,9 +106,8 @@ spec:
                 --served-model-name ${MODEL_NAME} \
                 --tensor-parallel-size ${GPU_PER_WORKER} --pipeline-parallel-size 1 \
                 --max-model-len 4096 --gpu-memory-utilization 0.97 --enforce-eager \
-                --trust-remote-code --mamba-cache-mode align \
+                --trust-remote-code ${MAMBA_FLAGS} \
                 --load-format runai_streamer \
-                --no-disable-hybrid-kv-cache-manager \
                 --disaggregation-mode prefill \
                 --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_connector_extra_config":{"backends":["LIBFABRIC"]}}'
           env:
@@ -181,9 +180,8 @@ spec:
                 --served-model-name ${MODEL_NAME} \
                 --tensor-parallel-size ${GPU_PER_WORKER} --pipeline-parallel-size 1 \
                 --max-model-len 4096 --gpu-memory-utilization 0.97 --enforce-eager \
-                --trust-remote-code --mamba-cache-mode align \
+                --trust-remote-code ${MAMBA_FLAGS} \
                 --load-format runai_streamer \
-                --no-disable-hybrid-kv-cache-manager \
                 --disaggregation-mode decode \
                 --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_connector_extra_config":{"backends":["LIBFABRIC"]}}'
           env:

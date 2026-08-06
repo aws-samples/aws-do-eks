@@ -10,7 +10,7 @@
 #   - kv_role: kv_both             (BOTH sides; producer/consumer split broken in 1.1.0)
 #   - kv_connector_extra_config:
 #       backends: ["LIBFABRIC"]    (NIXL on EFA, NOT UCX)
-#   - mamba-cache-mode align       (paired with vLLM PR #42522 patch in image)
+#   - ${MAMBA_FLAGS} (hybrid-Mamba only; derived from MODEL_NAME in .env - empty on pure transformers)
 #
 # -----------------------------------------------------------------------------
 # FIXED here vs the upstream aws-do-eks copy (2026-06-07):
@@ -115,9 +115,8 @@ spec:
                   --gpu-memory-utilization 0.92 \
                   --enforce-eager \
                   --trust-remote-code \
-                  --mamba-cache-mode align \
+                  ${MAMBA_FLAGS} \
                   --load-format runai_streamer \
-                  --no-disable-hybrid-kv-cache-manager \
                   --disaggregation-mode prefill \
                   --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_connector_extra_config":{"backends":["LIBFABRIC"]}}' 2>&1 | tee -a "${DOLLAR}LOG"
             env:
@@ -318,9 +317,8 @@ spec:
                   --gpu-memory-utilization 0.92 \
                   --enforce-eager \
                   --trust-remote-code \
-                  --mamba-cache-mode align \
+                  ${MAMBA_FLAGS} \
                   --load-format runai_streamer \
-                  --no-disable-hybrid-kv-cache-manager \
                   --disaggregation-mode decode \
                   --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_connector_extra_config":{"backends":["LIBFABRIC"]}}' 2>&1 | tee -a "${DOLLAR}LOG"
             env:
