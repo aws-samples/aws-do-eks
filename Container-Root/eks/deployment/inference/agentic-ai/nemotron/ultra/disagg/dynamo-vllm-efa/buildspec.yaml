@@ -6,26 +6,26 @@ version: 0.2
 # Author: Anton Alexander
 #
 # Reproducible build fromPUBLIC base: nvcr.io/nvidia/ai-dynamo/
-# vllm-runtime:1.3.0 (EFA + NIXL LIBFABRIC + vLLM 0.23.0 baked) + nixl patches
+# vllm-runtime:1.3.1-efa (EFA 1.49 baked + NIXL LIBFABRIC + vLLM 0.23.0 baked) + nixl patches
 #
 # Reuses build-sbom-scan.sh, so the CodeBuild path produces the SAME artifacts
 # as the local path: image + syft SBOM (SPDX+CycloneDX) + trivy CVE gate.
 #
 # Project env vars (PLAINTEXT unless noted):
 #   REGISTRY=public.ecr.aws/hpc-cloud/
-#   IMAGE=dynamo-vllm-efa:1.3.0-patched
+#   IMAGE=dynamo-vllm-efa:1.3.1-patched
 #   GATE_SEVERITY=CRITICAL,HIGH
 #   MAX_HIGH=65
-#   BASE=nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.3.0
+#   BASE=nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.3.1-efa
 # =============================================================================
 
 env:
   variables:
-    BASE: "nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.3.0"
+    BASE: "nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.3.1-efa"
     GATE_SEVERITY: "CRITICAL,HIGH"
     MAX_HIGH: "65"
     REGISTRY: "public.ecr.aws/hpc-cloud/"
-    IMAGE: "dynamo-vllm-efa:1.3.0-patched"
+    IMAGE: "dynamo-vllm-efa:1.3.1-patched"
 
 phases:
   install:
