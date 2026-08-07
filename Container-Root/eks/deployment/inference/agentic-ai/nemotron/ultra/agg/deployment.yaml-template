@@ -101,6 +101,7 @@ spec:
               exec python3 -m dynamo.vllm \
                 --model ${MODEL_PATH} \
                 --served-model-name ${MODEL_NAME} \
+                --load-format ${LOAD_FORMAT} \
                 --tensor-parallel-size ${GPU_PER_WORKER} \
                 --pipeline-parallel-size 1 \
                 --max-model-len 4096 \
@@ -123,7 +124,12 @@ spec:
             httpGet: { path: /health, port: 9090 }
             periodSeconds: 30
             timeoutSeconds: 10
-            failureThreshold: 150
+            # 550B BF16 is a ~1 TB checkpoint; a cold Lustre load can take well over an hour
+            # (safetensors shards start ~40-48s each, accelerating as page cache warms), so the
+            # probe must cover the full cold load or the container is killed mid-load with no
+            # error. 240 x 30s = 120 min. NVFP4 (~41 GiB/GPU via MODEL_VARIANT=NVFP4) loads far
+            # faster; the higher ceiling is harmless once ready (probe stops on first success).
+            failureThreshold: 240
           resources:
             requests: { cpu: "48", memory: 800Gi, nvidia.com/gpu: "${GPU_PER_WORKER}" }
             limits:   { cpu: "48", memory: 800Gi, nvidia.com/gpu: "${GPU_PER_WORKER}" }
