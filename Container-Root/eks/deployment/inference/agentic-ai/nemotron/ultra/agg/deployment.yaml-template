@@ -90,7 +90,14 @@ spec:
         - name: vllm
           image: ${REGISTRY}${IMAGE}${TAG}
           imagePullPolicy: Always
-          securityContext: { capabilities: { add: ["IPC_LOCK"] } }
+          # NVFP4 MoE on Blackwell makes flashinfer symlink its trtllm cubins INTO the installed
+          # flashinfer_cubin package tree (ensure_symlink -> link.parent.mkdir, jit/cubin_loader.py),
+          # which is root-owned. flashinfer's _get_cubin_dir() (jit/env.py) prefers the installed
+          # flashinfer_cubin package over the FLASHINFER_CUBIN_DIR env var, so that env var (below) is
+          # INERT whenever the package is present in the image (as it is in 1.3.1-efa) -> the non-root
+          # worker hits PermissionError [Errno 13] in profile_run. Run the worker as root so it can write
+          # its own package dir. BF16 is unaffected (Unquantized MoE doesn't fetch these cubins).
+          securityContext: { runAsUser: 0, runAsGroup: 0, capabilities: { add: ["IPC_LOCK"] } }
           command: ["/bin/bash","-c"]
           args:
             - |-
@@ -118,11 +125,13 @@ spec:
             - { name: DYN_SYSTEM_PORT, value: "9090" }
             - { name: HF_HOME, value: /tmp/hf_cache }
             - { name: HF_MODULES_CACHE, value: /tmp/hf_cache/modules }
-            # NVFP4 MoE on Blackwell pulls FlashInfer TRTLLM cubins at runtime and symlinks them
-            # into its cubin dir; the default (installed flashinfer_cubin pkg) is under root-owned
-            # site-packages, so the non-root worker hits PermissionError [Errno 13] during
-            # profile_run. Point it at a writable path (same reason HF_HOME → /tmp above). BF16
-            # is unaffected (Unquantized MoE doesn't use these cubins), so this is inert for BF16.
+            # FLASHINFER_CUBIN_DIR points flashinfer's cubin DOWNLOAD cache at a writable path. NOTE:
+            # this env var is only honored when the flashinfer_cubin package is NOT installed —
+            # _get_cubin_dir() (jit/env.py) prefers the installed package over this var. The 1.3.1-efa
+            # image ships flashinfer_cubin, so for NVFP4 the real write (a cubin symlink into the
+            # root-owned package tree) is NOT redirected by this var; the worker securityContext
+            # runAsUser:0 above is what actually prevents the profile_run PermissionError. Kept as a
+            # correct-and-harmless fallback for images without the package. Inert for BF16 either way.
             - { name: FLASHINFER_CUBIN_DIR, value: /tmp/flashinfer_cubins }
             - { name: VLLM_LOGGING_LEVEL, value: INFO }
           ports: [ { containerPort: 9090, name: dyn-system } ]
