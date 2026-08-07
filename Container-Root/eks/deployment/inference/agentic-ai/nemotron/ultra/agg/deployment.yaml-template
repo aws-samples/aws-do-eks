@@ -86,18 +86,36 @@ spec:
           emptyDir: { medium: Memory, sizeLimit: 64Gi }
         - name: shared
           persistentVolumeClaim: { claimName: fsx-pvc }
+        # Writable overlay for flashinfer's cubin package dir (NVFP4 fix — see initContainer).
+        - name: flashinfer-cubins
+          emptyDir: {}
+      # initContainer seeds the writable overlay with the image's baked cubins so the (non-root)
+      # worker can create the NVFP4 trtllm-cubin symlink that flashinfer writes into the package
+      # tree. Runs as root ONLY here (setup), NOT the serving worker; keeps the worker as `dynamo`.
+      initContainers:
+        - name: seed-flashinfer-cubins
+          image: ${REGISTRY}${IMAGE}${TAG}
+          imagePullPolicy: Always
+          securityContext: { runAsUser: 0 }
+          command: ["/bin/bash","-c"]
+          args:
+            - |-
+              set -eu
+              PKG_CUBINS="$(python3 -c 'import os,flashinfer_cubin; print(os.path.join(os.path.dirname(flashinfer_cubin.__file__), "cubins"))')"
+              echo "seeding from ${PKG_CUBINS} -> /seed"
+              if [ -d "${PKG_CUBINS}" ]; then cp -a "${PKG_CUBINS}/." /seed/ 2>/dev/null || true; fi
+              chmod -R a+rwX /seed
+              echo "seed done: $(find /seed -mindepth 1 | wc -l) entries"
+          volumeMounts:
+            - { name: flashinfer-cubins, mountPath: /seed }
       containers:
         - name: vllm
           image: ${REGISTRY}${IMAGE}${TAG}
           imagePullPolicy: Always
-          # NVFP4 MoE on Blackwell makes flashinfer symlink its trtllm cubins INTO the installed
-          # flashinfer_cubin package tree (ensure_symlink -> link.parent.mkdir, jit/cubin_loader.py),
-          # which is root-owned. flashinfer's _get_cubin_dir() (jit/env.py) prefers the installed
-          # flashinfer_cubin package over the FLASHINFER_CUBIN_DIR env var, so that env var (below) is
-          # INERT whenever the package is present in the image (as it is in 1.3.1-efa) -> the non-root
-          # worker hits PermissionError [Errno 13] in profile_run. Run the worker as root so it can write
-          # its own package dir. BF16 is unaffected (Unquantized MoE doesn't fetch these cubins).
-          securityContext: { runAsUser: 0, runAsGroup: 0, capabilities: { add: ["IPC_LOCK"] } }
+          # Keep the image's default (non-root `dynamo`) user. The NVFP4 cubin-write problem is fixed
+          # by the seed-flashinfer-cubins initContainer below (writable overlay over the package's
+          # cubins dir), NOT by running as root. See that initContainer for the full explanation.
+          securityContext: { capabilities: { add: ["IPC_LOCK"] } }
           command: ["/bin/bash","-c"]
           args:
             - |-
@@ -151,3 +169,6 @@ spec:
           volumeMounts:
             - { name: dshm, mountPath: /dev/shm }
             - { name: shared, mountPath: /shared }
+            # Writable overlay over flashinfer_cubin's package cubins dir so the non-root worker can
+            # create the NVFP4 trtllm-cubin symlink (fixes the profile_run PermissionError[13]).
+            - { name: flashinfer-cubins, mountPath: /usr/local/lib/python3.12/dist-packages/flashinfer_cubin/cubins }
