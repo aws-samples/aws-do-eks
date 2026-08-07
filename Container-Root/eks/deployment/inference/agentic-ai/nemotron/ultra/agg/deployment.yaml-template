@@ -118,6 +118,12 @@ spec:
             - { name: DYN_SYSTEM_PORT, value: "9090" }
             - { name: HF_HOME, value: /tmp/hf_cache }
             - { name: HF_MODULES_CACHE, value: /tmp/hf_cache/modules }
+            # NVFP4 MoE on Blackwell pulls FlashInfer TRTLLM cubins at runtime and symlinks them
+            # into its cubin dir; the default (installed flashinfer_cubin pkg) is under root-owned
+            # site-packages, so the non-root worker hits PermissionError [Errno 13] during
+            # profile_run. Point it at a writable path (same reason HF_HOME → /tmp above). BF16
+            # is unaffected (Unquantized MoE doesn't use these cubins), so this is inert for BF16.
+            - { name: FLASHINFER_CUBIN_DIR, value: /tmp/flashinfer_cubins }
             - { name: VLLM_LOGGING_LEVEL, value: INFO }
           ports: [ { containerPort: 9090, name: dyn-system } ]
           startupProbe:
