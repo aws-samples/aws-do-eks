@@ -184,9 +184,16 @@ spec:
                   echo "[worker] waiting for DNS LWS_LEADER_ADDRESS=$LWS_LEADER_ADDRESS (${DOLLAR}i)"
                   sleep 2
                 done
-                LEADER_IP=$(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk '{print ${DOLLAR}1}')
-                MY_IP=${DOLLAR}(hostname -i | awk '{print ${DOLLAR}1}')
-                echo "[worker] LEADER_IP=${DOLLAR}LEADER_IP MY_IP=$MY_IP"
+                LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk '{print ${DOLLAR}1}')
+                # Resolve MY_IP on the SAME interface that routes to the leader. Under
+                # hostNetwork:true, `hostname -i` can return empty or a secondary/EFA IP
+                # (e.g. 172.16.x) that the GCS on the primary VPC CIDR (10.x) can't route
+                # back to -> the raylet registers on an unreachable IP and Ray start times
+                # out ("Failed to get node info: RPC error: Deadline Exceeded"). Deriving
+                # the source IP from `ip route get <leader>` guarantees the primary-CIDR IP.
+                MY_IP=${DOLLAR}(ip -4 route get "${DOLLAR}LEADER_IP" 2>/dev/null | awk '{for(i=1;i<=NF;i++) if(${DOLLAR}i=="src"){print ${DOLLAR}(i+1); exit}}')
+                [ -z "${DOLLAR}MY_IP" ] && MY_IP=${DOLLAR}(hostname -i | awk '{print ${DOLLAR}1}')
+                echo "[worker] LEADER_IP=${DOLLAR}LEADER_IP MY_IP=${DOLLAR}MY_IP"
                 # Wait for Ray head to be reachable
                 for i in ${DOLLAR}(seq 1 60); do
                   if (echo > /dev/tcp/${DOLLAR}LEADER_IP/6379) 2>/dev/null; then break; fi
