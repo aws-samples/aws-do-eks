@@ -59,6 +59,13 @@ spec:
                       - trn1.32xlarge
                       - trn1n.32xlarge
                       - p5.48xlarge
+                      - p5e.48xlarge
+                      - p5en.48xlarge
+                      - p6-b200.48xlarge
+                      - g6.8xlarge
+                      - g6.48xlarge
+                      - g6e.8xlarge
+                      - g6e.48xlarge
                       - g5.8xlarge
                       - ml.g5.8xlarge
               - matchExpressions:
@@ -85,6 +92,13 @@ spec:
                       - trn1.32xlarge
                       - trn1n.32xlarge
                       - p5.48xlarge
+                      - p5e.48xlarge
+                      - p5en.48xlarge
+                      - p6-b200.48xlarge
+                      - g6.8xlarge
+                      - g6.48xlarge
+                      - g6e.8xlarge
+                      - g6e.48xlarge
                       - g5.8xlarge
                       - ml.g5.8xlarge
       hostNetwork: true
