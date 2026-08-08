@@ -124,12 +124,12 @@ spec:
               failureThreshold: 10
             resources:
               requests:
-                cpu: "96"
+                cpu: "48"
                 memory: 1000Gi
                 nvidia.com/gpu: "${GPU_PER_WORKER}"
                 vpc.amazonaws.com/efa: "${EFA_PER_WORKER}"
               limits:
-                cpu: "96"
+                cpu: "48"
                 memory: 1000Gi
                 nvidia.com/gpu: "${GPU_PER_WORKER}"
                 vpc.amazonaws.com/efa: "${EFA_PER_WORKER}"
@@ -210,12 +210,12 @@ spec:
               - { name: NCCL_NET_PLUGIN, value: ofi }
             resources:
               requests:
-                cpu: "96"
+                cpu: "48"
                 memory: 1000Gi
                 nvidia.com/gpu: "${GPU_PER_WORKER}"
                 vpc.amazonaws.com/efa: "${EFA_PER_WORKER}"
               limits:
-                cpu: "96"
+                cpu: "48"
                 memory: 1000Gi
                 nvidia.com/gpu: "${GPU_PER_WORKER}"
                 vpc.amazonaws.com/efa: "${EFA_PER_WORKER}"
