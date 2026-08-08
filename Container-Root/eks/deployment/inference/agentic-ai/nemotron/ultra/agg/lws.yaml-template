@@ -89,6 +89,7 @@ spec:
                 exec python3 -m dynamo.vllm \
                   --model ${MODEL_PATH} \
                   --served-model-name ${MODEL_NAME} \
+                  --load-format ${LOAD_FORMAT} \
                   --tensor-parallel-size ${GPU_PER_WORKER} \
                   --pipeline-parallel-size 2 \
                   --distributed-executor-backend ray \
