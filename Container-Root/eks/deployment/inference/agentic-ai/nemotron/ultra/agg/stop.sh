@@ -18,6 +18,11 @@ elif [ "${MANIFEST_TYPE}" == "lws" ]; then
 	cat lws.yaml-template | envsubst > lws.yaml
 	export CMD="kubectl delete -f ./lws.yaml"
 
+elif [ "${MANIFEST_TYPE}" == "ep16" ]; then
+
+	cat lws-ep16.yaml-template | envsubst > lws-ep16.yaml
+	export CMD="kubectl delete -f ./lws-ep16.yaml"
+
 else
 
 	echo "Unknown MANIFEST_TYPE ${MANIFEST_TYPE}"
