@@ -137,6 +137,32 @@ assert not os.path.exists("/usr/bin/nats-server"), "nats-server still present (C
 print("[golden] agg + EP16 + PP>1 prerequisites all present; EFA present; 0-CRITICAL precondition met")
 PY
 
+# ---- 6) NVFP4 fix: make flashinfer's cubin package dir writable ----------------------
+#    NVFP4 MoE on Blackwell (SM100) makes flashinfer symlink its trtllm cubins INTO the
+#    installed flashinfer_cubin PACKAGE tree (ensure_symlink -> link.parent.mkdir,
+#    flashinfer/jit/cubin_loader.py). That dir is root-owned, and _get_cubin_dir()
+#    (flashinfer/jit/env.py) PREFERS the installed package over FLASHINFER_CUBIN_DIR, so
+#    the env var is inert here -> the default non-root `dynamo` worker hits
+#    PermissionError [Errno 13] in profile_run at the FIRST NVFP4 MoE call. Make the dir
+#    writable at build time so no runtime initContainer / runAsUser:0 is needed; the
+#    worker stays non-root. BF16 is unaffected (Unquantized MoE never fetches these
+#    cubins). Verified 2026-08-07: with only this line, the non-root user (uid 1000)
+#    can mkdir+symlink the exact crash path .../flashinfer_cubin/cubins/flashinfer/trtllm.
+RUN set -eux; \
+    CUBINS="$(python3 -c 'import os,flashinfer_cubin; print(os.path.join(os.path.dirname(flashinfer_cubin.__file__),"cubins"))')"; \
+    mkdir -p "${CUBINS}"; \
+    chmod -R a+rwX "${CUBINS}"; \
+    python3 - "${CUBINS}" <<'PY'
+import os, sys, tempfile
+cubins = sys.argv[1]
+# assert the runtime user (uid 1000) can create the symlink parent that crashed
+probe = os.path.join(cubins, "flashinfer", "trtllm", "batched_gemm")
+os.makedirs(probe, exist_ok=True)
+t = os.path.join(probe, ".writeprobe"); open(t, "w").write("ok"); os.remove(t)
+os.chmod(cubins, 0o777)
+print(f"[nvfp4-cubin-fix] {cubins} writable (probe mkdir+write OK)")
+PY
+
 USER dynamo
 LABEL org.opencontainers.image.description="Golden image: Dynamo 1.3.1 (-efa base, EFA 1.49 baked) + vLLM 0.23 + ray 2.55.1 + vLLM PR#48263 overlay (agg + EP16 + PP>1, Dockerfile-only reproducible)"
 LABEL org.opencontainers.image.source="https://github.com/vllm-project/vllm/pull/48263"
