@@ -146,22 +146,23 @@ PY
 #    PermissionError [Errno 13] in profile_run at the FIRST NVFP4 MoE call. Make the dir
 #    writable at build time so no runtime initContainer / runAsUser:0 is needed; the
 #    worker stays non-root. BF16 is unaffected (Unquantized MoE never fetches these
-#    cubins). Verified 2026-08-07: with only this line, the non-root user (uid 1000)
-#    can mkdir+symlink the exact crash path .../flashinfer_cubin/cubins/flashinfer/trtllm.
+#    cubins).
+#
+#    IMPORTANT (fixes a regression in the first cut of this step): do NOT pre-create
+#    the cubins/flashinfer/trtllm/batched_gemm subtree here. A build-time probe that
+#    did `os.makedirs(...batched_gemm)` left those subdirs ROOT-OWNED 0755, and a
+#    subsequent `chmod cubins 0777` only re-permed the TOP dir — so at runtime the
+#    non-root worker still hit PermissionError[13] symlinking INTO the root-owned
+#    batched_gemm. The correct fix is chmod -R the cubins dir and leave it EMPTY: the
+#    worker then creates the whole flashinfer/trtllm/... subtree itself (worker-owned).
+#    Verified as uid 1000: symlink into batched_gemm SUCCEEDS with this recipe, FAILS
+#    if the subtree is pre-created. Keep this a single chmod -R with no makedirs probe.
 RUN set -eux; \
     CUBINS="$(python3 -c 'import os,flashinfer_cubin; print(os.path.join(os.path.dirname(flashinfer_cubin.__file__),"cubins"))')"; \
     mkdir -p "${CUBINS}"; \
     chmod -R a+rwX "${CUBINS}"; \
-    python3 - "${CUBINS}" <<'PY'
-import os, sys, tempfile
-cubins = sys.argv[1]
-# assert the runtime user (uid 1000) can create the symlink parent that crashed
-probe = os.path.join(cubins, "flashinfer", "trtllm", "batched_gemm")
-os.makedirs(probe, exist_ok=True)
-t = os.path.join(probe, ".writeprobe"); open(t, "w").write("ok"); os.remove(t)
-os.chmod(cubins, 0o777)
-print(f"[nvfp4-cubin-fix] {cubins} writable (probe mkdir+write OK)")
-PY
+    test -w "${CUBINS}"; \
+    echo "[nvfp4-cubin-fix] ${CUBINS} made writable (chmod -R a+rwX; subtree left empty for the worker to own)"
 
 USER dynamo
 LABEL org.opencontainers.image.description="Golden image: Dynamo 1.3.1 (-efa base, EFA 1.49 baked) + vLLM 0.23 + ray 2.55.1 + vLLM PR#48263 overlay (agg + EP16 + PP>1, Dockerfile-only reproducible)"
