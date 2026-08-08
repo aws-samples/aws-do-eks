@@ -77,7 +77,7 @@ spec:
                 export GLOO_SOCKET_IFNAME=${DOLLAR}(ip -4 route get "${DOLLAR}LEADER_IP" 2>/dev/null | awk '{for(i=1;i<=NF;i++) if(${DOLLAR}i=="dev"){print ${DOLLAR}(i+1); exit}}')
                 echo "[leader] GLOO_SOCKET_IFNAME=${DOLLAR}GLOO_SOCKET_IFNAME"
                 # Start Ray head
-                ray start --head --port=6379 --node-ip-address="${DOLLAR}LEADER_IP" --num-gpus=8
+                ray start --head --port=6379 --node-ip-address="${DOLLAR}LEADER_IP" --num-gpus=${GPU_PER_WORKER}
                 # Wait for worker to join
                 for i in ${DOLLAR}(seq 1 120); do
                   N=${DOLLAR}(ray status 2>/dev/null | awk '/Active:/{flag=1; next} /Pending:|Recent failures:|Resources/{flag=0} flag' | grep -c node_ || true)
