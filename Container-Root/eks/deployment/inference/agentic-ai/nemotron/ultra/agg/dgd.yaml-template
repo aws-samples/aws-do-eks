@@ -1,0 +1,126 @@
+# =============================================================================
+# Nemotron-3 Ultra 550B AGGREGATED — DynamoGraphDeployment (Dynamo operator)
+# =============================================================================
+#
+# Author: Anton Alexander
+#
+# Requires the Dynamo platform 1.3.0 (operator + etcd + NATS) from
+# eks/deployment/nvidia-dynamo. The operator turns this single resource into
+# the frontend + worker deployments and owns their lifecycle, so
+# `kubectl delete -f dgd.yaml` (or ./stop.sh) removes everything it created.
+#
+# Aggregated (prefill+decode co-located) single-node worker: TP=${GPU_PER_WORKER}/PP=1,
+# intra-node NVLink. NO P/D disaggregation, so NO NIXL / KV-transfer / EFA needed
+# for the model itself (contrast ../disagg/dgd.yaml-template). This is the DGD
+# equivalent of ../agg/deployment.yaml-template — same serving shape, but managed
+# by the operator as one CRD.
+#
+# API version: nvidia.com/v1alpha1 — on the 1.3.0 operator this is the storage
+# version and admits cleanly (with a deprecation warning). v1beta1 is a DIFFERENT
+# schema (spec.components array), not a rename of this one.
+#
+# Uses the golden image via ../.env (covers agg/EP16/PP>1 + the NVFP4 cubin fix);
+# MODEL_VARIANT=NVFP4 switches the checkpoint. Worker stays non-root (dynamo).
+# =============================================================================
+---
+apiVersion: nvidia.com/v1alpha1
+kind: DynamoGraphDeployment
+metadata:
+  name: ${DEPLOYMENT_NAME}
+  namespace: ${NAMESPACE}
+  labels:
+    app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
+spec:
+  backendFramework: vllm
+  pvcs:
+    - name: fsx-pvc
+      create: false
+  envs:
+    - { name: DYNAMO_BACKEND, value: vllm }
+    - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }
+    - { name: NATS_SERVER,    value: "${NATS_URL}" }
+    # /tmp, NOT /shared: pods run uid 1000 and /shared is root-owned — the frontend
+    # dies registering the model ("Failed to create cache directory /shared/hf_cache/hub:
+    # Permission denied") and /v1/models stays empty -> every request 404s.
+    - { name: HF_HOME,        value: /tmp/hf_cache }
+  services:
+    # ---- Frontend (router, CPU-only) --------------------------------------
+    Frontend:
+      componentType: frontend
+      replicas: 1
+      resources:
+        requests: { cpu: "2", memory: 4Gi }
+        limits:   { cpu: "4", memory: 8Gi }
+      # The frontend reads the model dir (config/tokenizer, not weights) to build the
+      # preprocessor when the worker registers a local path — without this mount the
+      # model never appears in /v1/models.
+      volumeMounts:
+        - { name: fsx-pvc, mountPoint: /shared }
+      extraPodSpec:
+        nodeSelector: { node.kubernetes.io/instance-type: ${INSTANCE_TYPE_FRONTEND} }
+        mainContainer:
+          image: ${REGISTRY}${IMAGE}${TAG}
+          imagePullPolicy: Always
+          command: ["/bin/bash", "-c"]
+          # 1.3.x images have no /opt/dynamo/venv — activate only when present.
+          args:
+            - |-
+              if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
+              exec python3 -m dynamo.frontend --http-port 8000 --http-host 0.0.0.0
+          ports: [{ containerPort: 8000, name: http }]
+          # NOTE: no readinessProbe here — the operator injects its own frontend probe;
+          # adding ours makes the API server reject the generated pod
+          # ("may not specify more than 1 handler type").
+    # ---- Aggregated worker (prefill+decode, TP${GPU_PER_WORKER}/PP1, 1 node) ----
+    VllmWorker:
+      componentType: worker
+      replicas: 1
+      resources:
+        requests: { cpu: "48", memory: 800Gi, gpu: "${GPU_PER_WORKER}" }
+        limits:   { cpu: "48", memory: 800Gi, gpu: "${GPU_PER_WORKER}" }
+      volumeMounts:
+        - { name: fsx-pvc, mountPoint: /shared }
+      extraPodSpec:
+        nodeSelector: { node.kubernetes.io/instance-type: ${INSTANCE_TYPE_WORKER} }
+        tolerations:
+          - { key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
+        volumes:
+          - { name: dshm, emptyDir: { medium: Memory, sizeLimit: 64Gi } }
+        mainContainer:
+          image: ${REGISTRY}${IMAGE}${TAG}
+          imagePullPolicy: Always
+          securityContext: { capabilities: { add: ["IPC_LOCK"] } }
+          command: ["/bin/bash", "-c"]
+          args:
+            - |-
+              set -u
+              unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
+                    HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
+              if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
+              exec python3 -m dynamo.vllm \
+                --model ${MODEL_PATH} \
+                --served-model-name ${MODEL_NAME} \
+                --load-format ${LOAD_FORMAT} \
+                --tensor-parallel-size ${GPU_PER_WORKER} --pipeline-parallel-size 1 \
+                --max-model-len 4096 --gpu-memory-utilization 0.97 --enforce-eager \
+                --trust-remote-code \
+                --mamba-cache-mode align
+          env:
+            - { name: DYN_SYSTEM_ENABLED, value: "true" }
+            - { name: DYN_SYSTEM_PORT, value: "9090" }
+            - { name: HF_MODULES_CACHE, value: /tmp/hf_cache/modules }
+            - { name: VLLM_LOGGING_LEVEL, value: INFO }
+            # NVFP4 cubin dir is handled in the golden image (build-time chmod); no env needed.
+          # Port MUST be named "system": the operator injects readiness/liveness probes
+          # that target the named port; any other name fails with
+          # 'strconv.Atoi: parsing "system"' and the worker never goes Ready.
+          ports: [{ containerPort: 9090, name: system }]
+          startupProbe:
+            httpGet: { path: /health, port: 9090 }
+            periodSeconds: 30
+            timeoutSeconds: 10
+            # 550B BF16 is a ~1 TB checkpoint; a cold Lustre load can exceed an hour.
+            # 240 x 30s = 120 min. NVFP4 loads far faster; the ceiling is harmless once ready.
+            failureThreshold: 240
+          volumeMounts:
+            - { name: dshm, mountPath: /dev/shm }
