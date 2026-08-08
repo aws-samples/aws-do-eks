@@ -71,6 +71,11 @@ spec:
                 done
                 LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk '{print ${DOLLAR}1}')
                 echo "[leader] LWS_LEADER_ADDRESS=${DOLLAR}LWS_LEADER_ADDRESS LEADER_IP=${DOLLAR}LEADER_IP"
+                # Gloo needs a SINGLE concrete iface name (not NCCL's ^exclude list). Resolve the
+                # iface that routes to the leader (the primary VPC NIC) so Gloo advertises the
+                # routable 10.x IP instead of falling back to loopback.
+                export GLOO_SOCKET_IFNAME=${DOLLAR}(ip -4 route get "${DOLLAR}LEADER_IP" 2>/dev/null | awk '{for(i=1;i<=NF;i++) if(${DOLLAR}i=="dev"){print ${DOLLAR}(i+1); exit}}')
+                echo "[leader] GLOO_SOCKET_IFNAME=${DOLLAR}GLOO_SOCKET_IFNAME"
                 # Start Ray head
                 ray start --head --port=6379 --node-ip-address="${DOLLAR}LEADER_IP" --num-gpus=8
                 # Wait for worker to join
@@ -110,13 +115,10 @@ spec:
               - { name: NIXL_LIBFABRIC_MAX_RAILS, value: "1" }
               - { name: NIXL_SKIP_TOPOLOGY_CHECK, value: "1" }
               - { name: NCCL_NET_PLUGIN, value: ofi }
-              # hostNetwork:true has many NICs (lo, docker, veth, EFA 172.16.x, primary 10.x).
-              # Without these, vLLM's CPU coordination group (Gloo) can't resolve the pod
-              # hostname to a routable addr and falls back to 127.0.0.1 -> cross-node ranks
-              # try to reach each other at loopback -> "Gloo connectFullMesh ... Connection
-              # refused, remote=[127.0.0.1]". Pin both Gloo and NCCL to the primary VPC NIC
-              # (exclude lo/docker/veth/eni) so they advertise the routable 10.x IP.
-              - { name: GLOO_SOCKET_IFNAME, value: "^lo,docker,veth,eni" }
+              # NCCL accepts the ^exclude list; Gloo does NOT (it needs a single concrete
+              # iface name — a "^lo" value fails with "Unable to find address for: ^lo").
+              # GLOO_SOCKET_IFNAME is therefore exported at runtime in the launch script
+              # (resolved from the route to the leader), NOT set here.
               - { name: NCCL_SOCKET_IFNAME, value: "^lo,docker,veth,eni" }
             ports:
               - { containerPort: 9090, name: dyn-system }
@@ -202,6 +204,10 @@ spec:
                 MY_IP=${DOLLAR}(ip -4 route get "${DOLLAR}LEADER_IP" 2>/dev/null | awk '{for(i=1;i<=NF;i++) if(${DOLLAR}i=="src"){print ${DOLLAR}(i+1); exit}}')
                 [ -z "${DOLLAR}MY_IP" ] && MY_IP=${DOLLAR}(hostname -i | awk '{print ${DOLLAR}1}')
                 echo "[worker] LEADER_IP=${DOLLAR}LEADER_IP MY_IP=${DOLLAR}MY_IP"
+                # Gloo needs a SINGLE concrete iface name (not NCCL's ^exclude list). Resolve the
+                # iface that routes to the leader (same primary VPC NIC as MY_IP above).
+                export GLOO_SOCKET_IFNAME=${DOLLAR}(ip -4 route get "${DOLLAR}LEADER_IP" 2>/dev/null | awk '{for(i=1;i<=NF;i++) if(${DOLLAR}i=="dev"){print ${DOLLAR}(i+1); exit}}')
+                echo "[worker] GLOO_SOCKET_IFNAME=${DOLLAR}GLOO_SOCKET_IFNAME"
                 # Wait for Ray head to be reachable
                 for i in ${DOLLAR}(seq 1 60); do
                   if (echo > /dev/tcp/${DOLLAR}LEADER_IP/6379) 2>/dev/null; then break; fi
@@ -223,13 +229,10 @@ spec:
               - { name: NIXL_LIBFABRIC_MAX_RAILS, value: "1" }
               - { name: NIXL_SKIP_TOPOLOGY_CHECK, value: "1" }
               - { name: NCCL_NET_PLUGIN, value: ofi }
-              # hostNetwork:true has many NICs (lo, docker, veth, EFA 172.16.x, primary 10.x).
-              # Without these, vLLM's CPU coordination group (Gloo) can't resolve the pod
-              # hostname to a routable addr and falls back to 127.0.0.1 -> cross-node ranks
-              # try to reach each other at loopback -> "Gloo connectFullMesh ... Connection
-              # refused, remote=[127.0.0.1]". Pin both Gloo and NCCL to the primary VPC NIC
-              # (exclude lo/docker/veth/eni) so they advertise the routable 10.x IP.
-              - { name: GLOO_SOCKET_IFNAME, value: "^lo,docker,veth,eni" }
+              # NCCL accepts the ^exclude list; Gloo does NOT (it needs a single concrete
+              # iface name — a "^lo" value fails with "Unable to find address for: ^lo").
+              # GLOO_SOCKET_IFNAME is therefore exported at runtime in the launch script
+              # (resolved from the route to the leader), NOT set here.
               - { name: NCCL_SOCKET_IFNAME, value: "^lo,docker,veth,eni" }
             resources:
               requests:
