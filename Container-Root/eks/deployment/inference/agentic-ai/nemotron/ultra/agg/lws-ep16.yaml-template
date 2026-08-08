@@ -1,0 +1,217 @@
+# =============================================================================
+# Nemotron-3 Ultra 550B — AGGREGATED wide-EP: DP=2 / TP=8 / EP=16 over EFA (2 nodes)
+# =============================================================================
+#
+# Author: Anton Alexander
+#
+# Expert-parallel aggregated serving via vLLM-NATIVE data parallelism (NOT Ray,
+# NOT PP). ONE logical engine spanning 2 nodes: each node runs TP=8 within its
+# NVLink domain; EP=16 spans both nodes over EFA. No P/D disaggregation, so NIXL
+# is not involved (and the PP>1 hybrid-Mamba path is structurally absent).
+#
+#   leader = DP rank 0 + OpenAI API server (:8000); --data-parallel-address = its own IP
+#   worker = DP rank 1, --headless; dials the leader's DP coordinator (ZMQ)
+#   2 GPU nodes, 16 GPUs, 32 EFA NICs.
+#
+# WHY THIS WORKS on Nemotron-3 Ultra (verified):
+#   - checkpoint n_routed_experts=512 -> EP=16 = 32 experts/rank, EXACT.
+#   - mamba_mixer2 asserts n_groups(=8) % tp == 0 -> TP=8; DP does not touch it.
+#   - NemotronH uses FusedMoE + get_ep_group() -> EP wired.
+#   - default all2all backend = allgather_reducescatter (plain NCCL over EFA;
+#     no DeepEP/NVSHMEM/GIN needed).
+#   MEASURED aggregated DP2/TP8/EP16 serving of 550B over EFA (NET/OFI efa both
+#   nodes, socket_fallback=0, coherent completions).
+#
+# IMAGE: the golden image (../.env — covers agg/EP16/PP>1 + the NVFP4 cubin fix).
+# For NVFP4 set MODEL_VARIANT=NVFP4 in ../.env (MODEL_PATH/NAME switch automatically).
+#
+# RENDER: MANIFEST_TYPE=ep16 ./run.sh   (run.sh envsubst's this + kubectl apply)
+# =============================================================================
+---
+apiVersion: leaderworkerset.x-k8s.io/v1
+kind: LeaderWorkerSet
+metadata:
+  name: ${DEPLOYMENT_NAME}-ep16
+  namespace: ${NAMESPACE}
+  labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}-ep16, app.kubernetes.io/component: agg-ep16 }
+spec:
+  replicas: 1
+  startupPolicy: LeaderCreated
+  leaderWorkerTemplate:
+    restartPolicy: RecreateGroupOnPodRestart
+    size: 2
+    # -------------------------------------------------------------------------
+    # LEADER = DP rank 0 + API server
+    # -------------------------------------------------------------------------
+    leaderTemplate:
+      metadata:
+        labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}-ep16, app.kubernetes.io/component: agg-ep16, dp-role: leader }
+      spec:
+        nodeSelector: { node.kubernetes.io/instance-type: ${INSTANCE_TYPE_WORKER} }
+        tolerations:
+          - { key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
+          - { key: vpc.amazonaws.com/efa, operator: Exists, effect: NoSchedule }
+        # keep the two group members on different nodes (EP spans nodes over EFA)
+        affinity:
+          podAntiAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector: { matchLabels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}-ep16 } }
+                topologyKey: kubernetes.io/hostname
+        volumes:
+          - { name: dshm,       emptyDir: { medium: Memory, sizeLimit: 64Gi } }
+          - { name: infiniband, hostPath: { path: /dev/infiniband, type: DirectoryOrCreate } }
+          - { name: shared,     persistentVolumeClaim: { claimName: fsx-pvc } }
+        containers:
+          - name: vllm
+            image: ${REGISTRY}${IMAGE}${TAG}
+            imagePullPolicy: Always
+            securityContext: { capabilities: { add: ["IPC_LOCK"] } }
+            command: ["/bin/bash","-c"]
+            args:
+              - |-
+                set -u
+                unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
+                      HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
+                if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
+                echo "[dp0/leader] MY_IP=${DOLLAR}MY_IP"
+                # DP rank 0 = DP coordinator + API server; rank 1 dials in here. TP=8 in-node.
+                exec vllm serve ${MODEL_PATH} \
+                  --served-model-name ${MODEL_NAME} \
+                  --tensor-parallel-size ${GPU_PER_WORKER} \
+                  --data-parallel-size 2 \
+                  --data-parallel-size-local 1 \
+                  --data-parallel-address "${DOLLAR}MY_IP" \
+                  --data-parallel-rpc-port 29550 \
+                  --enable-expert-parallel \
+                  --pipeline-parallel-size 1 \
+                  --max-model-len 8192 \
+                  --gpu-memory-utilization 0.92 \
+                  --enforce-eager \
+                  --trust-remote-code \
+                  --mamba-cache-mode align \
+                  --no-disable-hybrid-kv-cache-manager \
+                  --host 0.0.0.0 --port 8000
+            env:
+              - { name: MY_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
+              - { name: HF_HOME, value: /tmp/hf_cache }
+              - { name: HF_MODULES_CACHE, value: /tmp/hf_cache/modules }
+              - { name: VLLM_LOGGING_LEVEL, value: INFO }
+              # NVFP4 cubin dir is handled in the golden image (build-time chmod); no env needed.
+              - { name: FI_PROVIDER, value: efa }
+              - { name: FI_EFA_USE_DEVICE_RDMA, value: "1" }
+              - { name: FI_EFA_FORK_SAFE, value: "1" }
+              - { name: NCCL_NET_PLUGIN, value: ofi }
+              - { name: NCCL_TUNER_PLUGIN, value: ofi }
+              - { name: NCCL_NVLS_ENABLE, value: "0" }
+              - { name: NCCL_SOCKET_IFNAME, value: "^lo,docker,veth,eni" }
+              - { name: NCCL_DEBUG, value: INFO }
+              - { name: NCCL_DEBUG_SUBSYS, value: "INIT,NET" }
+            ports:
+              - { containerPort: 8000, name: http }
+              - { containerPort: 29550, name: dp-rpc }
+            readinessProbe:
+              httpGet: { path: /health, port: 8000 }
+              periodSeconds: 30
+              timeoutSeconds: 10
+              # cold ~1 TB BF16 Lustre load can exceed an hour; 240 x 30s = 120 min.
+              # NVFP4 loads far faster; the ceiling is harmless once ready.
+              failureThreshold: 240
+            resources:
+              requests: { cpu: "96", memory: 1000Gi, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
+              limits:   { cpu: "96", memory: 1000Gi, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
+            volumeMounts:
+              - { name: dshm,       mountPath: /dev/shm }
+              - { name: infiniband, mountPath: /dev/infiniband }
+              - { name: shared,     mountPath: /shared }
+    # -------------------------------------------------------------------------
+    # WORKER = DP rank 1, headless (no API server), joins the leader's coordinator
+    # -------------------------------------------------------------------------
+    workerTemplate:
+      metadata:
+        labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}-ep16, app.kubernetes.io/component: agg-ep16, dp-role: worker }
+      spec:
+        nodeSelector: { node.kubernetes.io/instance-type: ${INSTANCE_TYPE_WORKER} }
+        tolerations:
+          - { key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
+          - { key: vpc.amazonaws.com/efa, operator: Exists, effect: NoSchedule }
+        affinity:
+          podAntiAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector: { matchLabels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}-ep16 } }
+                topologyKey: kubernetes.io/hostname
+        volumes:
+          - { name: dshm,       emptyDir: { medium: Memory, sizeLimit: 64Gi } }
+          - { name: infiniband, hostPath: { path: /dev/infiniband, type: DirectoryOrCreate } }
+          - { name: shared,     persistentVolumeClaim: { claimName: fsx-pvc } }
+        containers:
+          - name: vllm
+            image: ${REGISTRY}${IMAGE}${TAG}
+            imagePullPolicy: Always
+            securityContext: { capabilities: { add: ["IPC_LOCK"] } }
+            command: ["/bin/bash","-c"]
+            args:
+              - |-
+                set -u
+                unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
+                      HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
+                if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
+                # resolve the leader (DP rank 0) for the coordinator dial-in
+                for i in ${DOLLAR}(seq 1 60); do
+                  if getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" >/dev/null 2>&1; then break; fi
+                  sleep 2
+                done
+                LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk '{print ${DOLLAR}1}')
+                echo "[dp1/worker] LEADER_IP=${DOLLAR}LEADER_IP MY_IP=${DOLLAR}MY_IP"
+                # wait for the leader's DP rpc port before joining
+                for i in ${DOLLAR}(seq 1 120); do
+                  if (echo > /dev/tcp/${DOLLAR}LEADER_IP/29550) 2>/dev/null; then break; fi
+                  sleep 5
+                done
+                exec vllm serve ${MODEL_PATH} \
+                  --served-model-name ${MODEL_NAME} \
+                  --headless \
+                  --data-parallel-start-rank 1 \
+                  --tensor-parallel-size ${GPU_PER_WORKER} \
+                  --data-parallel-size 2 \
+                  --data-parallel-size-local 1 \
+                  --data-parallel-address "${DOLLAR}LEADER_IP" \
+                  --data-parallel-rpc-port 29550 \
+                  --enable-expert-parallel \
+                  --pipeline-parallel-size 1 \
+                  --max-model-len 8192 \
+                  --gpu-memory-utilization 0.92 \
+                  --enforce-eager \
+                  --trust-remote-code \
+                  --mamba-cache-mode align \
+                  --no-disable-hybrid-kv-cache-manager
+            env:
+              - { name: MY_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
+              - { name: HF_HOME, value: /tmp/hf_cache }
+              - { name: HF_MODULES_CACHE, value: /tmp/hf_cache/modules }
+              - { name: VLLM_LOGGING_LEVEL, value: INFO }
+              - { name: FI_PROVIDER, value: efa }
+              - { name: FI_EFA_USE_DEVICE_RDMA, value: "1" }
+              - { name: FI_EFA_FORK_SAFE, value: "1" }
+              - { name: NCCL_NET_PLUGIN, value: ofi }
+              - { name: NCCL_TUNER_PLUGIN, value: ofi }
+              - { name: NCCL_NVLS_ENABLE, value: "0" }
+              - { name: NCCL_SOCKET_IFNAME, value: "^lo,docker,veth,eni" }
+              - { name: NCCL_DEBUG, value: INFO }
+              - { name: NCCL_DEBUG_SUBSYS, value: "INIT,NET" }
+            resources:
+              requests: { cpu: "96", memory: 1000Gi, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
+              limits:   { cpu: "96", memory: 1000Gi, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
+            volumeMounts:
+              - { name: dshm,       mountPath: /dev/shm }
+              - { name: infiniband, mountPath: /dev/infiniband }
+              - { name: shared,     mountPath: /shared }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ${DEPLOYMENT_NAME}-ep16
+  namespace: ${NAMESPACE}
+  labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}-ep16, app.kubernetes.io/component: agg-ep16 }
+spec:
+  selector: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}-ep16, app.kubernetes.io/component: agg-ep16, dp-role: leader }
+  ports: [ { port: 8000, targetPort: 8000, name: http } ]
