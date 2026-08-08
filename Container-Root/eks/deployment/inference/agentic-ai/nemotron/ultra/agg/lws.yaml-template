@@ -110,6 +110,14 @@ spec:
               - { name: NIXL_LIBFABRIC_MAX_RAILS, value: "1" }
               - { name: NIXL_SKIP_TOPOLOGY_CHECK, value: "1" }
               - { name: NCCL_NET_PLUGIN, value: ofi }
+              # hostNetwork:true has many NICs (lo, docker, veth, EFA 172.16.x, primary 10.x).
+              # Without these, vLLM's CPU coordination group (Gloo) can't resolve the pod
+              # hostname to a routable addr and falls back to 127.0.0.1 -> cross-node ranks
+              # try to reach each other at loopback -> "Gloo connectFullMesh ... Connection
+              # refused, remote=[127.0.0.1]". Pin both Gloo and NCCL to the primary VPC NIC
+              # (exclude lo/docker/veth/eni) so they advertise the routable 10.x IP.
+              - { name: GLOO_SOCKET_IFNAME, value: "^lo,docker,veth,eni" }
+              - { name: NCCL_SOCKET_IFNAME, value: "^lo,docker,veth,eni" }
             ports:
               - { containerPort: 9090, name: dyn-system }
             startupProbe:
@@ -215,6 +223,14 @@ spec:
               - { name: NIXL_LIBFABRIC_MAX_RAILS, value: "1" }
               - { name: NIXL_SKIP_TOPOLOGY_CHECK, value: "1" }
               - { name: NCCL_NET_PLUGIN, value: ofi }
+              # hostNetwork:true has many NICs (lo, docker, veth, EFA 172.16.x, primary 10.x).
+              # Without these, vLLM's CPU coordination group (Gloo) can't resolve the pod
+              # hostname to a routable addr and falls back to 127.0.0.1 -> cross-node ranks
+              # try to reach each other at loopback -> "Gloo connectFullMesh ... Connection
+              # refused, remote=[127.0.0.1]". Pin both Gloo and NCCL to the primary VPC NIC
+              # (exclude lo/docker/veth/eni) so they advertise the routable 10.x IP.
+              - { name: GLOO_SOCKET_IFNAME, value: "^lo,docker,veth,eni" }
+              - { name: NCCL_SOCKET_IFNAME, value: "^lo,docker,veth,eni" }
             resources:
               requests:
                 cpu: "48"
