@@ -110,11 +110,11 @@ spec:
               # EFA / libfabric
               - { name: FI_PROVIDER, value: efa }
               - { name: FI_EFA_USE_DEVICE_RDMA, value: "1" }
-              - { name: FI_EFA_ENABLE_SHM, value: "0" }
-              - { name: FI_EFA_ENABLE_SHM_TRANSFER, value: "0" }
               - { name: FI_EFA_FORK_SAFE, value: "1" }
-              - { name: NIXL_LIBFABRIC_MAX_RAILS, value: "1" }
-              - { name: NIXL_SKIP_TOPOLOGY_CHECK, value: "1" }
+              # NOTE: FI_EFA_ENABLE_SHM/SHM_TRANSFER=0 and NIXL_* were disagg-only
+              # (NIXL KV transfer). agg doesn't use NIXL; the proven cross-node EP16
+              # agg template omits them. Kept out here so libfabric provider
+              # enumeration matches the known-working env.
               - { name: NCCL_NET_PLUGIN, value: ofi }
               - { name: NCCL_TUNER_PLUGIN, value: ofi }
               # PP=2 spans two nodes, so the PP group is the FIRST cross-node NCCL collective
@@ -128,7 +128,12 @@ spec:
               # iface name — a "^lo" value fails with "Unable to find address for: ^lo").
               # GLOO_SOCKET_IFNAME is therefore exported at runtime in the launch script
               # (resolved from the route to the leader), NOT set here.
-              - { name: NCCL_SOCKET_IFNAME, value: "^lo,docker,veth,eni" }
+              # MUST exclude pod-id-link0: EKS Pod Identity adds a link-local NIC
+              # (169.254.170.x) that NCCL otherwise enumerates as a net device; cross-node
+              # it then tries to connect to 169.254.170.23 -> "Connection refused" and the
+              # PP all-reduce dies with "remote process exited". Excluding it leaves only
+              # the routable primary VPC NIC (enp73s0:10.x).
+              - { name: NCCL_SOCKET_IFNAME, value: "^lo,docker,veth,eni,pod-id-link0" }
             ports:
               - { containerPort: 9090, name: dyn-system }
             startupProbe:
@@ -233,11 +238,11 @@ spec:
               - { name: HF_MODULES_CACHE, value: /tmp/hf_cache/modules }
               - { name: FI_PROVIDER, value: efa }
               - { name: FI_EFA_USE_DEVICE_RDMA, value: "1" }
-              - { name: FI_EFA_ENABLE_SHM, value: "0" }
-              - { name: FI_EFA_ENABLE_SHM_TRANSFER, value: "0" }
               - { name: FI_EFA_FORK_SAFE, value: "1" }
-              - { name: NIXL_LIBFABRIC_MAX_RAILS, value: "1" }
-              - { name: NIXL_SKIP_TOPOLOGY_CHECK, value: "1" }
+              # NOTE: FI_EFA_ENABLE_SHM/SHM_TRANSFER=0 and NIXL_* were disagg-only
+              # (NIXL KV transfer). agg doesn't use NIXL; the proven cross-node EP16
+              # agg template omits them. Kept out here so libfabric provider
+              # enumeration matches the known-working env.
               - { name: NCCL_NET_PLUGIN, value: ofi }
               - { name: NCCL_TUNER_PLUGIN, value: ofi }
               # PP=2 spans two nodes, so the PP group is the FIRST cross-node NCCL collective
@@ -251,7 +256,12 @@ spec:
               # iface name — a "^lo" value fails with "Unable to find address for: ^lo").
               # GLOO_SOCKET_IFNAME is therefore exported at runtime in the launch script
               # (resolved from the route to the leader), NOT set here.
-              - { name: NCCL_SOCKET_IFNAME, value: "^lo,docker,veth,eni" }
+              # MUST exclude pod-id-link0: EKS Pod Identity adds a link-local NIC
+              # (169.254.170.x) that NCCL otherwise enumerates as a net device; cross-node
+              # it then tries to connect to 169.254.170.23 -> "Connection refused" and the
+              # PP all-reduce dies with "remote process exited". Excluding it leaves only
+              # the routable primary VPC NIC (enp73s0:10.x).
+              - { name: NCCL_SOCKET_IFNAME, value: "^lo,docker,veth,eni,pod-id-link0" }
             resources:
               requests:
                 cpu: "48"
