@@ -24,6 +24,12 @@ elif [ "${MANIFEST_TYPE}" == "ep16" ]; then
 	cat lws-ep16.yaml-template | envsubst > lws-ep16.yaml
 	export CMD="kubectl apply -f ./lws-ep16.yaml"
 
+elif [ "${MANIFEST_TYPE}" == "dgd" ]; then
+
+	# Aggregated as a DynamoGraphDeployment (Dynamo operator manages frontend + worker).
+	cat dgd.yaml-template | envsubst > dgd.yaml
+	export CMD="kubectl apply -f ./dgd.yaml"
+
 else
 
 	echo "Unknown MANIFEST_TYPE ${MANIFEST_TYPE}"
