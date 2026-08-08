@@ -118,11 +118,13 @@ spec:
             - { name: DYN_SYSTEM_PORT, value: "9090" }
             - { name: HF_HOME, value: /tmp/hf_cache }
             - { name: HF_MODULES_CACHE, value: /tmp/hf_cache/modules }
-            # NVFP4 MoE on Blackwell pulls FlashInfer TRTLLM cubins at runtime and symlinks them
-            # into its cubin dir; the default (installed flashinfer_cubin pkg) is under root-owned
-            # site-packages, so the non-root worker hits PermissionError [Errno 13] during
-            # profile_run. Point it at a writable path (same reason HF_HOME → /tmp above). BF16
-            # is unaffected (Unquantized MoE doesn't use these cubins), so this is inert for BF16.
+            # FLASHINFER_CUBIN_DIR only points flashinfer's cubin DOWNLOAD cache at a writable path.
+            # NOTE: it does NOT fix the NVFP4 profile_run crash on the stock image — flashinfer's
+            # _get_cubin_dir() (jit/env.py) prefers the installed flashinfer_cubin PACKAGE over this
+            # var, and NVFP4 symlinks cubins into that root-owned package dir → non-root worker
+            # PermissionError[13]. That is fixed in the GOLDEN image (see ../.env / the disagg
+            # Dockerfile's build-time chmod), which this .env now points at. Kept here as a harmless
+            # cache hint. BF16 never touches these cubins.
             - { name: FLASHINFER_CUBIN_DIR, value: /tmp/flashinfer_cubins }
             - { name: VLLM_LOGGING_LEVEL, value: INFO }
           ports: [ { containerPort: 9090, name: dyn-system } ]
