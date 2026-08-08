@@ -284,6 +284,17 @@ spec:
           # 1.3.x images ship plain python3 and have NO /opt/dynamo/venv - activate only when present.
           args:
             - |-
+              set -eu
+              # dynamo.frontend calls DistributedRuntime() which connects to NATS immediately
+              # with NO retry, so a transient cold-start DNS miss (EAI_AGAIN, "Temporary failure
+              # in name resolution") is fatal and CrashLoops the pod even though NATS is healthy.
+              # The worker template already guards its startup with a getent loop; mirror that here.
+              NATS_HOST=${DOLLAR}{NATS_SERVER#*://}; NATS_HOST=${DOLLAR}{NATS_HOST%%:*}
+              for i in ${DOLLAR}(seq 1 60); do
+                if getent hosts "${DOLLAR}NATS_HOST" >/dev/null 2>&1; then break; fi
+                echo "[frontend] waiting for DNS NATS_HOST=${DOLLAR}NATS_HOST (${DOLLAR}i)"
+                sleep 2
+              done
               if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
               exec python3 -m dynamo.frontend --http-port 8000 --http-host 0.0.0.0
           env:
