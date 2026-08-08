@@ -112,9 +112,18 @@ spec:
               - { name: FI_EFA_USE_DEVICE_RDMA, value: "1" }
               - { name: FI_EFA_ENABLE_SHM, value: "0" }
               - { name: FI_EFA_ENABLE_SHM_TRANSFER, value: "0" }
+              - { name: FI_EFA_FORK_SAFE, value: "1" }
               - { name: NIXL_LIBFABRIC_MAX_RAILS, value: "1" }
               - { name: NIXL_SKIP_TOPOLOGY_CHECK, value: "1" }
               - { name: NCCL_NET_PLUGIN, value: ofi }
+              - { name: NCCL_TUNER_PLUGIN, value: ofi }
+              # PP=2 spans two nodes, so the PP group is the FIRST cross-node NCCL collective
+              # (TP groups are intra-node/NVLink and init fine). NVLS must be OFF or that first
+              # all-reduce dies with "NCCL error: remote process exited or there was a network
+              # error". This is the exact env the proven cross-node EP16 template uses.
+              - { name: NCCL_NVLS_ENABLE, value: "0" }
+              - { name: NCCL_DEBUG, value: INFO }
+              - { name: NCCL_DEBUG_SUBSYS, value: "INIT,NET" }
               # NCCL accepts the ^exclude list; Gloo does NOT (it needs a single concrete
               # iface name — a "^lo" value fails with "Unable to find address for: ^lo").
               # GLOO_SOCKET_IFNAME is therefore exported at runtime in the launch script
@@ -226,9 +235,18 @@ spec:
               - { name: FI_EFA_USE_DEVICE_RDMA, value: "1" }
               - { name: FI_EFA_ENABLE_SHM, value: "0" }
               - { name: FI_EFA_ENABLE_SHM_TRANSFER, value: "0" }
+              - { name: FI_EFA_FORK_SAFE, value: "1" }
               - { name: NIXL_LIBFABRIC_MAX_RAILS, value: "1" }
               - { name: NIXL_SKIP_TOPOLOGY_CHECK, value: "1" }
               - { name: NCCL_NET_PLUGIN, value: ofi }
+              - { name: NCCL_TUNER_PLUGIN, value: ofi }
+              # PP=2 spans two nodes, so the PP group is the FIRST cross-node NCCL collective
+              # (TP groups are intra-node/NVLink and init fine). NVLS must be OFF or that first
+              # all-reduce dies with "NCCL error: remote process exited or there was a network
+              # error". This is the exact env the proven cross-node EP16 template uses.
+              - { name: NCCL_NVLS_ENABLE, value: "0" }
+              - { name: NCCL_DEBUG, value: INFO }
+              - { name: NCCL_DEBUG_SUBSYS, value: "INIT,NET" }
               # NCCL accepts the ^exclude list; Gloo does NOT (it needs a single concrete
               # iface name — a "^lo" value fails with "Unable to find address for: ^lo").
               # GLOO_SOCKET_IFNAME is therefore exported at runtime in the launch script
