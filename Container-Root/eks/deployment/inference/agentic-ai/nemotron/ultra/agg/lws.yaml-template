@@ -85,6 +85,35 @@ spec:
                   if [ "${DOLLAR}{N:-0}" -ge 2 ]; then break; fi
                   sleep 5
                 done
+                # Cold-start warmup (detached): a fresh pod's FIRST request pays a one-time
+                # ~4min Triton JIT tax compiling the Mamba DECODE kernels (_selective_scan_update,
+                # _causal_conv1d_update) mid-request — startup only warms the PREFILL SSD path,
+                # and --enforce-eager skips cudagraph capture. Without this, the first CUSTOMER
+                # request looks hung for ~4min; warm steady-state is fine (~14 tok/s on B200).
+                # This backgrounded warmer drives ONE tiny generation through the frontend so the
+                # decode kernels JIT before real traffic arrives. It shares the pod, never blocks
+                # the engine launch, and swallows all errors so it can never crash the pod. Polls
+                # /v1/models (frontend readiness uses a tcpSocket probe, so /health may be absent)
+                # until the worker registers, then fires one max_tokens=4 completion.
+                (
+                  FE="http://${DEPLOYMENT_NAME}-frontend.${NAMESPACE}.svc.cluster.local:8000"
+                  if ! command -v curl >/dev/null 2>&1; then
+                    echo "[warmup] curl not present; skipping cold-start warmup (non-fatal)"
+                  else
+                    for i in ${DOLLAR}(seq 1 360); do
+                      if curl -sf -o /dev/null --max-time 5 "${DOLLAR}FE/v1/models" 2>/dev/null; then
+                        echo "[warmup] worker registered; priming Mamba decode kernels (one-time JIT, ~4min)"
+                        curl -s -o /dev/null --max-time 900 "${DOLLAR}FE/v1/completions" \
+                          -H 'Content-Type: application/json' \
+                          -d "{\"model\":\"${MODEL_NAME}\",\"prompt\":\"warmup\",\"max_tokens\":4,\"temperature\":0}" \
+                          && echo "[warmup] decode kernels warm; first real request will be fast" \
+                          || echo "[warmup] warmup request returned non-zero (non-fatal)"
+                        break
+                      fi
+                      sleep 5
+                    done
+                  fi
+                ) &
                 # Launch Dynamo vLLM worker
                 exec python3 -m dynamo.vllm \
                   --model ${MODEL_PATH} \
