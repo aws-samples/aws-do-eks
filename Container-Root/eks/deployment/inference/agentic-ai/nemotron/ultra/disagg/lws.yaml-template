@@ -93,12 +93,16 @@ spec:
                 # Verify the PR #42522 patch is present
                 VLLM_DIR=${DOLLAR}(python3 -c "import vllm, os; print(os.path.dirname(vllm.__file__))")
                 grep -A2 "is_kv_consumer" "${DOLLAR}VLLM_DIR/model_executor/models/config.py" 2>&1 | tee -a "${DOLLAR}LOG"
-                for i in ${DOLLAR}(seq 1 60); do
+                for i in ${DOLLAR}(seq 1 150); do
                   if getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" >/dev/null 2>&1; then break; fi
                   sleep 2
                 done
                 LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk '{print ${DOLLAR}1}')
                 echo "[prefill-leader p5en] LEADER_IP=${DOLLAR}LEADER_IP" | tee -a "${DOLLAR}LOG"
+                if [ -z "${DOLLAR}LEADER_IP" ]; then
+                  echo "[prefill-leader] FATAL: ${DOLLAR}LWS_LEADER_ADDRESS did not resolve within 300s; exiting for a clean restart (do NOT proceed with an empty leader address)"
+                  exit 1
+                fi
                 ray start --head --port=6379 --node-ip-address="${DOLLAR}LEADER_IP" --num-gpus=${GPU_PER_WORKER} 2>&1 | tee -a "${DOLLAR}LOG"
                 for i in ${DOLLAR}(seq 1 120); do
                   N=${DOLLAR}(ray status 2>/dev/null | awk '/Active:/{flag=1; next} /Pending:|Recent failures:|Resources/{flag=0} flag' | grep -c node_ || true)
@@ -206,11 +210,15 @@ spec:
                 # 1.3.0-era images (NGC vllm-runtime:1.3.0 and derivatives) install into the system
                 # python and have NO venv. Activate only when present so one manifest serves both.
                 if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
-                for i in ${DOLLAR}(seq 1 60); do
+                for i in ${DOLLAR}(seq 1 150); do
                   if getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" >/dev/null 2>&1; then break; fi
                   sleep 2
                 done
                 LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk '{print ${DOLLAR}1}')
+                if [ -z "${DOLLAR}LEADER_IP" ]; then
+                  echo "[prefill-worker] FATAL: ${DOLLAR}LWS_LEADER_ADDRESS did not resolve within 300s; exiting for a clean restart (do NOT proceed with an empty leader address)"
+                  exit 1
+                fi
                 for i in ${DOLLAR}(seq 1 60); do
                   if (echo > /dev/tcp/${DOLLAR}LEADER_IP/6379) 2>/dev/null; then break; fi
                   sleep 5
@@ -304,11 +312,15 @@ spec:
                 python3 -c "import vllm; print(f'vllm {vllm.__version__}')" 2>&1 | tee -a "${DOLLAR}LOG"
                 VLLM_DIR=${DOLLAR}(python3 -c "import vllm, os; print(os.path.dirname(vllm.__file__))")
                 grep -A2 "is_kv_consumer" "${DOLLAR}VLLM_DIR/model_executor/models/config.py" 2>&1 | tee -a "${DOLLAR}LOG"
-                for i in ${DOLLAR}(seq 1 60); do
+                for i in ${DOLLAR}(seq 1 150); do
                   if getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" >/dev/null 2>&1; then break; fi
                   sleep 2
                 done
                 LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk '{print ${DOLLAR}1}')
+                if [ -z "${DOLLAR}LEADER_IP" ]; then
+                  echo "[decode-leader] FATAL: ${DOLLAR}LWS_LEADER_ADDRESS did not resolve within 300s; exiting for a clean restart (do NOT proceed with an empty leader address)"
+                  exit 1
+                fi
                 ray start --head --port=6379 --node-ip-address="${DOLLAR}LEADER_IP" --num-gpus=8 2>&1 | tee -a "${DOLLAR}LOG"
                 for i in ${DOLLAR}(seq 1 120); do
                   N=${DOLLAR}(ray status 2>/dev/null | awk '/Active:/{flag=1; next} /Pending:|Recent failures:|Resources/{flag=0} flag' | grep -c node_ || true)
@@ -478,11 +490,15 @@ spec:
                 # 1.3.0-era images (NGC vllm-runtime:1.3.0 and derivatives) install into the system
                 # python and have NO venv. Activate only when present so one manifest serves both.
                 if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
-                for i in ${DOLLAR}(seq 1 60); do
+                for i in ${DOLLAR}(seq 1 150); do
                   if getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" >/dev/null 2>&1; then break; fi
                   sleep 2
                 done
                 LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk '{print ${DOLLAR}1}')
+                if [ -z "${DOLLAR}LEADER_IP" ]; then
+                  echo "[decode-worker] FATAL: ${DOLLAR}LWS_LEADER_ADDRESS did not resolve within 300s; exiting for a clean restart (do NOT proceed with an empty leader address)"
+                  exit 1
+                fi
                 for i in ${DOLLAR}(seq 1 60); do
                   if (echo > /dev/tcp/${DOLLAR}LEADER_IP/6379) 2>/dev/null; then break; fi
                   sleep 5

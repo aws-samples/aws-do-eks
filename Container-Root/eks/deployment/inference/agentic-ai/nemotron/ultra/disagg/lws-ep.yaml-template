@@ -155,12 +155,16 @@ spec:
                       HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
                 if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
                 mkdir -p /tmp/hf_cache
-                for i in ${DOLLAR}(seq 1 60); do
+                for i in ${DOLLAR}(seq 1 150); do
                   if getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" >/dev/null 2>&1; then break; fi
                   sleep 2
                 done
                 LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk '{print ${DOLLAR}1}')
                 echo "[ep dp${DOLLAR}{LWS_WORKER_INDEX}/worker] LEADER_IP=${DOLLAR}LEADER_IP MY_IP=${DOLLAR}MY_IP"
+                if [ -z "${DOLLAR}LEADER_IP" ]; then
+                  echo "[ep worker] FATAL: ${DOLLAR}LWS_LEADER_ADDRESS did not resolve within 300s; exiting for a clean restart (do NOT proceed with an empty leader address)"
+                  exit 1
+                fi
                 for i in ${DOLLAR}(seq 1 120); do
                   if (echo > /dev/tcp/${DOLLAR}LEADER_IP/29550) 2>/dev/null; then break; fi
                   sleep 5

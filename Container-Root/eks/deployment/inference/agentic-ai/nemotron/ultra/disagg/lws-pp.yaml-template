@@ -73,12 +73,16 @@ spec:
                 LOG=/shared/${DEPLOYMENT_NAME}-prefill-pp2-${DOLLAR}(date -u +%FT%TZ).log
                 echo "[prefill-leader] starting; piping to ${DOLLAR}LOG"
                 python3 -c "import vllm; print(f'vllm {vllm.__version__}')" 2>&1 | tee -a "${DOLLAR}LOG"
-                for i in ${DOLLAR}(seq 1 60); do
+                for i in ${DOLLAR}(seq 1 150); do
                   if getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" >/dev/null 2>&1; then break; fi
                   sleep 2
                 done
                 LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk '{print ${DOLLAR}1}')
                 echo "[prefill-leader] LEADER_IP=${DOLLAR}LEADER_IP MY_IP=${DOLLAR}MY_IP" | tee -a "${DOLLAR}LOG"
+                if [ -z "${DOLLAR}LEADER_IP" ]; then
+                  echo "[prefill-leader] FATAL: ${DOLLAR}LWS_LEADER_ADDRESS did not resolve within 300s; exiting for a clean restart (do NOT proceed with an empty leader address)"
+                  exit 1
+                fi
                 ray start --head --port=6379 --node-ip-address="${DOLLAR}LEADER_IP" --num-gpus=${GPU_PER_WORKER} 2>&1 | tee -a "${DOLLAR}LOG"
                 for i in ${DOLLAR}(seq 1 120); do
                   N=${DOLLAR}(ray status 2>/dev/null | awk '/Active:/{flag=1; next} /Pending:|Recent failures:|Resources/{flag=0} flag' | grep -c node_ || true)
@@ -171,11 +175,15 @@ spec:
                 unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
                       HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
                 if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
-                for i in ${DOLLAR}(seq 1 60); do
+                for i in ${DOLLAR}(seq 1 150); do
                   if getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" >/dev/null 2>&1; then break; fi
                   sleep 2
                 done
                 LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk '{print ${DOLLAR}1}')
+                if [ -z "${DOLLAR}LEADER_IP" ]; then
+                  echo "[pp-worker] FATAL: ${DOLLAR}LWS_LEADER_ADDRESS did not resolve within 300s; exiting for a clean restart (do NOT proceed with an empty leader address)"
+                  exit 1
+                fi
                 for i in ${DOLLAR}(seq 1 60); do
                   if (echo > /dev/tcp/${DOLLAR}LEADER_IP/6379) 2>/dev/null; then break; fi
                   sleep 5
