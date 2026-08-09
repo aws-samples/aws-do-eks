@@ -174,6 +174,12 @@ spec:
               - { name: NATS_SERVER, value: "${NATS_URL}" }
               - { name: DYN_SYSTEM_ENABLED, value: "true" }
               - { name: DYN_SYSTEM_PORT, value: "9090" }
+              # Raise the multiproc-executor RPC deadline (default 300s) so a JIT-heavy first
+              # concurrent decode step (per-batch-size Mamba kernel Triton compile under an
+              # aiperf --concurrency N opening) cannot trip the timeout and kill EngineCore
+              # ("TimeoutError: RPC call to execute_model timed out" -> EngineDeadError -> pod
+              # restart loop). Harmless in steady state — real decode steps are ms.
+              - { name: VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS, value: "1800" }
               - { name: HF_HOME, value: /tmp/hf_cache }
               - { name: HF_MODULES_CACHE, value: /tmp/hf_cache/modules }
               - { name: VLLM_LOGGING_LEVEL, value: INFO }
@@ -304,6 +310,9 @@ spec:
               - { name: DYN_NAMESPACE, value: dynamo }
               - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }
               - { name: NATS_SERVER, value: "${NATS_URL}" }
+              # Match the leader: raise the execute_model RPC deadline so a JIT-heavy first
+              # concurrent decode step can't trip the 300s default and kill this worker's shard.
+              - { name: VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS, value: "1800" }
               - { name: HF_HOME, value: /tmp/hf_cache }
               - { name: HF_MODULES_CACHE, value: /tmp/hf_cache/modules }
               - { name: FI_PROVIDER, value: efa }

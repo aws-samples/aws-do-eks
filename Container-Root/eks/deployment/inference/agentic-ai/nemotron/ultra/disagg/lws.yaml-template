@@ -131,6 +131,10 @@ spec:
               - { name: DYN_SYSTEM_PORT, value: "9091" }
               - { name: VLLM_LOGGING_LEVEL, value: INFO }
               - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
+              # Raise the execute_model RPC deadline (default 300s) so a JIT-heavy first
+              # concurrent decode step (per-batch-size Mamba kernel Triton compile under an
+              # aiperf --concurrency N opening) cannot trip the timeout and kill EngineCore.
+              - { name: VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS, value: "1800" }
               - { name: VLLM_USE_RAY_COMPILED_DAG, value: "0"}
               - { name: FI_PROVIDER, value: efa }
               - { name: FI_EFA_USE_DEVICE_RDMA, value: "1" }
@@ -216,6 +220,10 @@ spec:
               - { name: MY_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
               - { name: HF_HOME, value: /shared/hf_cache }
               - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
+              # Raise the execute_model RPC deadline (default 300s) so a JIT-heavy first
+              # concurrent decode step (per-batch-size Mamba kernel Triton compile under an
+              # aiperf --concurrency N opening) cannot trip the timeout and kill EngineCore.
+              - { name: VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS, value: "1800" }
               - { name: VLLM_USE_RAY_COMPILED_DAG, value: "0" }
               - { name: FI_PROVIDER, value: efa }
               - { name: FI_EFA_USE_DEVICE_RDMA, value: "1" }
@@ -400,6 +408,10 @@ spec:
               - { name: DYN_SYSTEM_ENABLED, value: "true" }
               - { name: DYN_SYSTEM_PORT, value: "9092" }
               - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
+              # Raise the execute_model RPC deadline (default 300s) so a JIT-heavy first
+              # concurrent decode step (per-batch-size Mamba kernel Triton compile under an
+              # aiperf --concurrency N opening) cannot trip the timeout and kill EngineCore.
+              - { name: VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS, value: "1800" }
               - { name: VLLM_USE_RAY_COMPILED_DAG, value: "0" }
               - { name: FI_PROVIDER, value: efa }
               - { name: FI_EFA_USE_DEVICE_RDMA, value: "1" }
@@ -480,6 +492,10 @@ spec:
               - { name: MY_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
               - { name: HF_HOME, value: /shared/hf_cache }
               - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
+              # Raise the execute_model RPC deadline (default 300s) so a JIT-heavy first
+              # concurrent decode step (per-batch-size Mamba kernel Triton compile under an
+              # aiperf --concurrency N opening) cannot trip the timeout and kill EngineCore.
+              - { name: VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS, value: "1800" }
               - { name: VLLM_USE_RAY_COMPILED_DAG, value: "0" }
               - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }
               - { name: NATS_SERVER, value: "${NATS_URL}" }
