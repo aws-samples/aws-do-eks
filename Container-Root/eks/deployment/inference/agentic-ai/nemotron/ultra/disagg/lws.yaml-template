@@ -131,6 +131,10 @@ spec:
               - { name: DYN_SYSTEM_PORT, value: "9091" }
               - { name: VLLM_LOGGING_LEVEL, value: INFO }
               - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
+              # Raise the execute_model RPC deadline (default 300s) so a JIT-heavy first
+              # concurrent decode step (per-batch-size Mamba kernel Triton compile under an
+              # aiperf --concurrency N opening) cannot trip the timeout and kill EngineCore.
+              - { name: VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS, value: "1800" }
               - { name: VLLM_USE_RAY_COMPILED_DAG, value: "0"}
               - { name: FI_PROVIDER, value: efa }
               - { name: FI_EFA_USE_DEVICE_RDMA, value: "1" }
@@ -216,6 +220,10 @@ spec:
               - { name: MY_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
               - { name: HF_HOME, value: /shared/hf_cache }
               - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
+              # Raise the execute_model RPC deadline (default 300s) so a JIT-heavy first
+              # concurrent decode step (per-batch-size Mamba kernel Triton compile under an
+              # aiperf --concurrency N opening) cannot trip the timeout and kill EngineCore.
+              - { name: VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS, value: "1800" }
               - { name: VLLM_USE_RAY_COMPILED_DAG, value: "0" }
               - { name: FI_PROVIDER, value: efa }
               - { name: FI_EFA_USE_DEVICE_RDMA, value: "1" }
@@ -331,6 +339,12 @@ spec:
                 # suffix; set WARMUP_ENABLED=1/0 to force on/off.
                 (
                   FE="http://${DEPLOYMENT_NAME}-frontend.${NAMESPACE}.svc.cluster.local:8000"
+                  # Gate on the LEADER's own dyn-system /health (localhost:${DYN_SYSTEM_PORT}),
+                  # the same signal the startupProbe uses. The frontend answers /v1/models 200
+                  # ~15-18min BEFORE the engine finishes loading, so gating on the frontend fires
+                  # the warmup against a not-yet-ready engine and compiles nothing. The leader
+                  # /health only returns 200 once THIS role's engine is loaded + routes registered.
+                  LH="http://localhost:${DOLLAR}{DYN_SYSTEM_PORT:-9090}/health"
                   WARMUP_CONCURRENCY=${DOLLAR}{WARMUP_CONCURRENCY:-10}
                   WARMUP_ENABLED=${DOLLAR}{WARMUP_ENABLED:-auto}
                   case "${DOLLAR}WARMUP_ENABLED" in
@@ -344,8 +358,11 @@ spec:
                     echo "[warmup] curl not present; skipping cold-start warmup (non-fatal)"
                   else
                     for i in ${DOLLAR}(seq 1 360); do
-                      if curl -sf -o /dev/null --max-time 5 "${DOLLAR}FE/v1/models" 2>/dev/null; then
-                        echo "[warmup] worker registered; priming batch=1 Mamba decode kernel (one-time JIT, ~4min)"
+                      # Engine ready = leader /health is 200 AND the frontend lists this model
+                      # (the model only appears in /v1/models once the backend has registered).
+                      if curl -sf -o /dev/null --max-time 5 "${DOLLAR}LH" 2>/dev/null \
+                         && curl -sf --max-time 5 "${DOLLAR}FE/v1/models" 2>/dev/null | grep -q "${MODEL_NAME}"; then
+                        echo "[warmup] engine ready (leader /health 200 + model registered); priming batch=1 Mamba decode kernel (one-time JIT, ~4min)"
                         curl -s -o /dev/null --max-time 900 "${DOLLAR}FE/v1/completions" \
                           -H 'Content-Type: application/json' \
                           -d "{\"model\":\"${MODEL_NAME}\",\"prompt\":\"warmup\",\"max_tokens\":4,\"temperature\":0}" \
@@ -391,6 +408,10 @@ spec:
               - { name: DYN_SYSTEM_ENABLED, value: "true" }
               - { name: DYN_SYSTEM_PORT, value: "9092" }
               - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
+              # Raise the execute_model RPC deadline (default 300s) so a JIT-heavy first
+              # concurrent decode step (per-batch-size Mamba kernel Triton compile under an
+              # aiperf --concurrency N opening) cannot trip the timeout and kill EngineCore.
+              - { name: VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS, value: "1800" }
               - { name: VLLM_USE_RAY_COMPILED_DAG, value: "0" }
               - { name: FI_PROVIDER, value: efa }
               - { name: FI_EFA_USE_DEVICE_RDMA, value: "1" }
@@ -471,6 +492,10 @@ spec:
               - { name: MY_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
               - { name: HF_HOME, value: /shared/hf_cache }
               - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
+              # Raise the execute_model RPC deadline (default 300s) so a JIT-heavy first
+              # concurrent decode step (per-batch-size Mamba kernel Triton compile under an
+              # aiperf --concurrency N opening) cannot trip the timeout and kill EngineCore.
+              - { name: VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS, value: "1800" }
               - { name: VLLM_USE_RAY_COMPILED_DAG, value: "0" }
               - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }
               - { name: NATS_SERVER, value: "${NATS_URL}" }
