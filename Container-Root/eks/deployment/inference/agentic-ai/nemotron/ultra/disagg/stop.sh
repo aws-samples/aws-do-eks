@@ -8,7 +8,7 @@ fi
 
 # 1. Delete the declared resources for the selected manifest type.
 case "${MANIFEST_TYPE}" in
-	deployment|lws|lws-pp|dgd|ep)
+	deployment|lws|lws-pp|lws-ep|dgd)
 		cat ${MANIFEST_TYPE}.yaml-template | envsubst > ${MANIFEST_TYPE}.yaml
 		export CMD="kubectl delete -f ./${MANIFEST_TYPE}.yaml --ignore-not-found"
 		;;
