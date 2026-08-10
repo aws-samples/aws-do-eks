@@ -215,3 +215,19 @@ metadata:
 spec:
   selector: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}-ep16, app.kubernetes.io/component: agg-ep16, dp-role: leader }
   ports: [ { port: 8000, targetPort: 8000, name: http } ]
+---
+# Frontend-name alias for the test suite. The ep16 topology has no separate
+# Dynamo frontend (vLLM-native DP: the LEADER pod runs the OpenAI server), but
+# test/ scripts and benchmarks target ${DEPLOYMENT_NAME}-frontend. This alias
+# keeps them working unchanged for MANIFEST_TYPE=ep16. Deploy ONE manifest
+# type at a time: the lws/deployment/dgd types create a real
+# ${DEPLOYMENT_NAME}-frontend and would collide with this alias.
+apiVersion: v1
+kind: Service
+metadata:
+  name: ${DEPLOYMENT_NAME}-frontend
+  namespace: ${NAMESPACE}
+  labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}-ep16, app.kubernetes.io/component: agg-ep16 }
+spec:
+  selector: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}-ep16, app.kubernetes.io/component: agg-ep16, dp-role: leader }
+  ports: [ { port: 8000, targetPort: 8000, name: http } ]
