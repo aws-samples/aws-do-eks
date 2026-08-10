@@ -88,7 +88,6 @@ spec:
                 topologyKey: kubernetes.io/hostname
         volumes:
           - { name: dshm,       emptyDir: { medium: Memory, sizeLimit: 64Gi } }
-          - { name: infiniband, hostPath: { path: /dev/infiniband, type: DirectoryOrCreate } }
           - { name: gdrdrv,     hostPath: { path: /dev/gdrdrv, type: CharDevice } }
         mainContainer:
           image: ${REGISTRY}${IMAGE}${TAG}
@@ -138,7 +137,6 @@ spec:
             failureThreshold: 240
           volumeMounts:
             - { name: dshm,       mountPath: /dev/shm }
-            - { name: infiniband, mountPath: /dev/infiniband }
             - { name: gdrdrv,     mountPath: /dev/gdrdrv }
     # ---- Decode worker (TP${GPU_PER_WORKER}/PP1, 1 node) ------------------
     VllmDecodeWorker:
@@ -162,7 +160,6 @@ spec:
                 topologyKey: kubernetes.io/hostname
         volumes:
           - { name: dshm,       emptyDir: { medium: Memory, sizeLimit: 64Gi } }
-          - { name: infiniband, hostPath: { path: /dev/infiniband, type: DirectoryOrCreate } }
           - { name: gdrdrv,     hostPath: { path: /dev/gdrdrv, type: CharDevice } }
         mainContainer:
           image: ${REGISTRY}${IMAGE}${TAG}
@@ -209,5 +206,4 @@ spec:
             failureThreshold: 240
           volumeMounts:
             - { name: dshm,       mountPath: /dev/shm }
-            - { name: infiniband, mountPath: /dev/infiniband }
             - { name: gdrdrv,     mountPath: /dev/gdrdrv }

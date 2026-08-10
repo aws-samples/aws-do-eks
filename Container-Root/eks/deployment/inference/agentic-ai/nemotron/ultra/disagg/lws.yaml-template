@@ -69,7 +69,6 @@ spec:
         #  - name: dynamo-efa-pull
         volumes:
           - { name: dshm,        emptyDir: { medium: Memory, sizeLimit: 64Gi } }
-          - { name: infiniband,  hostPath: { path: /dev/infiniband, type: DirectoryOrCreate } }
           - { name: gdrdrv,      hostPath: { path: /dev/gdrdrv, type: CharDevice } }
           - { name: shared,      persistentVolumeClaim: { claimName: fsx-pvc } }
         containers:
@@ -160,7 +159,6 @@ spec:
               limits:   { cpu: "96", memory: 1000Gi, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
             volumeMounts:
               - { name: dshm,       mountPath: /dev/shm }
-              - { name: infiniband, mountPath: /dev/infiniband }
               - { name: gdrdrv,     mountPath: /dev/gdrdrv }
               - { name: shared,     mountPath: /shared }
     workerTemplate:
@@ -188,7 +186,6 @@ spec:
         #  - name: dynamo-efa-pull
         volumes:
           - { name: dshm,       emptyDir: { medium: Memory, sizeLimit: 64Gi } }
-          - { name: infiniband, hostPath: { path: /dev/infiniband, type: DirectoryOrCreate } }
           - { name: gdrdrv,     hostPath: { path: /dev/gdrdrv, type: CharDevice } }
           - { name: shared,     persistentVolumeClaim: { claimName: fsx-pvc } }
         containers:
@@ -241,7 +238,6 @@ spec:
               limits:   { cpu: "96", memory: 1000Gi, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
             volumeMounts:
               - { name: dshm,       mountPath: /dev/shm }
-              - { name: infiniband, mountPath: /dev/infiniband }
               - { name: gdrdrv,     mountPath: /dev/gdrdrv }
               - { name: shared,     mountPath: /shared }
 ---
@@ -282,7 +278,6 @@ spec:
         #imagePullSecrets: [{ name: dynamo-efa-pull }]
         volumes:
           - { name: dshm,       emptyDir: { medium: Memory, sizeLimit: 64Gi } }
-          - { name: infiniband, hostPath: { path: /dev/infiniband, type: DirectoryOrCreate } }
           - { name: gdrdrv,     hostPath: { path: /dev/gdrdrv, type: CharDevice } }
           - { name: shared,     persistentVolumeClaim: { claimName: fsx-pvc } }
         containers:
@@ -436,7 +431,6 @@ spec:
               limits:   { cpu: "96", memory: 1000Gi, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
             volumeMounts:
               - { name: dshm,       mountPath: /dev/shm }
-              - { name: infiniband, mountPath: /dev/infiniband }
               - { name: gdrdrv,     mountPath: /dev/gdrdrv }
               - { name: shared,     mountPath: /shared }
     workerTemplate:
@@ -460,7 +454,6 @@ spec:
         #imagePullSecrets: [{ name: dynamo-efa-pull }]
         volumes:
           - { name: dshm,       emptyDir: { medium: Memory, sizeLimit: 64Gi } }
-          - { name: infiniband, hostPath: { path: /dev/infiniband, type: DirectoryOrCreate } }
           - { name: gdrdrv,     hostPath: { path: /dev/gdrdrv, type: CharDevice } }
           - { name: shared,     persistentVolumeClaim: { claimName: fsx-pvc } }
         containers:
@@ -513,7 +506,6 @@ spec:
               limits:   { cpu: "96", memory: 1000Gi, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
             volumeMounts:
               - { name: dshm,       mountPath: /dev/shm }
-              - { name: infiniband, mountPath: /dev/infiniband }
               - { name: gdrdrv,     mountPath: /dev/gdrdrv }
               - { name: shared,     mountPath: /shared }
 ---
