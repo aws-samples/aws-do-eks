@@ -8,35 +8,19 @@ fi
 
 export CMD=""
 
-if [ "${MANIFEST_TYPE}" == "deployment" ]; then
-
-	cat deployment.yaml-template | envsubst > deployment.yaml
-	export CMD="kubectl apply -f ./deployment.yaml"
-
-elif [ "${MANIFEST_TYPE}" == "lws" ]; then
-
-	cat lws.yaml-template | envsubst > lws.yaml
-	export CMD="kubectl apply -f ./lws.yaml"
-
-elif [ "${MANIFEST_TYPE}" == "ep16" ]; then
-
-	# Wide-EP aggregated: DP=2 / TP=8 / EP=16 over EFA (2 nodes, vLLM-native DP).
-	cat lws-ep16.yaml-template | envsubst > lws-ep16.yaml
-	export CMD="kubectl apply -f ./lws-ep16.yaml"
-
-elif [ "${MANIFEST_TYPE}" == "dgd" ]; then
-
-	# Aggregated as a DynamoGraphDeployment (Dynamo operator manages frontend + worker).
-	cat dgd.yaml-template | envsubst > dgd.yaml
-	export CMD="kubectl apply -f ./dgd.yaml"
-
-else
-
-	echo "Unknown MANIFEST_TYPE ${MANIFEST_TYPE}"
-
-fi
-
+case "${MANIFEST_TYPE}" in
+        deployment|lws|lws-pp|lws-ep|dgd)
+                cat ${MANIFEST_TYPE}.yaml-template | envsubst > ${MANIFEST_TYPE}.yaml
+                export CMD="kubectl apply -f ./${MANIFEST_TYPE}.yaml"
+                ;;
+        *)
+                echo "Unknown MANIFEST_TYPE ${MANIFEST_TYPE}"
+                ;;
+esac
 
 if [ ! "$VERBOSE" == "false" ]; then echo -e "\n${CMD}\n"; fi
 eval "$CMD"
+
+# Verify: list everything this deployment created (empty until pods schedule)
+kubectl -n ${NAMESPACE} get deploy,lws,dgd,svc,pods -l app.kubernetes.io/part-of=${DEPLOYMENT_NAME} 2>/dev/null
 

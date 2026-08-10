@@ -47,6 +47,8 @@ spec:
       metadata:
         labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}-ep16, app.kubernetes.io/component: agg-ep16, dp-role: leader }
       spec:
+        hostNetwork: true
+        dnsPolicy: ClusterFirstWithHostNet
         nodeSelector: { node.kubernetes.io/instance-type: ${INSTANCE_TYPE_WORKER} }
         tolerations:
           - { key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
@@ -73,14 +75,26 @@ spec:
                 unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
                       HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
                 if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
-                echo "[dp0/leader] MY_IP=${DOLLAR}MY_IP"
+                # Wait for own DNS to be resolvable (LWS pods come up simultaneously)
+                for i in ${DOLLAR}(seq 1 60); do
+                  if getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" >/dev/null 2>&1; then break; fi
+                  echo "[dp0/leader] waiting for DNS LWS_LEADER_ADDRESS=${DOLLAR}LWS_LEADER_ADDRESS (${DOLLAR}i)"
+                  sleep 2
+                done
+                LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk '{print ${DOLLAR}1}')
+                echo "[dp0/leader] LWS_LEADER_ADDRESS=${DOLLAR}LWS_LEADER_ADDRESS LEADER_IP=${DOLLAR}LEADER_IP"
+                # Gloo needs a SINGLE concrete iface name (not NCCL's ^exclude list). Resolve the
+                # iface that routes to the leader IP (the primary VPC NIC) so Gloo advertises the
+                # routable 10.x IP instead of falling back to loopback.
+                export GLOO_SOCKET_IFNAME=${DOLLAR}(ip -4 route get "${DOLLAR}LEADER_IP" 2>/dev/null | awk '{for(i=1;i<=NF;i++) if(${DOLLAR}i=="dev"){print ${DOLLAR}(i+1); exit}}')
+                echo "[dp0/leader] GLOO_SOCKET_IFNAME=${DOLLAR}GLOO_SOCKET_IFNAME"
                 # DP rank 0 = DP coordinator + API server; rank 1 dials in here. TP=8 in-node.
                 exec vllm serve ${MODEL_PATH} \
                   --served-model-name ${MODEL_NAME} \
                   --tensor-parallel-size ${GPU_PER_WORKER} \
                   --data-parallel-size 2 \
                   --data-parallel-size-local 1 \
-                  --data-parallel-address "${DOLLAR}MY_IP" \
+                  --data-parallel-address "${DOLLAR}LEADER_IP" \
                   --data-parallel-rpc-port 29550 \
                   --enable-expert-parallel \
                   --pipeline-parallel-size 1 \
@@ -96,6 +110,9 @@ spec:
               - { name: HF_HOME, value: /tmp/hf_cache }
               - { name: HF_MODULES_CACHE, value: /tmp/hf_cache/modules }
               - { name: VLLM_LOGGING_LEVEL, value: INFO }
+              # 550B BF16 weight loading from Lustre exceeds the default 600s engine timeout.
+              # Prefetch (~10 min) + safetensors load (~30 min) requires >= 2400s.
+              - { name: VLLM_ENGINE_READY_TIMEOUT_S, value: "2400" }
               # NVFP4 cubin dir is handled in the golden image (build-time chmod); no env needed.
               - { name: FI_PROVIDER, value: efa }
               - { name: FI_EFA_USE_DEVICE_RDMA, value: "1" }
@@ -103,7 +120,7 @@ spec:
               - { name: NCCL_NET_PLUGIN, value: ofi }
               - { name: NCCL_TUNER_PLUGIN, value: ofi }
               - { name: NCCL_NVLS_ENABLE, value: "0" }
-              - { name: NCCL_SOCKET_IFNAME, value: "^lo,docker,veth,eni" }
+              - { name: NCCL_SOCKET_IFNAME, value: "^lo,docker,veth,eni,pod-id-link0" }
               - { name: NCCL_DEBUG, value: INFO }
               - { name: NCCL_DEBUG_SUBSYS, value: "INIT,NET" }
             ports:
@@ -130,6 +147,8 @@ spec:
       metadata:
         labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}-ep16, app.kubernetes.io/component: agg-ep16, dp-role: worker }
       spec:
+        hostNetwork: true
+        dnsPolicy: ClusterFirstWithHostNet
         nodeSelector: { node.kubernetes.io/instance-type: ${INSTANCE_TYPE_WORKER} }
         tolerations:
           - { key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
@@ -162,6 +181,11 @@ spec:
                 done
                 LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk '{print ${DOLLAR}1}')
                 echo "[dp1/worker] LEADER_IP=${DOLLAR}LEADER_IP MY_IP=${DOLLAR}MY_IP"
+                # Gloo needs a SINGLE concrete iface name (not NCCL's ^exclude list). Resolve the
+                # iface that routes to the leader (the primary VPC NIC) so Gloo advertises the
+                # routable 10.x IP instead of falling back to loopback.
+                export GLOO_SOCKET_IFNAME=${DOLLAR}(ip -4 route get "${DOLLAR}LEADER_IP" 2>/dev/null | awk '{for(i=1;i<=NF;i++) if(${DOLLAR}i=="dev"){print ${DOLLAR}(i+1); exit}}')
+                echo "[dp1/worker] GLOO_SOCKET_IFNAME=${DOLLAR}GLOO_SOCKET_IFNAME"
                 # wait for the leader's DP rpc port before joining
                 for i in ${DOLLAR}(seq 1 120); do
                   if (echo > /dev/tcp/${DOLLAR}LEADER_IP/29550) 2>/dev/null; then break; fi
@@ -189,13 +213,15 @@ spec:
               - { name: HF_HOME, value: /tmp/hf_cache }
               - { name: HF_MODULES_CACHE, value: /tmp/hf_cache/modules }
               - { name: VLLM_LOGGING_LEVEL, value: INFO }
+              # 550B BF16 weight loading from Lustre exceeds the default 600s engine timeout.
+              - { name: VLLM_ENGINE_READY_TIMEOUT_S, value: "2400" }
               - { name: FI_PROVIDER, value: efa }
               - { name: FI_EFA_USE_DEVICE_RDMA, value: "1" }
               - { name: FI_EFA_FORK_SAFE, value: "1" }
               - { name: NCCL_NET_PLUGIN, value: ofi }
               - { name: NCCL_TUNER_PLUGIN, value: ofi }
               - { name: NCCL_NVLS_ENABLE, value: "0" }
-              - { name: NCCL_SOCKET_IFNAME, value: "^lo,docker,veth,eni" }
+              - { name: NCCL_SOCKET_IFNAME, value: "^lo,docker,veth,eni,pod-id-link0" }
               - { name: NCCL_DEBUG, value: INFO }
               - { name: NCCL_DEBUG_SUBSYS, value: "INIT,NET" }
             resources:
@@ -212,6 +238,20 @@ metadata:
   name: ${DEPLOYMENT_NAME}-ep16
   namespace: ${NAMESPACE}
   labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}-ep16, app.kubernetes.io/component: agg-ep16 }
+spec:
+  selector: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}-ep16, app.kubernetes.io/component: agg-ep16, dp-role: leader }
+  ports: [ { port: 8000, targetPort: 8000, name: http } ]
+---
+# Frontend service — the EP16 leader runs native `vllm serve` (not dynamo.vllm) so it
+# already exposes the full OpenAI-compatible API on port 8000 (/v1/completions,
+# /v1/chat/completions, /v1/models, /health). This service aliases the leader under the
+# ${DEPLOYMENT_NAME}-frontend name that test/test-*.sh scripts resolve via SERVICE_URL.
+apiVersion: v1
+kind: Service
+metadata:
+  name: ${DEPLOYMENT_NAME}-frontend
+  namespace: ${NAMESPACE}
+  labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}-ep16, app.kubernetes.io/component: frontend }
 spec:
   selector: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}-ep16, app.kubernetes.io/component: agg-ep16, dp-role: leader }
   ports: [ { port: 8000, targetPort: 8000, name: http } ]
