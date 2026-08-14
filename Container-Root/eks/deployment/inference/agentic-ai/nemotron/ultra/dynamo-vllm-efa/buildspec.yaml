@@ -37,7 +37,7 @@ phases:
 
   pre_build:
     commands:
-      - cd "${CODEBUILD_SRC_DIR}/Container-Root/eks/deployment/inference/agentic-ai/nemotron/ultra/disagg/dynamo-vllm-efa"
+      - cd "${CODEBUILD_SRC_DIR}/Container-Root/eks/deployment/inference/agentic-ai/nemotron/ultra/dynamo-vllm-efa"
       # NGC login ONLY if a key is supplied; public -efa tags pull anonymously.
       - |
         if [ -n "${NGC_API_KEY:-}" ]; then
@@ -52,7 +52,7 @@ phases:
 
   build:
     commands:
-      - cd "${CODEBUILD_SRC_DIR}/Container-Root/eks/deployment/inference/agentic-ai/nemotron/ultra/disagg/dynamo-vllm-efa"
+      - cd "${CODEBUILD_SRC_DIR}/Container-Root/eks/deployment/inference/agentic-ai/nemotron/ultra/dynamo-vllm-efa"
       # build (ENABLE_DISAGG_PATCHES=1) -> syft SBOM -> trivy CVE gate.
       # build-sbom-scan.sh exits NONZERO on any CRITICAL or a missing scan,
       # which fails this phase (no false-pass - see the script's fail-loud guard).
@@ -74,7 +74,7 @@ phases:
 
 artifacts:
   # Ship the SBOM + gate summary as build artifacts (provenance record).
-  base-directory: Container-Root/eks/deployment/inference/agentic-ai/nemotron/ultra/disagg/dynamo-vllm-efa/sbom
+  base-directory: Container-Root/eks/deployment/inference/agentic-ai/nemotron/ultra/dynamo-vllm-efa/sbom
   files:
     - "*.json"
     - "*.txt"
