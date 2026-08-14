@@ -91,6 +91,40 @@ spec:
                 # routable 10.x IP instead of falling back to loopback.
                 export GLOO_SOCKET_IFNAME=${DOLLAR}(ip -4 route get "${DOLLAR}LEADER_IP" 2>/dev/null | awk '{for(i=1;i<=NF;i++) if(${DOLLAR}i=="dev"){print ${DOLLAR}(i+1); exit}}')
                 echo "[dp0/leader] GLOO_SOCKET_IFNAME=${DOLLAR}GLOO_SOCKET_IFNAME"
+                # NVFP4 cold-start warmup (detached, non-fatal): first requests otherwise pay
+                # per-batch-size Mamba decode Triton JIT (~4 min). vLLM-native flavor of the
+                # lws.yaml warmer: the LEADER serves :8000 itself, so gate on its own /v1/models
+                # (only lists the model once the engine is loaded) and warm via localhost.
+                WARMUP_ENABLED=${DOLLAR}{WARMUP_ENABLED:-auto}
+                case "${DOLLAR}WARMUP_ENABLED" in
+                  auto) case "${MODEL_NAME}" in *NVFP4*|*nvfp4*) WARM=1 ;; *) WARM=0 ;; esac ;;
+                  0|false|no) WARM=0 ;;
+                  *) WARM=1 ;;
+                esac
+                if [ "${DOLLAR}WARM" = "1" ] && command -v curl >/dev/null 2>&1; then
+                (
+                  LH="http://localhost:8000"
+                  WARMUP_CONCURRENCY=${DOLLAR}{WARMUP_CONCURRENCY:-10}
+                  for i in ${DOLLAR}(seq 1 720); do
+                    if curl -sf --max-time 5 "${DOLLAR}LH/v1/models" 2>/dev/null | grep -q "${MODEL_NAME}"; then
+                      echo "[warmup] engine ready; priming batch=1 Mamba decode kernel (one-time JIT)"
+                      curl -s -o /dev/null --max-time 900 "${DOLLAR}LH/v1/completions" \
+                        -H 'Content-Type: application/json' \
+                        -d "{\"model\":\"${MODEL_NAME}\",\"prompt\":\"warmup\",\"max_tokens\":4,\"temperature\":0}"
+                      echo "[warmup] batch=1 warm; priming concurrent buckets 1..${DOLLAR}WARMUP_CONCURRENCY"
+                      for j in ${DOLLAR}(seq 1 "${DOLLAR}WARMUP_CONCURRENCY"); do
+                        curl -s -o /dev/null --max-time 900 "${DOLLAR}LH/v1/completions" \
+                          -H 'Content-Type: application/json' \
+                          -d "{\"model\":\"${MODEL_NAME}\",\"prompt\":\"warmup\",\"max_tokens\":4,\"temperature\":0}" &
+                      done
+                      wait
+                      echo "[warmup] concurrent buckets warm"
+                      break
+                    fi
+                    sleep 5
+                  done
+                ) &
+                fi
                 # DP rank 0 = DP coordinator + API server; rank 1 dials in here. TP=8 in-node.
                 exec vllm serve ${MODEL_PATH} \
                   --served-model-name ${MODEL_NAME} \
@@ -116,6 +150,11 @@ spec:
               # 550B BF16 weight loading from Lustre exceeds the default 600s engine timeout.
               # Prefetch (~10 min) + safetensors load (~30 min) requires >= 2400s.
               - { name: VLLM_ENGINE_READY_TIMEOUT_S, value: "2400" }
+              # Raise the multiproc-executor RPC deadline (default 300s): a JIT-heavy first
+              # concurrent NVFP4 decode step (per-batch-size Mamba kernel compile under an
+              # aiperf --concurrency N opening) can exceed it and kill EngineCore
+              # ("TimeoutError: RPC call to execute_model timed out"). Harmless in steady state.
+              - { name: VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS, value: "1800" }
               # NVFP4 cubin dir is handled in the golden image (build-time chmod); no env needed.
               - { name: FI_PROVIDER, value: efa }
               - { name: FI_EFA_USE_DEVICE_RDMA, value: "1" }
@@ -220,6 +259,11 @@ spec:
               - { name: VLLM_LOGGING_LEVEL, value: INFO }
               # 550B BF16 weight loading from Lustre exceeds the default 600s engine timeout.
               - { name: VLLM_ENGINE_READY_TIMEOUT_S, value: "2400" }
+              # Raise the multiproc-executor RPC deadline (default 300s): a JIT-heavy first
+              # concurrent NVFP4 decode step (per-batch-size Mamba kernel compile under an
+              # aiperf --concurrency N opening) can exceed it and kill EngineCore
+              # ("TimeoutError: RPC call to execute_model timed out"). Harmless in steady state.
+              - { name: VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS, value: "1800" }
               - { name: FI_PROVIDER, value: efa }
               - { name: FI_EFA_USE_DEVICE_RDMA, value: "1" }
               - { name: FI_EFA_FORK_SAFE, value: "1" }
