@@ -44,8 +44,6 @@ spec:
         volumes:
           - name: dshm
             emptyDir: { medium: Memory, sizeLimit: 64Gi }
-          - name: infiniband
-            hostPath: { path: /dev/infiniband, type: DirectoryOrCreate }
           - name: shared
             persistentVolumeClaim: { claimName: fsx-pvc }
         containers:
@@ -239,7 +237,6 @@ spec:
                 vpc.amazonaws.com/efa: "${EFA_PER_WORKER}"
             volumeMounts:
               - { name: dshm, mountPath: /dev/shm }
-              - { name: infiniband, mountPath: /dev/infiniband }
               - { name: shared, mountPath: /shared }
     workerTemplate:
       metadata:
@@ -265,8 +262,6 @@ spec:
         volumes:
           - name: dshm
             emptyDir: { medium: Memory, sizeLimit: 64Gi }
-          - name: infiniband
-            hostPath: { path: /dev/infiniband, type: DirectoryOrCreate }
           - name: shared
             persistentVolumeClaim: { claimName: fsx-pvc }
         containers:
@@ -362,7 +357,6 @@ spec:
                 vpc.amazonaws.com/efa: "${EFA_PER_WORKER}"
             volumeMounts:
               - { name: dshm, mountPath: /dev/shm }
-              - { name: infiniband, mountPath: /dev/infiniband }
               - { name: shared, mountPath: /shared }
 ---
 # Frontend Deployment (separate from LWS, runs on m5).

@@ -61,7 +61,6 @@ spec:
                 topologyKey: kubernetes.io/hostname
         volumes:
           - { name: dshm,       emptyDir: { medium: Memory, sizeLimit: 64Gi } }
-          - { name: infiniband, hostPath: { path: /dev/infiniband, type: DirectoryOrCreate } }
           - { name: shared,     persistentVolumeClaim: { claimName: fsx-pvc } }
         containers:
           - name: vllm
@@ -142,7 +141,6 @@ spec:
               limits:   { cpu: "48", memory: 1000Gi, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
             volumeMounts:
               - { name: dshm,       mountPath: /dev/shm }
-              - { name: infiniband, mountPath: /dev/infiniband }
               - { name: shared,     mountPath: /shared }
     # -------------------------------------------------------------------------
     # WORKER = DP rank 1, headless (no API server), joins the leader's coordinator
@@ -164,7 +162,6 @@ spec:
                 topologyKey: kubernetes.io/hostname
         volumes:
           - { name: dshm,       emptyDir: { medium: Memory, sizeLimit: 64Gi } }
-          - { name: infiniband, hostPath: { path: /dev/infiniband, type: DirectoryOrCreate } }
           - { name: shared,     persistentVolumeClaim: { claimName: fsx-pvc } }
         containers:
           - name: vllm
@@ -237,7 +234,6 @@ spec:
               limits:   { cpu: "48", memory: 1000Gi, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
             volumeMounts:
               - { name: dshm,       mountPath: /dev/shm }
-              - { name: infiniband, mountPath: /dev/infiniband }
               - { name: shared,     mountPath: /shared }
 ---
 apiVersion: v1
