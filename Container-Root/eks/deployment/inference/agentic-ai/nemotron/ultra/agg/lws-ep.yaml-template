@@ -25,15 +25,15 @@
 # IMAGE: the golden image (../.env — covers agg/EP16/PP>1 + the NVFP4 cubin fix).
 # For NVFP4 set MODEL_VARIANT=NVFP4 in ../.env (MODEL_PATH/NAME switch automatically).
 #
-# RENDER: MANIFEST_TYPE=ep16 ./run.sh   (run.sh envsubst's this + kubectl apply)
+# RENDER: MANIFEST_TYPE=ep ./run.sh   (run.sh envsubst's this + kubectl apply)
 # =============================================================================
 ---
 apiVersion: leaderworkerset.x-k8s.io/v1
 kind: LeaderWorkerSet
 metadata:
-  name: ${DEPLOYMENT_NAME}-ep16
+  name: ${DEPLOYMENT_NAME}-ep
   namespace: ${NAMESPACE}
-  labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}-ep16, app.kubernetes.io/component: agg-ep16 }
+  labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}-ep, app.kubernetes.io/component: agg-ep }
 spec:
   replicas: 1
   startupPolicy: LeaderCreated
@@ -45,7 +45,7 @@ spec:
     # -------------------------------------------------------------------------
     leaderTemplate:
       metadata:
-        labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}-ep16, app.kubernetes.io/component: agg-ep16, dp-role: leader }
+        labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}-ep, app.kubernetes.io/component: agg-ep, dp-role: leader }
       spec:
         hostNetwork: true
         dnsPolicy: ClusterFirstWithHostNet
@@ -57,7 +57,7 @@ spec:
         affinity:
           podAntiAffinity:
             requiredDuringSchedulingIgnoredDuringExecution:
-              - labelSelector: { matchLabels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}-ep16 } }
+              - labelSelector: { matchLabels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}-ep } }
                 topologyKey: kubernetes.io/hostname
         volumes:
           - { name: dshm,       emptyDir: { medium: Memory, sizeLimit: 64Gi } }
@@ -186,7 +186,7 @@ spec:
     # -------------------------------------------------------------------------
     workerTemplate:
       metadata:
-        labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}-ep16, app.kubernetes.io/component: agg-ep16, dp-role: worker }
+        labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}-ep, app.kubernetes.io/component: agg-ep, dp-role: worker }
       spec:
         hostNetwork: true
         dnsPolicy: ClusterFirstWithHostNet
@@ -197,7 +197,7 @@ spec:
         affinity:
           podAntiAffinity:
             requiredDuringSchedulingIgnoredDuringExecution:
-              - labelSelector: { matchLabels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}-ep16 } }
+              - labelSelector: { matchLabels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}-ep } }
                 topologyKey: kubernetes.io/hostname
         volumes:
           - { name: dshm,       emptyDir: { medium: Memory, sizeLimit: 64Gi } }
@@ -283,11 +283,11 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: ${DEPLOYMENT_NAME}-ep16
+  name: ${DEPLOYMENT_NAME}-ep
   namespace: ${NAMESPACE}
-  labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}-ep16, app.kubernetes.io/component: agg-ep16 }
+  labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}-ep, app.kubernetes.io/component: agg-ep }
 spec:
-  selector: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}-ep16, app.kubernetes.io/component: agg-ep16, dp-role: leader }
+  selector: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}-ep, app.kubernetes.io/component: agg-ep, dp-role: leader }
   ports: [ { port: 8000, targetPort: 8000, name: http } ]
 ---
 # Frontend service — the EP16 leader runs native `vllm serve` (not dynamo.vllm) so it
@@ -299,7 +299,7 @@ kind: Service
 metadata:
   name: ${DEPLOYMENT_NAME}-frontend
   namespace: ${NAMESPACE}
-  labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}-ep16, app.kubernetes.io/component: frontend }
+  labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}-ep, app.kubernetes.io/component: frontend }
 spec:
-  selector: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}-ep16, app.kubernetes.io/component: agg-ep16, dp-role: leader }
+  selector: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}-ep, app.kubernetes.io/component: agg-ep, dp-role: leader }
   ports: [ { port: 8000, targetPort: 8000, name: http } ]
