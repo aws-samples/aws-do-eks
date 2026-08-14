@@ -64,13 +64,17 @@ spec:
                       HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
                 if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
                 # Wait for own DNS to be resolvable (LWS pods come up simultaneously)
-                for i in ${DOLLAR}(seq 1 60); do
+                for i in ${DOLLAR}(seq 1 150); do
                   if getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" >/dev/null 2>&1; then break; fi
                   echo "[leader] waiting for DNS LWS_LEADER_ADDRESS=${DOLLAR}LWS_LEADER_ADDRESS (${DOLLAR}i)"
                   sleep 2
                 done
                 LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk '{print ${DOLLAR}1}')
                 echo "[leader] LWS_LEADER_ADDRESS=${DOLLAR}LWS_LEADER_ADDRESS LEADER_IP=${DOLLAR}LEADER_IP"
+                if [ -z "${DOLLAR}LEADER_IP" ]; then
+                  echo "[leader] FATAL: ${DOLLAR}LWS_LEADER_ADDRESS did not resolve within 300s; exiting for a clean restart (do NOT proceed with an empty leader address)"
+                  exit 1
+                fi
                 # Gloo needs a SINGLE concrete iface name (not NCCL's ^exclude list). Resolve the
                 # iface that routes to the leader (the primary VPC NIC) so Gloo advertises the
                 # routable 10.x IP instead of falling back to loopback.
@@ -279,12 +283,16 @@ spec:
                 unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
                       HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
                 if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
-                for i in ${DOLLAR}(seq 1 60); do
+                for i in ${DOLLAR}(seq 1 150); do
                   if getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" >/dev/null 2>&1; then break; fi
                   echo "[worker] waiting for DNS LWS_LEADER_ADDRESS=$LWS_LEADER_ADDRESS (${DOLLAR}i)"
                   sleep 2
                 done
                 LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk '{print ${DOLLAR}1}')
+                if [ -z "${DOLLAR}LEADER_IP" ]; then
+                  echo "[worker] FATAL: ${DOLLAR}LWS_LEADER_ADDRESS did not resolve within 300s; exiting for a clean restart (do NOT proceed with an empty leader address)"
+                  exit 1
+                fi
                 # Resolve MY_IP on the SAME interface that routes to the leader. Under
                 # hostNetwork:true, `hostname -i` can return empty or a secondary/EFA IP
                 # (e.g. 172.16.x) that the GCS on the primary VPC CIDR (10.x) can't route
