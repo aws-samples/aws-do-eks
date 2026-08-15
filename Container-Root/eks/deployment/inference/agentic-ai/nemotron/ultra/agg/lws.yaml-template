@@ -62,12 +62,17 @@ spec:
                       HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
                 if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
                 # Wait for own DNS to be resolvable (LWS pods come up simultaneously)
+                # Resolve in ONE getent per attempt and break only on a NON-EMPTY address. The previous
+                # shape probed with one getent and captured the address with a second one, so a single
+                # empty capture immediately after a successful probe killed the pod ~2s in while printing
+                # a 300s timeout it had never waited for (measured: B200 lws-ep worker, 2026-08-15).
+                # NR==1 also keeps a multi-record answer from producing a two-word LEADER_IP.
                 for i in ${DOLLAR}(seq 1 150); do
-                  if getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" >/dev/null 2>&1; then break; fi
+                  LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk 'NR==1{print ${DOLLAR}1; exit}')
+                  if [ -n "${DOLLAR}LEADER_IP" ]; then break; fi
                   echo "[leader] waiting for DNS LWS_LEADER_ADDRESS=${DOLLAR}LWS_LEADER_ADDRESS (${DOLLAR}i)"
                   sleep 2
                 done
-                LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk '{print ${DOLLAR}1}')
                 echo "[leader] LWS_LEADER_ADDRESS=${DOLLAR}LWS_LEADER_ADDRESS LEADER_IP=${DOLLAR}LEADER_IP"
                 if [ -z "${DOLLAR}LEADER_IP" ]; then
                   echo "[leader] FATAL: ${DOLLAR}LWS_LEADER_ADDRESS did not resolve within 300s; exiting for a clean restart (do NOT proceed with an empty leader address)"
@@ -278,12 +283,17 @@ spec:
                 unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
                       HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
                 if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
+                # Resolve in ONE getent per attempt and break only on a NON-EMPTY address. The previous
+                # shape probed with one getent and captured the address with a second one, so a single
+                # empty capture immediately after a successful probe killed the pod ~2s in while printing
+                # a 300s timeout it had never waited for (measured: B200 lws-ep worker, 2026-08-15).
+                # NR==1 also keeps a multi-record answer from producing a two-word LEADER_IP.
                 for i in ${DOLLAR}(seq 1 150); do
-                  if getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" >/dev/null 2>&1; then break; fi
+                  LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk 'NR==1{print ${DOLLAR}1; exit}')
+                  if [ -n "${DOLLAR}LEADER_IP" ]; then break; fi
                   echo "[worker] waiting for DNS LWS_LEADER_ADDRESS=$LWS_LEADER_ADDRESS (${DOLLAR}i)"
                   sleep 2
                 done
-                LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk '{print ${DOLLAR}1}')
                 if [ -z "${DOLLAR}LEADER_IP" ]; then
                   echo "[worker] FATAL: ${DOLLAR}LWS_LEADER_ADDRESS did not resolve within 300s; exiting for a clean restart (do NOT proceed with an empty leader address)"
                   exit 1

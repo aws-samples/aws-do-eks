@@ -32,7 +32,14 @@ spec:
   replicas: 1
   startupPolicy: LeaderCreated
   leaderWorkerTemplate:
-    restartPolicy: None
+    # RecreateGroupOnPodRestart, matching agg/lws-ep: the DP ranks share one TCPStore and one DP
+    # coordinator hosted by the leader, so a leader restart invalidates every rank. With None,
+    # a leader container restart leaves the DP1 worker alive on the dead store - measured on
+    # B200 2026-08-15: worker pid 1 still from the previous epoch 31 minutes later, logging
+    # "sendBytes failed ... remote=[...-ep-0...]:50413: Broken pipe" - and the new leader can
+    # never assemble data_parallel_size=2, so it re-times-out every ~25 min forever.
+    # Trade-off: recreating the group discards the crashed pod's logs (see #68).
+    restartPolicy: RecreateGroupOnPodRestart
     size: ${EP_DP_SIZE}
     leaderTemplate:
       metadata:
@@ -97,7 +104,14 @@ spec:
               - { name: HF_HUB_OFFLINE, value: "1" }
               - { name: TRANSFORMERS_OFFLINE, value: "1" }
               - { name: VLLM_LOGGING_LEVEL, value: INFO }
-              - { name: VLLM_ENGINE_READY_TIMEOUT_S, value: "1200" }
+              # 2400 not 1200: with data_parallel_size > 1 vLLM builds a DPLBAsyncMPClient and the
+              # API-server process waits for the engine cores INSIDE this budget, so the whole
+              # weight load counts against it. Measured on B200 (2026-08-15): 51023-tensor
+              # runai_streamer load 21:06 + 70.8s engine init, engine ready 07:18:18Z against a
+              # 1200s deadline that expired 07:18:22Z - it missed by 4 seconds and the pod died
+              # with "TimeoutError: Timed out waiting for engine core processes to start".
+              # agg/lws-ep.yaml-template already uses 2400 for this checkpoint.
+              - { name: VLLM_ENGINE_READY_TIMEOUT_S, value: "2400" }
               - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
               - { name: FLASHINFER_DISABLE_VERSION_CHECK, value: "1" }
               - { name: FI_PROVIDER, value: efa }
@@ -164,11 +178,16 @@ spec:
                       HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
                 if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
                 mkdir -p /tmp/hf_cache
+                # Resolve in ONE getent per attempt and break only on a NON-EMPTY address. The previous
+                # shape probed with one getent and captured the address with a second one, so a single
+                # empty capture immediately after a successful probe killed the pod ~2s in while printing
+                # a 300s timeout it had never waited for (measured: B200 lws-ep worker, 2026-08-15).
+                # NR==1 also keeps a multi-record answer from producing a two-word LEADER_IP.
                 for i in ${DOLLAR}(seq 1 150); do
-                  if getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" >/dev/null 2>&1; then break; fi
+                  LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk 'NR==1{print ${DOLLAR}1; exit}')
+                  if [ -n "${DOLLAR}LEADER_IP" ]; then break; fi
                   sleep 2
                 done
-                LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk '{print ${DOLLAR}1}')
                 echo "[ep dp${DOLLAR}{LWS_WORKER_INDEX}/worker] LEADER_IP=${DOLLAR}LEADER_IP MY_IP=${DOLLAR}MY_IP"
                 if [ -z "${DOLLAR}LEADER_IP" ]; then
                   echo "[ep worker] FATAL: ${DOLLAR}LWS_LEADER_ADDRESS did not resolve within 300s; exiting for a clean restart (do NOT proceed with an empty leader address)"
@@ -201,7 +220,14 @@ spec:
               - { name: HF_HUB_OFFLINE, value: "1" }
               - { name: TRANSFORMERS_OFFLINE, value: "1" }
               - { name: VLLM_LOGGING_LEVEL, value: INFO }
-              - { name: VLLM_ENGINE_READY_TIMEOUT_S, value: "1200" }
+              # 2400 not 1200: with data_parallel_size > 1 vLLM builds a DPLBAsyncMPClient and the
+              # API-server process waits for the engine cores INSIDE this budget, so the whole
+              # weight load counts against it. Measured on B200 (2026-08-15): 51023-tensor
+              # runai_streamer load 21:06 + 70.8s engine init, engine ready 07:18:18Z against a
+              # 1200s deadline that expired 07:18:22Z - it missed by 4 seconds and the pod died
+              # with "TimeoutError: Timed out waiting for engine core processes to start".
+              # agg/lws-ep.yaml-template already uses 2400 for this checkpoint.
+              - { name: VLLM_ENGINE_READY_TIMEOUT_S, value: "2400" }
               - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
               - { name: FLASHINFER_DISABLE_VERSION_CHECK, value: "1" }
               - { name: FI_PROVIDER, value: efa }
