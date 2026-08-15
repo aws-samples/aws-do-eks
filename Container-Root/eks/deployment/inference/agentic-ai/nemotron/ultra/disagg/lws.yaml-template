@@ -35,6 +35,36 @@
 #       wherever an m5 exists.
 #   (5) cpu/memory of the GPU pods come from CPU_PER_WORKER / MEM_PER_WORKER in .env. The old
 #       hardcoded cpu: "96" was a p5en-192-vCPU assumption; the default is now 48.
+#   (6) GLOO_SOCKET_IFNAME is now derived from the default route in all four GPU launch scripts,
+#       with a fail-loud check that the resulting bind address is routable and not loopback.
+#       ROOT CAUSE this fixes: torch's ProcessGroupGloo::createDefaultDevice() chooses its bind
+#       address by resolving gethostname(). Under `hostNetwork: true` the container inherits the
+#       NODE hostname; where that name resolves to an address that is not bindable inside the pod
+#       netns (p6-b200: ip-172-16-x-y.ec2.internal -> 172.16.x.y, while the routable address is
+#       10.1.x.y on the default-route dev), the lookup fails and Gloo falls back to LOOPBACK -
+#       torch warns "Unable to resolve hostname to a (local) address ... Manually set the network
+#       interface to bind to with GLOO_SOCKET_IFNAME". Every rank then advertises 127.0.0.1, so the
+#       cross-node world group built in init_world_group (size = TP*PP = 16) dies with
+#         Gloo connectFullMesh failed ... SO_ERROR: Connection refused, remote=[127.0.0.1]:<port>
+#       -> "RuntimeError: Engine core initialization failed" -> the leader exits -> on restart the
+#       surviving Ray worker is still in the PREVIOUS Ray session and raises
+#       ActorHandleNotFoundError ("created in job 01000000, but the current job is 02000000"), so
+#       the visible top-of-traceback blames Ray, not Gloo. All four pods then crash-loop.
+#       NCCL and Ray are both handed an explicit IP (tcp://10.1.x.y and --node-ip-address), so
+#       they are unaffected and the stack looks healthy right up to EngineCore init.
+#       This is specific to PP>1: it needs >1 node in a single role, which is why the sibling
+#       deployment.yaml-template (PP1, 1 node per role) never hit it, and why lws-pp.yaml-template
+#       - which does NOT set hostNetwork - runs the same PP2 prefill fine.
+#       MEASURED A/B (2 nodes, p6-b200, 2026-08-15, torch gloo allreduce between the two live
+#       worker pods): GLOO_SOCKET_IFNAME unset -> loopback-fallback warning + connectFullMesh
+#       "Connection refused, remote=[127.0.0.1]"; GLOO_SOCKET_IFNAME=<default-route dev> ->
+#       allreduce returns the expected value on both ranks.
+#       ALTERNATIVE FIX, equally valid and not taken here: drop `hostNetwork: true` +
+#       `dnsPolicy: ClusterFirstWithHostNet` from the four GPU pod specs, which is what
+#       lws-pp.yaml-template already does - the pod hostname then resolves to the pod IP and Gloo
+#       picks it up unaided. EFA is delivered by the vpc.amazonaws.com/efa device plugin and does
+#       NOT require host networking. Keeping hostNetwork + setting the interface explicitly is the
+#       smaller change and leaves the two templates' network posture as-is.
 #
 # KNOWN-UNPROVEN (verified live on cgk, 2026-06-07): this TP8/PP2, 4-pod, multi-node-per-role
 #   + Ray-compiled-graph topology DEADLOCKS in decode for the hybrid-Mamba model. KV DOES transfer
@@ -42,7 +72,18 @@
 #   the per-stage Mamba SSM state never passes across the 2 PP stages via the Ray static DAG.
 #   *** For a PROVEN serving path use the sibling deployment.yaml-template (TP8/PP1, single
 #   node per role) - that returns real chat completions with KV over EFA (510MB rdma_read). ***
-#   If PP2 is required, try VLLM_USE_RAY_COMPILED_DAG=0 (untested lead).
+#   STATUS 2026-08-15: that note predates this manifest's VLLM_USE_RAY_COMPILED_DAG=0 (already
+#   set below, so the "untested lead" it used to suggest is now the default) and predates the
+#   Dynamo 1.3.1-era images carrying the vLLM NIXL hybrid-Mamba multi-member descriptor fixes.
+#   It has NOT been re-run to a verdict on a 1.3.1 image, and fix (6) above was blocking every
+#   attempt before the engine could start, so treat decode-PP2 as UNVERIFIED, not as broken.
+#   ACCEPTANCE GATE when re-running it - HTTP 200 with fluent text is NOT sufficient evidence.
+#   The hybrid-Mamba KV failure mode is fluent-but-WRONG output (stale SSM state on the members
+#   that never transferred), so require BOTH:
+#     (a) byte-parity of the completion against a PP1 control (deployment.yaml-template or
+#         lws-pp.yaml-template) for the same prompt at temperature=0, and
+#     (b) the decode log showing mamba_region_group_ids NOT collapsed onto the attention group
+#         (i.e. every Mamba member registered, not just the deduplicated first one).
 # =============================================================================
 ---
 apiVersion: leaderworkerset.x-k8s.io/v1
@@ -133,6 +174,13 @@ spec:
                   echo "[prefill-leader] FATAL: ${DOLLAR}LWS_LEADER_ADDRESS did not resolve within 300s; exiting for a clean restart (do NOT proceed with an empty leader address)"
                   exit 1
                 fi
+                # ---- Gloo bind interface: REQUIRED whenever hostNetwork: true (see header note 6) ----
+                export GLOO_SOCKET_IFNAME=${DOLLAR}{GLOO_SOCKET_IFNAME:-${DOLLAR}(ip -o -4 route show default | awk '{print ${DOLLAR}5; exit}')}
+                GLOO_BIND_IP=${DOLLAR}(ip -o -4 addr show dev "${DOLLAR}GLOO_SOCKET_IFNAME" 2>/dev/null | awk '{print ${DOLLAR}4; exit}' | cut -d/ -f1)
+                echo "[prefill-leader] GLOO_SOCKET_IFNAME=${DOLLAR}GLOO_SOCKET_IFNAME bind=${DOLLAR}GLOO_BIND_IP" | tee -a "${DOLLAR}LOG"
+                case "${DOLLAR}{GLOO_BIND_IP:-}" in
+                  ""|127.*) echo "[prefill-leader] FATAL: GLOO_SOCKET_IFNAME=${DOLLAR}GLOO_SOCKET_IFNAME has no routable IPv4 (got '${DOLLAR}GLOO_BIND_IP'); cross-node Gloo would bind loopback and connectFullMesh would fail. Exiting for a clean restart." | tee -a "${DOLLAR}LOG"; exit 1 ;;
+                esac
                 ray start --head --port=6379 --node-ip-address="${DOLLAR}LEADER_IP" --num-gpus=${GPU_PER_WORKER} 2>&1 | tee -a "${DOLLAR}LOG"
                 for i in ${DOLLAR}(seq 1 120); do
                   N=${DOLLAR}(ray status 2>/dev/null | awk '/Active:/{flag=1; next} /Pending:|Recent failures:|Resources/{flag=0} flag' | grep -c node_ || true)
@@ -254,6 +302,13 @@ spec:
                   if (echo > /dev/tcp/${DOLLAR}LEADER_IP/6379) 2>/dev/null; then break; fi
                   sleep 5
                 done
+                # ---- Gloo bind interface: REQUIRED whenever hostNetwork: true (see header note 6) ----
+                export GLOO_SOCKET_IFNAME=${DOLLAR}{GLOO_SOCKET_IFNAME:-${DOLLAR}(ip -o -4 route show default | awk '{print ${DOLLAR}5; exit}')}
+                GLOO_BIND_IP=${DOLLAR}(ip -o -4 addr show dev "${DOLLAR}GLOO_SOCKET_IFNAME" 2>/dev/null | awk '{print ${DOLLAR}4; exit}' | cut -d/ -f1)
+                echo "[prefill-worker] GLOO_SOCKET_IFNAME=${DOLLAR}GLOO_SOCKET_IFNAME bind=${DOLLAR}GLOO_BIND_IP"
+                case "${DOLLAR}{GLOO_BIND_IP:-}" in
+                  ""|127.*) echo "[prefill-worker] FATAL: GLOO_SOCKET_IFNAME=${DOLLAR}GLOO_SOCKET_IFNAME has no routable IPv4 (got '${DOLLAR}GLOO_BIND_IP'); cross-node Gloo would bind loopback and connectFullMesh would fail. Exiting for a clean restart."; exit 1 ;;
+                esac
                 exec ray start --address="${DOLLAR}LEADER_IP:6379" --node-ip-address="${DOLLAR}MY_IP" --num-gpus=${GPU_PER_WORKER} --block
             env:
               - { name: MY_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
@@ -365,6 +420,13 @@ spec:
                   echo "[decode-leader] FATAL: ${DOLLAR}LWS_LEADER_ADDRESS did not resolve within 300s; exiting for a clean restart (do NOT proceed with an empty leader address)"
                   exit 1
                 fi
+                # ---- Gloo bind interface: REQUIRED whenever hostNetwork: true (see header note 6) ----
+                export GLOO_SOCKET_IFNAME=${DOLLAR}{GLOO_SOCKET_IFNAME:-${DOLLAR}(ip -o -4 route show default | awk '{print ${DOLLAR}5; exit}')}
+                GLOO_BIND_IP=${DOLLAR}(ip -o -4 addr show dev "${DOLLAR}GLOO_SOCKET_IFNAME" 2>/dev/null | awk '{print ${DOLLAR}4; exit}' | cut -d/ -f1)
+                echo "[decode-leader] GLOO_SOCKET_IFNAME=${DOLLAR}GLOO_SOCKET_IFNAME bind=${DOLLAR}GLOO_BIND_IP" | tee -a "${DOLLAR}LOG"
+                case "${DOLLAR}{GLOO_BIND_IP:-}" in
+                  ""|127.*) echo "[decode-leader] FATAL: GLOO_SOCKET_IFNAME=${DOLLAR}GLOO_SOCKET_IFNAME has no routable IPv4 (got '${DOLLAR}GLOO_BIND_IP'); cross-node Gloo would bind loopback and connectFullMesh would fail. Exiting for a clean restart." | tee -a "${DOLLAR}LOG"; exit 1 ;;
+                esac
                 ray start --head --port=6379 --node-ip-address="${DOLLAR}LEADER_IP" --num-gpus=8 2>&1 | tee -a "${DOLLAR}LOG"
                 for i in ${DOLLAR}(seq 1 120); do
                   N=${DOLLAR}(ray status 2>/dev/null | awk '/Active:/{flag=1; next} /Pending:|Recent failures:|Resources/{flag=0} flag' | grep -c node_ || true)
@@ -550,6 +612,13 @@ spec:
                   if (echo > /dev/tcp/${DOLLAR}LEADER_IP/6379) 2>/dev/null; then break; fi
                   sleep 5
                 done
+                # ---- Gloo bind interface: REQUIRED whenever hostNetwork: true (see header note 6) ----
+                export GLOO_SOCKET_IFNAME=${DOLLAR}{GLOO_SOCKET_IFNAME:-${DOLLAR}(ip -o -4 route show default | awk '{print ${DOLLAR}5; exit}')}
+                GLOO_BIND_IP=${DOLLAR}(ip -o -4 addr show dev "${DOLLAR}GLOO_SOCKET_IFNAME" 2>/dev/null | awk '{print ${DOLLAR}4; exit}' | cut -d/ -f1)
+                echo "[decode-worker] GLOO_SOCKET_IFNAME=${DOLLAR}GLOO_SOCKET_IFNAME bind=${DOLLAR}GLOO_BIND_IP"
+                case "${DOLLAR}{GLOO_BIND_IP:-}" in
+                  ""|127.*) echo "[decode-worker] FATAL: GLOO_SOCKET_IFNAME=${DOLLAR}GLOO_SOCKET_IFNAME has no routable IPv4 (got '${DOLLAR}GLOO_BIND_IP'); cross-node Gloo would bind loopback and connectFullMesh would fail. Exiting for a clean restart."; exit 1 ;;
+                esac
                 exec ray start --address="${DOLLAR}LEADER_IP:6379" --node-ip-address="${DOLLAR}MY_IP" --num-gpus=8 --block
             env:
               - { name: MY_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
