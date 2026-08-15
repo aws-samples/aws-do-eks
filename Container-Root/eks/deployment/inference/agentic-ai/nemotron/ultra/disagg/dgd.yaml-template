@@ -72,8 +72,8 @@ spec:
       subComponentType: prefill
       replicas: 1
       resources:
-        requests: { cpu: "96", memory: 1000Gi, gpu: "${GPU_PER_WORKER}", custom: { vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" } }
-        limits:   { cpu: "96", memory: 1000Gi, gpu: "${GPU_PER_WORKER}", custom: { vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" } }
+        requests: { cpu: "${CPU_PER_WORKER}", memory: 1000Gi, gpu: "${GPU_PER_WORKER}", custom: { vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" } }
+        limits:   { cpu: "${CPU_PER_WORKER}", memory: 1000Gi, gpu: "${GPU_PER_WORKER}", custom: { vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" } }
       volumeMounts:
         - { name: fsx-pvc, mountPoint: /shared }
       extraPodSpec:
@@ -144,8 +144,8 @@ spec:
       subComponentType: decode
       replicas: 1
       resources:
-        requests: { cpu: "96", memory: 1000Gi, gpu: "${GPU_PER_WORKER}", custom: { vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" } }
-        limits:   { cpu: "96", memory: 1000Gi, gpu: "${GPU_PER_WORKER}", custom: { vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" } }
+        requests: { cpu: "${CPU_PER_WORKER}", memory: 1000Gi, gpu: "${GPU_PER_WORKER}", custom: { vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" } }
+        limits:   { cpu: "${CPU_PER_WORKER}", memory: 1000Gi, gpu: "${GPU_PER_WORKER}", custom: { vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" } }
       volumeMounts:
         - { name: fsx-pvc, mountPoint: /shared }
       extraPodSpec:

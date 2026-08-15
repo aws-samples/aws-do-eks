@@ -14,7 +14,7 @@
 # no Dynamo platform required (the vllm leader serves OpenAI API directly).
 #
 # PORTABILITY 2026-08-15 (all-GPU clusters such as p6-b200): the podAntiAffinity selector
-# matches only the GPU role (component In [ep-agg]) rather than every pod carrying
+# matches only the GPU role (component In [ep-disagg]) rather than every pod carrying
 # `part-of`, and cpu/memory come from CPU_PER_WORKER / MEM_PER_WORKER in .env (the old
 # hardcoded cpu: "96" was a p5en-192-vCPU assumption). Same change as the sibling
 # templates - see the PR for the live-scheduler probe.
@@ -27,7 +27,7 @@ metadata:
   namespace: ${NAMESPACE}
   labels:
     app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
-    app.kubernetes.io/component: ep-agg
+    app.kubernetes.io/component: ep-disagg
 spec:
   replicas: 1
   startupPolicy: LeaderCreated
@@ -45,7 +45,7 @@ spec:
       metadata:
         labels:
           app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
-          app.kubernetes.io/component: ep-agg
+          app.kubernetes.io/component: ep-disagg
           dynamo-role: leader
       spec:
         nodeSelector:
@@ -61,7 +61,7 @@ spec:
                     # GPU roles ONLY. A bare part-of match also selects the frontend pod, and
                     # required anti-affinity is enforced against EXISTING pods too - see header.
                     - { key: app.kubernetes.io/part-of,   operator: In, values: [ "${DEPLOYMENT_NAME}" ] }
-                    - { key: app.kubernetes.io/component, operator: In, values: [ ep-agg ] }
+                    - { key: app.kubernetes.io/component, operator: In, values: [ ep-disagg ] }
                 topologyKey: kubernetes.io/hostname
         volumes:
           - { name: dshm,       emptyDir: { medium: Memory, sizeLimit: 64Gi } }
@@ -143,7 +143,7 @@ spec:
       metadata:
         labels:
           app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
-          app.kubernetes.io/component: ep-agg
+          app.kubernetes.io/component: ep-disagg
           dynamo-role: worker
       spec:
         nodeSelector:
@@ -159,7 +159,7 @@ spec:
                     # GPU roles ONLY. A bare part-of match also selects the frontend pod, and
                     # required anti-affinity is enforced against EXISTING pods too - see header.
                     - { key: app.kubernetes.io/part-of,   operator: In, values: [ "${DEPLOYMENT_NAME}" ] }
-                    - { key: app.kubernetes.io/component, operator: In, values: [ ep-agg ] }
+                    - { key: app.kubernetes.io/component, operator: In, values: [ ep-disagg ] }
                 topologyKey: kubernetes.io/hostname
         volumes:
           - { name: dshm,       emptyDir: { medium: Memory, sizeLimit: 64Gi } }
@@ -255,11 +255,11 @@ metadata:
   namespace: ${NAMESPACE}
   labels:
     app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
-    app.kubernetes.io/component: ep-agg
+    app.kubernetes.io/component: ep-disagg
 spec:
   selector:
     app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
-    app.kubernetes.io/component: ep-agg
+    app.kubernetes.io/component: ep-disagg
     dynamo-role: leader
   ports:
     - port: 8000
@@ -299,7 +299,7 @@ metadata:
 spec:
   selector:
     app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
-    app.kubernetes.io/component: ep-agg
+    app.kubernetes.io/component: ep-disagg
     dynamo-role: leader
   ports:
     - port: 8000
