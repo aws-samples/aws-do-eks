@@ -145,8 +145,9 @@ spec:
               # _causal_conv1d_update): startup only warms the PREFILL SSD path, and
               # --enforce-eager skips cudagraph capture, not JIT. Measured on a 2-node disagg
               # pair with this block as the only variable: first request 7,782ms -> 1,172ms
-              # (6.6x), total benchmark wall -24.7%, steady state within 2%. The kernel compiles
-              # a different Triton variant per batch bucket (keyed on batch*nheads), hence bs=1
+              # (6.6x), total benchmark wall -24.7%, steady state within 2%. Concurrency is a
+              # Triton compile key on the decode path (_causal_conv1d_update: seqlen / state_len /
+              # NP2_STATELEN / strides are tl.constexpr), hence bs=1
               # first then a concurrent burst of WARMUP_CONCURRENCY. NVFP4-only by default
               # (WARMUP_ENABLED=auto keys off the served model's precision suffix); see .env for
               # the knobs and lws-pp2.yaml-template for the long-form rationale. Shares the pod,

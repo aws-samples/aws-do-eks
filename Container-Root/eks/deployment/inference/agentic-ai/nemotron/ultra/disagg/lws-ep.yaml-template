@@ -379,11 +379,13 @@ spec:
                 # SSD path, and --enforce-eager skips cudagraph capture, not JIT. This warmer
                 # drives generations through the frontend so those kernels compile before real
                 # traffic. It shares the pod, never blocks the engine launch, and swallows every
-                # error so it cannot crash the pod. The kernel compiles a DIFFERENT Triton variant
-                # per batch bucket (BLOCK_SIZE_M/num_warps keyed on effective_batch =
-                # batch*nheads), so bs=1 alone leaves a concurrent benchmark paying per-bucket JIT
-                # on its opening - hence bs=1 first, then a concurrent burst of
-                # WARMUP_CONCURRENCY. Precision gate: this is an NVFP4 concern (that checkpoint
+                # error so it cannot crash the pod. CONCURRENCY is a Triton compile key on the
+                # decode path (_causal_conv1d_update_kernel: seqlen / state_len / NP2_STATELEN /
+                # strides are tl.constexpr), so bs=1 alone leaves a concurrent benchmark paying
+                # that JIT on its opening - hence bs=1 first, then a concurrent burst of
+                # WARMUP_CONCURRENCY; see lws-pp2.yaml-template for why it is that kernel and not
+                # selective_state_update on this device/dtype.
+                # Precision gate: this is an NVFP4 concern (that checkpoint
                 # FP8-quantizes the Mamba mixer and pulls in more kernel variants); BF16 does not
                 # need it, so WARMUP_ENABLED=auto keys off the served model's precision suffix.
                 # Only the DECODE LEADER runs it: one warmer per deployment, and the requests it

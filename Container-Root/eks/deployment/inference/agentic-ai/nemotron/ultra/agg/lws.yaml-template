@@ -102,13 +102,15 @@ spec:
                 # engine launch, and swallows all errors so it can never crash the pod. Polls
                 # /v1/models (frontend readiness uses a tcpSocket probe, so /health may be absent)
                 # until the worker registers, then warms.
-                # NOTE: the Mamba decode kernel (selective_state_update) compiles a DIFFERENT
-                # Triton variant per batch size (it tunes BLOCK_SIZE_M/num_warps keyed on
-                # effective_batch = batch*nheads, see mamba_ssm.py). A single bs=1 request only
-                # compiles the batch=1 bucket, so a concurrent benchmark (e.g. aiperf
-                # --concurrency 10) still pays per-bucket JIT on its opening. We therefore warm
-                # bs=1 first (fastest to first-token) and then fire a CONCURRENT burst so buckets
-                # 1..N compile up front.
+                # NOTE: CONCURRENCY is a Triton compile key on the decode path
+                # (_causal_conv1d_update_kernel declares seqlen / state_len / NP2_STATELEN and
+                # every stride_* tl.constexpr with no do_not_specialize), so a single bs=1
+                # request is not enough: a concurrent benchmark (e.g. aiperf --concurrency 10)
+                # can still select an uncompiled variant and pay JIT on its opening. We therefore
+                # warm bs=1 first (fastest to first-token) and then fire a CONCURRENT burst so
+                # the levels the benchmark will hit compile up front. See
+                # ../disagg/lws-pp2.yaml-template for why it is that kernel and not
+                # selective_state_update on this device/dtype.
                 # Precision gate: the extra JIT-heavy opening is an NVFP4 concern (the NVFP4
                 # checkpoint FP8-quantizes the Mamba mixer + NVFP4-quantizes MoE, pulling in more
                 # kernel variants). BF16 completes this benchmark without the warmup, so skip it
@@ -146,8 +148,8 @@ spec:
                           -d "{\"model\":\"${MODEL_NAME}\",\"prompt\":\"warmup\",\"max_tokens\":4,\"temperature\":0}" \
                           && echo "[warmup] batch=1 warm; priming concurrent batch buckets 1..${DOLLAR}WARMUP_CONCURRENCY" \
                           || echo "[warmup] batch=1 warmup returned non-zero (non-fatal)"
-                        # Concurrent burst: compile the batch>1 kernel buckets a concurrent
-                        # benchmark will hit, so its opening doesn't pay per-bucket JIT.
+                        # Concurrent burst: compile the decode-kernel variants a concurrent
+                        # benchmark will hit, so its opening doesn't pay that JIT.
                         for j in ${DOLLAR}(seq 1 "${DOLLAR}WARMUP_CONCURRENCY"); do
                           curl -s -o /dev/null --max-time 900 "${DOLLAR}FE/v1/completions" \
                             -H 'Content-Type: application/json' \
