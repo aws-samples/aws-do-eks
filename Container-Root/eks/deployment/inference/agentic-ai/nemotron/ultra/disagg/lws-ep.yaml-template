@@ -265,3 +265,43 @@ spec:
     - port: 8000
       targetPort: 8000
       name: http
+---
+# Frontend service alias - the piece that makes ../test/*.sh work against this permutation.
+#
+# The EP16 leader runs native `vllm serve` (not dynamo.vllm), so it already exposes the whole
+# OpenAI-compatible API on :8000 (/v1/completions, /v1/chat/completions, /v1/models, /health)
+# and no dynamo.frontend pod exists here - unlike lws / lws-pp / deployment, which each ship a
+# real ${DEPLOYMENT_NAME}-frontend Deployment. But ../test/.env hardcodes
+# SERVICE_NAME=${DOLLAR}{DEPLOYMENT_NAME}-frontend, so every test script (test-aiperf.sh,
+# test-chat-completions.sh, test-completions.sh, models-health.sh, models-list.sh,
+# aiperf-sweep) resolves a name that this template never created: the tests fail on DNS while
+# the deployment itself is perfectly healthy and serving. This alias closes that gap, exactly
+# as agg/lws-ep.yaml-template already does.
+#
+# Why a SECOND Service rather than relying on ${DEPLOYMENT_NAME}-ep above: that name collides
+# with the headless Service the LeaderWorkerSet controller creates for its own pod DNS, and
+# the controller OWNS it (ownerReferences controller=true, clusterIP: None,
+# publishNotReadyAddresses: true) - so it also answers for a leader that is still loading
+# weights. This alias is a plain ClusterIP nothing else owns, and it routes only to a READY
+# leader (readinessProbe = GET /health).
+#
+# Selector note: disagg labels the leader `dynamo-role: leader` where agg uses `dp-role`, and
+# the part-of label must stay ${DOLLAR}{DEPLOYMENT_NAME} (not -ep) because stop.sh sweeps
+# leftovers by `--selector app.kubernetes.io/part-of=${DOLLAR}{DEPLOYMENT_NAME}`.
+apiVersion: v1
+kind: Service
+metadata:
+  name: ${DEPLOYMENT_NAME}-frontend
+  namespace: ${NAMESPACE}
+  labels:
+    app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
+    app.kubernetes.io/component: frontend
+spec:
+  selector:
+    app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
+    app.kubernetes.io/component: ep-agg
+    dynamo-role: leader
+  ports:
+    - port: 8000
+      targetPort: 8000
+      name: http
