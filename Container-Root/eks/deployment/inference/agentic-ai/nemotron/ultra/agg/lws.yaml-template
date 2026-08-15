@@ -181,6 +181,11 @@ spec:
               - { name: NATS_SERVER, value: "${NATS_URL}" }
               - { name: DYN_SYSTEM_ENABLED, value: "true" }
               - { name: DYN_SYSTEM_PORT, value: "9090" }
+              # The warmup subshell above reads these INSIDE the container, so they have to be
+              # passed through here - without these two lines the knobs in .env are inert and the
+              # ladder is always 1..10 no matter what you set in your shell.
+              - { name: WARMUP_ENABLED, value: "${WARMUP_ENABLED}" }
+              - { name: WARMUP_CONCURRENCY, value: "${WARMUP_CONCURRENCY}" }
               # Raise the multiproc-executor RPC deadline (default 300s) so a JIT-heavy first
               # concurrent decode step (per-batch-size Mamba kernel Triton compile under an
               # aiperf --concurrency N opening) cannot trip the timeout and kill EngineCore

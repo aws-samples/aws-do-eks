@@ -97,6 +97,56 @@ spec:
               unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
                     HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
               if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
+              # Cold-start warmup (detached), same block and same knobs as the disagg templates -
+              # aggregated pays the identical tax because it runs the same decode kernels. A fresh
+              # pod's FIRST request spends a one-time ~4min Triton JIT on the Mamba DECODE kernels
+              # (_selective_scan_update, _causal_conv1d_update): startup only warms the PREFILL SSD
+              # path and --enforce-eager skips cudagraph capture, not JIT. Measured on a 2-node
+              # disagg pair with this block as the only variable: first request 7,782ms -> 1,172ms
+              # (6.6x), total benchmark wall -24.7%, steady state within 2%. The kernel compiles a
+              # different Triton variant per batch bucket (keyed on batch*nheads), hence bs=1 first
+              # then a concurrent burst of WARMUP_CONCURRENCY. NVFP4-only by default
+              # (WARMUP_ENABLED=auto keys off the served model's precision suffix); see .env for
+              # the knobs. Shares the pod, never blocks the engine launch, swallows every error so
+              # it cannot crash the pod. FE is the operator-generated frontend Service, the same
+              # name ../test/.env resolves for this manifest type.
+              (
+                FE="http://${DEPLOYMENT_NAME}-frontend.${NAMESPACE}.svc.cluster.local:8000"
+                LH="http://localhost:${DOLLAR}{DYN_SYSTEM_PORT:-9090}/health"
+                WARMUP_CONCURRENCY=${DOLLAR}{WARMUP_CONCURRENCY:-10}
+                WARMUP_ENABLED=${DOLLAR}{WARMUP_ENABLED:-auto}
+                case "${DOLLAR}WARMUP_ENABLED" in
+                  auto) case "${MODEL_NAME}" in
+                          *NVFP4*|*nvfp4*) : ;;
+                          *) echo "[warmup] ${MODEL_NAME} is not NVFP4; warmup not needed, skipping (non-fatal)"; exit 0 ;;
+                        esac ;;
+                  0|false|no) echo "[warmup] WARMUP_ENABLED=${DOLLAR}WARMUP_ENABLED; skipping (non-fatal)"; exit 0 ;;
+                esac
+                if ! command -v curl >/dev/null 2>&1; then
+                  echo "[warmup] curl not present; skipping cold-start warmup (non-fatal)"
+                else
+                  for i in ${DOLLAR}(seq 1 360); do
+                    if curl -sf -o /dev/null --max-time 5 "${DOLLAR}LH" 2>/dev/null \
+                       && curl -sf --max-time 5 "${DOLLAR}FE/v1/models" 2>/dev/null | grep -q "${MODEL_NAME}"; then
+                      echo "[warmup] engine ready (own /health 200 + model registered); priming batch=1 Mamba decode kernel (one-time JIT, ~4min)"
+                      curl -s -o /dev/null --max-time 900 "${DOLLAR}FE/v1/completions" \
+                        -H 'Content-Type: application/json' \
+                        -d "{\"model\":\"${MODEL_NAME}\",\"prompt\":\"warmup\",\"max_tokens\":4,\"temperature\":0}" \
+                        && echo "[warmup] batch=1 warm; priming concurrent batch buckets 1..${DOLLAR}WARMUP_CONCURRENCY" \
+                        || echo "[warmup] batch=1 warmup returned non-zero (non-fatal)"
+                      for j in ${DOLLAR}(seq 1 "${DOLLAR}WARMUP_CONCURRENCY"); do
+                        curl -s -o /dev/null --max-time 900 "${DOLLAR}FE/v1/completions" \
+                          -H 'Content-Type: application/json' \
+                          -d "{\"model\":\"${MODEL_NAME}\",\"prompt\":\"warmup\",\"max_tokens\":4,\"temperature\":0}" &
+                      done
+                      wait
+                      echo "[warmup] concurrent batch buckets warm; benchmark opening will be fast"
+                      break
+                    fi
+                    sleep 5
+                  done
+                fi
+              ) &
               exec python3 -m dynamo.vllm \
                 --model ${MODEL_PATH} \
                 --served-model-name ${MODEL_NAME} \
@@ -108,6 +158,15 @@ spec:
           env:
             - { name: DYN_SYSTEM_ENABLED, value: "true" }
             - { name: DYN_SYSTEM_PORT, value: "9090" }
+            # The warmer above reads these INSIDE the container, so they have to be passed
+            # through here - without these two lines the knobs in .env are inert and the ladder
+            # is always 1..10 no matter what you set in your shell.
+            - { name: WARMUP_ENABLED, value: "${WARMUP_ENABLED}" }
+            - { name: WARMUP_CONCURRENCY, value: "${WARMUP_CONCURRENCY}" }
+            # Raise the execute_model RPC deadline (default 300s) so a JIT-heavy first concurrent
+            # decode step cannot trip it and kill EngineCore ("RPC call to execute_model timed
+            # out" -> EngineDeadError).
+            - { name: VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS, value: "1800" }
             - { name: HF_MODULES_CACHE, value: /tmp/hf_cache/modules }
             - { name: VLLM_LOGGING_LEVEL, value: INFO }
             # NVFP4 cubin dir is handled in the golden image (build-time chmod); no env needed.
