@@ -127,7 +127,39 @@ spec:
                 fi
                 LOG=${DOLLAR}LOG_DIR/${DEPLOYMENT_NAME}-prefill-ep-${DOLLAR}(date -u +%FT%TZ).log
                 echo "[prefill-dp0] MY_IP=${DOLLAR}MY_IP EP=$((${EP_DP_SIZE}*${GPU_PER_WORKER})); piping to ${DOLLAR}LOG"
-                python3 -c "import vllm; print(f'vllm {vllm.__version__}')" 2>&1 | tee -a "${DOLLAR}LOG"
+                # One tee for the whole shell, then exec the engine with NO pipe, so the engine is the
+                # container's main process. Previously `exec python3 ... | tee -a "${DOLLAR}LOG"` left bash as the main
+                # process and made the container's status tee's - always 0 - so an engine that died on an
+                # unhandled exception reported "Reason: Completed / Exit Code: 0" in `kubectl describe` and
+                # only the startupProbe failure hinted otherwise; SIGTERM on pod delete also went to bash
+                # instead of the engine. Verified: the status propagates and the traceback still reaches both
+                # `kubectl logs` and "${DOLLAR}LOG" (10/10 runs).
+                exec > >(tee -a "${DOLLAR}LOG") 2>&1
+                # Same node-fault preflight as disagg/lws-2pp.yaml-template - a duplicate pod address
+                # (podIP == hostIP) is fatal and un-restartable, then a bounded wait for cluster DNS.
+                # See that file for the mechanism and the measured incident.
+                if [ -n "${DOLLAR}{MY_IP:-}" ] && [ "${DOLLAR}{MY_IP:-}" = "${DOLLAR}{NODE_IP:-}" ]; then
+                  echo "[prefill-dp0] FATAL: pod IP ${DOLLAR}MY_IP == node IP ${DOLLAR}NODE_IP with hostNetwork=false."
+                  echo "[prefill-dp0]        The CNI gave this sandbox the node's primary ENI address, so cluster DNS"
+                  echo "[prefill-dp0]        cannot answer and NATS/etcd are unreachable. RESTARTING WILL NOT HELP -"
+                  echo "[prefill-dp0]        the sandbox keeps the address. Remedy:"
+                  echo "[prefill-dp0]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
+                  exit 1
+                fi
+                if command -v getent >/dev/null 2>&1; then
+                  NATS_HOST=${DOLLAR}{NATS_SERVER#*://}; NATS_HOST=${DOLLAR}{NATS_HOST%%:*}
+                  for i in ${DOLLAR}(seq 1 30); do
+                    if getent hosts "${DOLLAR}NATS_HOST" >/dev/null 2>&1; then break; fi
+                    if [ "${DOLLAR}i" = 30 ]; then
+                      echo "[prefill-dp0] FATAL: cannot resolve ${DOLLAR}NATS_HOST after 60s - cluster DNS is broken for"
+                      echo "[prefill-dp0]        this pod. Check CoreDNS and the CNI, then:"
+                      echo "[prefill-dp0]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
+                      exit 1
+                    fi
+                    sleep 2
+                  done
+                fi
+                python3 -c "import vllm; print(f'vllm {vllm.__version__}')"
                 # DP rank 0 also hosts the DP coordinator + TCPStore on --data-parallel-address.
                 exec python3 -m dynamo.vllm \
                   --model ${MODEL_PATH} \
@@ -146,9 +178,11 @@ spec:
                   ${MAMBA_FLAGS} \
                   --load-format runai_streamer \
                   --disaggregation-mode prefill \
-                  --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_connector_extra_config":{"backends":["LIBFABRIC"]}}' 2>&1 | tee -a "${DOLLAR}LOG"
+                  --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_connector_extra_config":{"backends":["LIBFABRIC"]}}'
             env:
               - { name: MY_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
+              # NODE_IP is read only by the node-fault preflight in args above (podIP == hostIP).
+              - { name: NODE_IP, valueFrom: { fieldRef: { fieldPath: status.hostIP } } }
               - { name: DYNAMO_BACKEND, value: vllm }
               - { name: DYN_NAMESPACE, value: dynamo-disagg }
               - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }
@@ -233,6 +267,30 @@ spec:
                 unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
                       HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
                 if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
+                # Same node-fault preflight as disagg/lws-2pp.yaml-template - a duplicate pod address
+                # (podIP == hostIP) is fatal and un-restartable, then a bounded wait for cluster DNS.
+                # See that file for the mechanism and the measured incident.
+                if [ -n "${DOLLAR}{MY_IP:-}" ] && [ "${DOLLAR}{MY_IP:-}" = "${DOLLAR}{NODE_IP:-}" ]; then
+                  echo "[prefill-dp${DOLLAR}{LWS_WORKER_INDEX}] FATAL: pod IP ${DOLLAR}MY_IP == node IP ${DOLLAR}NODE_IP with hostNetwork=false."
+                  echo "[prefill-dp${DOLLAR}{LWS_WORKER_INDEX}]        The CNI gave this sandbox the node's primary ENI address, so cluster DNS"
+                  echo "[prefill-dp${DOLLAR}{LWS_WORKER_INDEX}]        cannot answer and NATS/etcd are unreachable. RESTARTING WILL NOT HELP -"
+                  echo "[prefill-dp${DOLLAR}{LWS_WORKER_INDEX}]        the sandbox keeps the address. Remedy:"
+                  echo "[prefill-dp${DOLLAR}{LWS_WORKER_INDEX}]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
+                  exit 1
+                fi
+                if command -v getent >/dev/null 2>&1; then
+                  NATS_HOST=${DOLLAR}{NATS_SERVER#*://}; NATS_HOST=${DOLLAR}{NATS_HOST%%:*}
+                  for i in ${DOLLAR}(seq 1 30); do
+                    if getent hosts "${DOLLAR}NATS_HOST" >/dev/null 2>&1; then break; fi
+                    if [ "${DOLLAR}i" = 30 ]; then
+                      echo "[prefill-dp${DOLLAR}{LWS_WORKER_INDEX}] FATAL: cannot resolve ${DOLLAR}NATS_HOST after 60s - cluster DNS is broken for"
+                      echo "[prefill-dp${DOLLAR}{LWS_WORKER_INDEX}]        this pod. Check CoreDNS and the CNI, then:"
+                      echo "[prefill-dp${DOLLAR}{LWS_WORKER_INDEX}]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
+                      exit 1
+                    fi
+                    sleep 2
+                  done
+                fi
                 # ONE getent per attempt, break only on a NON-EMPTY address: probing with one
                 # getent and capturing with a second let a single empty capture kill the pod ~2s
                 # in while printing a 300s timeout it never waited. NR==1 keeps a multi-record
@@ -277,6 +335,8 @@ spec:
                   --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_connector_extra_config":{"backends":["LIBFABRIC"]}}'
             env:
               - { name: MY_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
+              # NODE_IP is read only by the node-fault preflight in args above (podIP == hostIP).
+              - { name: NODE_IP, valueFrom: { fieldRef: { fieldPath: status.hostIP } } }
               - { name: DYNAMO_BACKEND, value: vllm }
               - { name: DYN_NAMESPACE, value: dynamo-disagg }
               - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }
@@ -372,7 +432,39 @@ spec:
                 fi
                 LOG=${DOLLAR}LOG_DIR/${DEPLOYMENT_NAME}-decode-ep-${DOLLAR}(date -u +%FT%TZ).log
                 echo "[decode-dp0] MY_IP=${DOLLAR}MY_IP EP=$((${EP_DP_SIZE}*${GPU_PER_WORKER})); piping to ${DOLLAR}LOG"
-                python3 -c "import vllm; print(f'vllm {vllm.__version__}')" 2>&1 | tee -a "${DOLLAR}LOG"
+                # One tee for the whole shell, then exec the engine with NO pipe, so the engine is the
+                # container's main process. Previously `exec python3 ... | tee -a "${DOLLAR}LOG"` left bash as the main
+                # process and made the container's status tee's - always 0 - so an engine that died on an
+                # unhandled exception reported "Reason: Completed / Exit Code: 0" in `kubectl describe` and
+                # only the startupProbe failure hinted otherwise; SIGTERM on pod delete also went to bash
+                # instead of the engine. Verified: the status propagates and the traceback still reaches both
+                # `kubectl logs` and "${DOLLAR}LOG" (10/10 runs).
+                exec > >(tee -a "${DOLLAR}LOG") 2>&1
+                # Same node-fault preflight as disagg/lws-2pp.yaml-template - a duplicate pod address
+                # (podIP == hostIP) is fatal and un-restartable, then a bounded wait for cluster DNS.
+                # See that file for the mechanism and the measured incident.
+                if [ -n "${DOLLAR}{MY_IP:-}" ] && [ "${DOLLAR}{MY_IP:-}" = "${DOLLAR}{NODE_IP:-}" ]; then
+                  echo "[decode-dp0] FATAL: pod IP ${DOLLAR}MY_IP == node IP ${DOLLAR}NODE_IP with hostNetwork=false."
+                  echo "[decode-dp0]        The CNI gave this sandbox the node's primary ENI address, so cluster DNS"
+                  echo "[decode-dp0]        cannot answer and NATS/etcd are unreachable. RESTARTING WILL NOT HELP -"
+                  echo "[decode-dp0]        the sandbox keeps the address. Remedy:"
+                  echo "[decode-dp0]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
+                  exit 1
+                fi
+                if command -v getent >/dev/null 2>&1; then
+                  NATS_HOST=${DOLLAR}{NATS_SERVER#*://}; NATS_HOST=${DOLLAR}{NATS_HOST%%:*}
+                  for i in ${DOLLAR}(seq 1 30); do
+                    if getent hosts "${DOLLAR}NATS_HOST" >/dev/null 2>&1; then break; fi
+                    if [ "${DOLLAR}i" = 30 ]; then
+                      echo "[decode-dp0] FATAL: cannot resolve ${DOLLAR}NATS_HOST after 60s - cluster DNS is broken for"
+                      echo "[decode-dp0]        this pod. Check CoreDNS and the CNI, then:"
+                      echo "[decode-dp0]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
+                      exit 1
+                    fi
+                    sleep 2
+                  done
+                fi
+                python3 -c "import vllm; print(f'vllm {vllm.__version__}')"
                 # Cold-start warmup (detached) - identical block to the other templates in this
                 # folder and in ../agg; see ../.env for the WARMUP_* knobs. A fresh pod's FIRST
                 # request pays a one-time ~4min Triton JIT compiling the Mamba DECODE kernels
@@ -455,9 +547,11 @@ spec:
                   ${MAMBA_FLAGS} \
                   --load-format runai_streamer \
                   --disaggregation-mode decode \
-                  --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_connector_extra_config":{"backends":["LIBFABRIC"]}}' 2>&1 | tee -a "${DOLLAR}LOG"
+                  --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_connector_extra_config":{"backends":["LIBFABRIC"]}}'
             env:
               - { name: MY_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
+              # NODE_IP is read only by the node-fault preflight in args above (podIP == hostIP).
+              - { name: NODE_IP, valueFrom: { fieldRef: { fieldPath: status.hostIP } } }
               - { name: DYNAMO_BACKEND, value: vllm }
               - { name: DYN_NAMESPACE, value: dynamo-disagg }
               - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }
@@ -541,6 +635,30 @@ spec:
                 unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
                       HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
                 if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
+                # Same node-fault preflight as disagg/lws-2pp.yaml-template - a duplicate pod address
+                # (podIP == hostIP) is fatal and un-restartable, then a bounded wait for cluster DNS.
+                # See that file for the mechanism and the measured incident.
+                if [ -n "${DOLLAR}{MY_IP:-}" ] && [ "${DOLLAR}{MY_IP:-}" = "${DOLLAR}{NODE_IP:-}" ]; then
+                  echo "[decode-dp${DOLLAR}{LWS_WORKER_INDEX}] FATAL: pod IP ${DOLLAR}MY_IP == node IP ${DOLLAR}NODE_IP with hostNetwork=false."
+                  echo "[decode-dp${DOLLAR}{LWS_WORKER_INDEX}]        The CNI gave this sandbox the node's primary ENI address, so cluster DNS"
+                  echo "[decode-dp${DOLLAR}{LWS_WORKER_INDEX}]        cannot answer and NATS/etcd are unreachable. RESTARTING WILL NOT HELP -"
+                  echo "[decode-dp${DOLLAR}{LWS_WORKER_INDEX}]        the sandbox keeps the address. Remedy:"
+                  echo "[decode-dp${DOLLAR}{LWS_WORKER_INDEX}]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
+                  exit 1
+                fi
+                if command -v getent >/dev/null 2>&1; then
+                  NATS_HOST=${DOLLAR}{NATS_SERVER#*://}; NATS_HOST=${DOLLAR}{NATS_HOST%%:*}
+                  for i in ${DOLLAR}(seq 1 30); do
+                    if getent hosts "${DOLLAR}NATS_HOST" >/dev/null 2>&1; then break; fi
+                    if [ "${DOLLAR}i" = 30 ]; then
+                      echo "[decode-dp${DOLLAR}{LWS_WORKER_INDEX}] FATAL: cannot resolve ${DOLLAR}NATS_HOST after 60s - cluster DNS is broken for"
+                      echo "[decode-dp${DOLLAR}{LWS_WORKER_INDEX}]        this pod. Check CoreDNS and the CNI, then:"
+                      echo "[decode-dp${DOLLAR}{LWS_WORKER_INDEX}]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
+                      exit 1
+                    fi
+                    sleep 2
+                  done
+                fi
                 # One getent per attempt, break only on a NON-EMPTY address - see the prefill worker.
                 for i in ${DOLLAR}(seq 1 150); do
                   LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk 'NR==1{print ${DOLLAR}1; exit}')
@@ -578,6 +696,8 @@ spec:
                   --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_connector_extra_config":{"backends":["LIBFABRIC"]}}'
             env:
               - { name: MY_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
+              # NODE_IP is read only by the node-fault preflight in args above (podIP == hostIP).
+              - { name: NODE_IP, valueFrom: { fieldRef: { fieldPath: status.hostIP } } }
               - { name: DYNAMO_BACKEND, value: vllm }
               - { name: DYN_NAMESPACE, value: dynamo-disagg }
               - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }

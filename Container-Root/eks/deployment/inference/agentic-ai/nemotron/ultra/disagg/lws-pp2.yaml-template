@@ -160,10 +160,42 @@ spec:
                 fi
                 LOG=${DOLLAR}LOG_DIR/disagg-prefill-p5en-$(date -u +%FT%TZ).log
                 echo "[prefill-leader p5en] starting; piping to ${DOLLAR}LOG"
-                python3 -c "import vllm; print(f'vllm {vllm.__version__}')" 2>&1 | tee -a "${DOLLAR}LOG"
+                # One tee for the whole shell, then exec the engine with NO pipe, so the engine is the
+                # container's main process. Previously `exec python3 ... | tee -a "${DOLLAR}LOG"` left bash as the main
+                # process and made the container's status tee's - always 0 - so an engine that died on an
+                # unhandled exception reported "Reason: Completed / Exit Code: 0" in `kubectl describe` and
+                # only the startupProbe failure hinted otherwise; SIGTERM on pod delete also went to bash
+                # instead of the engine. Verified: the status propagates and the traceback still reaches both
+                # `kubectl logs` and "${DOLLAR}LOG" (10/10 runs).
+                exec > >(tee -a "${DOLLAR}LOG") 2>&1
+                # Same node-fault preflight as disagg/lws-2pp.yaml-template - a duplicate pod address
+                # (podIP == hostIP) is fatal and un-restartable, then a bounded wait for cluster DNS.
+                # See that file for the mechanism and the measured incident.
+                if [ -n "${DOLLAR}{MY_IP:-}" ] && [ "${DOLLAR}{MY_IP:-}" = "${DOLLAR}{NODE_IP:-}" ]; then
+                  echo "[prefill-leader p5en] FATAL: pod IP ${DOLLAR}MY_IP == node IP ${DOLLAR}NODE_IP with hostNetwork=false."
+                  echo "[prefill-leader p5en]        The CNI gave this sandbox the node's primary ENI address, so cluster DNS"
+                  echo "[prefill-leader p5en]        cannot answer and NATS/etcd are unreachable. RESTARTING WILL NOT HELP -"
+                  echo "[prefill-leader p5en]        the sandbox keeps the address. Remedy:"
+                  echo "[prefill-leader p5en]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
+                  exit 1
+                fi
+                if command -v getent >/dev/null 2>&1; then
+                  NATS_HOST=${DOLLAR}{NATS_SERVER#*://}; NATS_HOST=${DOLLAR}{NATS_HOST%%:*}
+                  for i in ${DOLLAR}(seq 1 30); do
+                    if getent hosts "${DOLLAR}NATS_HOST" >/dev/null 2>&1; then break; fi
+                    if [ "${DOLLAR}i" = 30 ]; then
+                      echo "[prefill-leader p5en] FATAL: cannot resolve ${DOLLAR}NATS_HOST after 60s - cluster DNS is broken for"
+                      echo "[prefill-leader p5en]        this pod. Check CoreDNS and the CNI, then:"
+                      echo "[prefill-leader p5en]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
+                      exit 1
+                    fi
+                    sleep 2
+                  done
+                fi
+                python3 -c "import vllm; print(f'vllm {vllm.__version__}')"
                 # Verify the PR #42522 patch is present
                 VLLM_DIR=${DOLLAR}(python3 -c "import vllm, os; print(os.path.dirname(vllm.__file__))")
-                grep -A2 "is_kv_consumer" "${DOLLAR}VLLM_DIR/model_executor/models/config.py" 2>&1 | tee -a "${DOLLAR}LOG"
+                grep -A2 "is_kv_consumer" "${DOLLAR}VLLM_DIR/model_executor/models/config.py"
                 # Resolve in ONE getent per attempt and break only on a NON-EMPTY address. The previous
                 # shape probed with one getent and captured the address with a second one, so a single
                 # empty capture immediately after a successful probe killed the pod ~2s in while printing
@@ -174,7 +206,7 @@ spec:
                   if [ -n "${DOLLAR}LEADER_IP" ]; then break; fi
                   sleep 2
                 done
-                echo "[prefill-leader p5en] LEADER_IP=${DOLLAR}LEADER_IP" | tee -a "${DOLLAR}LOG"
+                echo "[prefill-leader p5en] LEADER_IP=${DOLLAR}LEADER_IP"
                 if [ -z "${DOLLAR}LEADER_IP" ]; then
                   echo "[prefill-leader] FATAL: ${DOLLAR}LWS_LEADER_ADDRESS did not resolve within 300s; exiting for a clean restart (do NOT proceed with an empty leader address)"
                   exit 1
@@ -182,11 +214,11 @@ spec:
                 # ---- Gloo bind interface: REQUIRED whenever hostNetwork: true (see header note 6) ----
                 export GLOO_SOCKET_IFNAME=${DOLLAR}{GLOO_SOCKET_IFNAME:-${DOLLAR}(ip -o -4 route show default | awk '{print ${DOLLAR}5; exit}')}
                 GLOO_BIND_IP=${DOLLAR}(ip -o -4 addr show dev "${DOLLAR}GLOO_SOCKET_IFNAME" 2>/dev/null | awk '{print ${DOLLAR}4; exit}' | cut -d/ -f1)
-                echo "[prefill-leader] GLOO_SOCKET_IFNAME=${DOLLAR}GLOO_SOCKET_IFNAME bind=${DOLLAR}GLOO_BIND_IP" | tee -a "${DOLLAR}LOG"
+                echo "[prefill-leader] GLOO_SOCKET_IFNAME=${DOLLAR}GLOO_SOCKET_IFNAME bind=${DOLLAR}GLOO_BIND_IP"
                 case "${DOLLAR}{GLOO_BIND_IP:-}" in
-                  ""|127.*) echo "[prefill-leader] FATAL: GLOO_SOCKET_IFNAME=${DOLLAR}GLOO_SOCKET_IFNAME has no routable IPv4 (got '${DOLLAR}GLOO_BIND_IP'); cross-node Gloo would bind loopback and connectFullMesh would fail. Exiting for a clean restart." | tee -a "${DOLLAR}LOG"; exit 1 ;;
+                  ""|127.*) echo "[prefill-leader] FATAL: GLOO_SOCKET_IFNAME=${DOLLAR}GLOO_SOCKET_IFNAME has no routable IPv4 (got '${DOLLAR}GLOO_BIND_IP'); cross-node Gloo would bind loopback and connectFullMesh would fail. Exiting for a clean restart."; exit 1 ;;
                 esac
-                ray start --head --port=6379 --node-ip-address="${DOLLAR}LEADER_IP" --num-gpus=${GPU_PER_WORKER} 2>&1 | tee -a "${DOLLAR}LOG"
+                ray start --head --port=6379 --node-ip-address="${DOLLAR}LEADER_IP" --num-gpus=${GPU_PER_WORKER}
                 for i in ${DOLLAR}(seq 1 120); do
                   N=${DOLLAR}(ray status 2>/dev/null | awk '/Active:/{flag=1; next} /Pending:|Recent failures:|Resources/{flag=0} flag' | grep -c node_ || true)
                   if [ "${DOLLAR}{N:-0}" -ge 2 ]; then break; fi
@@ -205,9 +237,11 @@ spec:
                   ${MAMBA_FLAGS} \
                   --load-format runai_streamer \
                   --disaggregation-mode prefill \
-                  --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_connector_extra_config":{"backends":["LIBFABRIC"]}}' 2>&1 | tee -a "${DOLLAR}LOG"
+                  --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_connector_extra_config":{"backends":["LIBFABRIC"]}}'
             env:
               - { name: MY_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
+              # NODE_IP is read only by the node-fault preflight in args above (podIP == hostIP).
+              - { name: NODE_IP, valueFrom: { fieldRef: { fieldPath: status.hostIP } } }
               - { name: DYNAMO_BACKEND, value: vllm }
               - { name: DYN_NAMESPACE, value: dynamo-disagg }
               - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }
@@ -418,9 +452,41 @@ spec:
                 fi
                 LOG=${DOLLAR}LOG_DIR/disagg-decode-p5en-$(date -u +%FT%TZ).log
                 echo "[decode p5en] starting; piping to ${DOLLAR}LOG"
-                python3 -c "import vllm; print(f'vllm {vllm.__version__}')" 2>&1 | tee -a "${DOLLAR}LOG"
+                # One tee for the whole shell, then exec the engine with NO pipe, so the engine is the
+                # container's main process. Previously `exec python3 ... | tee -a "${DOLLAR}LOG"` left bash as the main
+                # process and made the container's status tee's - always 0 - so an engine that died on an
+                # unhandled exception reported "Reason: Completed / Exit Code: 0" in `kubectl describe` and
+                # only the startupProbe failure hinted otherwise; SIGTERM on pod delete also went to bash
+                # instead of the engine. Verified: the status propagates and the traceback still reaches both
+                # `kubectl logs` and "${DOLLAR}LOG" (10/10 runs).
+                exec > >(tee -a "${DOLLAR}LOG") 2>&1
+                # Same node-fault preflight as disagg/lws-2pp.yaml-template - a duplicate pod address
+                # (podIP == hostIP) is fatal and un-restartable, then a bounded wait for cluster DNS.
+                # See that file for the mechanism and the measured incident.
+                if [ -n "${DOLLAR}{MY_IP:-}" ] && [ "${DOLLAR}{MY_IP:-}" = "${DOLLAR}{NODE_IP:-}" ]; then
+                  echo "[decode p5en] FATAL: pod IP ${DOLLAR}MY_IP == node IP ${DOLLAR}NODE_IP with hostNetwork=false."
+                  echo "[decode p5en]        The CNI gave this sandbox the node's primary ENI address, so cluster DNS"
+                  echo "[decode p5en]        cannot answer and NATS/etcd are unreachable. RESTARTING WILL NOT HELP -"
+                  echo "[decode p5en]        the sandbox keeps the address. Remedy:"
+                  echo "[decode p5en]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
+                  exit 1
+                fi
+                if command -v getent >/dev/null 2>&1; then
+                  NATS_HOST=${DOLLAR}{NATS_SERVER#*://}; NATS_HOST=${DOLLAR}{NATS_HOST%%:*}
+                  for i in ${DOLLAR}(seq 1 30); do
+                    if getent hosts "${DOLLAR}NATS_HOST" >/dev/null 2>&1; then break; fi
+                    if [ "${DOLLAR}i" = 30 ]; then
+                      echo "[decode p5en] FATAL: cannot resolve ${DOLLAR}NATS_HOST after 60s - cluster DNS is broken for"
+                      echo "[decode p5en]        this pod. Check CoreDNS and the CNI, then:"
+                      echo "[decode p5en]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
+                      exit 1
+                    fi
+                    sleep 2
+                  done
+                fi
+                python3 -c "import vllm; print(f'vllm {vllm.__version__}')"
                 VLLM_DIR=${DOLLAR}(python3 -c "import vllm, os; print(os.path.dirname(vllm.__file__))")
-                grep -A2 "is_kv_consumer" "${DOLLAR}VLLM_DIR/model_executor/models/config.py" 2>&1 | tee -a "${DOLLAR}LOG"
+                grep -A2 "is_kv_consumer" "${DOLLAR}VLLM_DIR/model_executor/models/config.py"
                 # Resolve in ONE getent per attempt and break only on a NON-EMPTY address. The previous
                 # shape probed with one getent and captured the address with a second one, so a single
                 # empty capture immediately after a successful probe killed the pod ~2s in while printing
@@ -438,11 +504,11 @@ spec:
                 # ---- Gloo bind interface: REQUIRED whenever hostNetwork: true (see header note 6) ----
                 export GLOO_SOCKET_IFNAME=${DOLLAR}{GLOO_SOCKET_IFNAME:-${DOLLAR}(ip -o -4 route show default | awk '{print ${DOLLAR}5; exit}')}
                 GLOO_BIND_IP=${DOLLAR}(ip -o -4 addr show dev "${DOLLAR}GLOO_SOCKET_IFNAME" 2>/dev/null | awk '{print ${DOLLAR}4; exit}' | cut -d/ -f1)
-                echo "[decode-leader] GLOO_SOCKET_IFNAME=${DOLLAR}GLOO_SOCKET_IFNAME bind=${DOLLAR}GLOO_BIND_IP" | tee -a "${DOLLAR}LOG"
+                echo "[decode-leader] GLOO_SOCKET_IFNAME=${DOLLAR}GLOO_SOCKET_IFNAME bind=${DOLLAR}GLOO_BIND_IP"
                 case "${DOLLAR}{GLOO_BIND_IP:-}" in
-                  ""|127.*) echo "[decode-leader] FATAL: GLOO_SOCKET_IFNAME=${DOLLAR}GLOO_SOCKET_IFNAME has no routable IPv4 (got '${DOLLAR}GLOO_BIND_IP'); cross-node Gloo would bind loopback and connectFullMesh would fail. Exiting for a clean restart." | tee -a "${DOLLAR}LOG"; exit 1 ;;
+                  ""|127.*) echo "[decode-leader] FATAL: GLOO_SOCKET_IFNAME=${DOLLAR}GLOO_SOCKET_IFNAME has no routable IPv4 (got '${DOLLAR}GLOO_BIND_IP'); cross-node Gloo would bind loopback and connectFullMesh would fail. Exiting for a clean restart."; exit 1 ;;
                 esac
-                ray start --head --port=6379 --node-ip-address="${DOLLAR}LEADER_IP" --num-gpus=8 2>&1 | tee -a "${DOLLAR}LOG"
+                ray start --head --port=6379 --node-ip-address="${DOLLAR}LEADER_IP" --num-gpus=8
                 for i in ${DOLLAR}(seq 1 120); do
                   N=${DOLLAR}(ray status 2>/dev/null | awk '/Active:/{flag=1; next} /Pending:|Recent failures:|Resources/{flag=0} flag' | grep -c node_ || true)
                   if [ "${DOLLAR}{N:-0}" -ge 2 ]; then break; fi
@@ -547,9 +613,11 @@ spec:
                   ${MAMBA_FLAGS} \
                   --load-format runai_streamer \
                   --disaggregation-mode decode \
-                  --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_connector_extra_config":{"backends":["LIBFABRIC"]}}' 2>&1 | tee -a "${DOLLAR}LOG"
+                  --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_connector_extra_config":{"backends":["LIBFABRIC"]}}'
             env:
               - { name: MY_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
+              # NODE_IP is read only by the node-fault preflight in args above (podIP == hostIP).
+              - { name: NODE_IP, valueFrom: { fieldRef: { fieldPath: status.hostIP } } }
               - { name: DYNAMO_BACKEND, value: vllm }
               - { name: DYN_NAMESPACE, value: dynamo-disagg }
               - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }
