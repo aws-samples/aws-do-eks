@@ -82,7 +82,18 @@ spec:
                 # Dynamo images differ in python layout: 1.2.0-era images ship /opt/dynamo/venv,
                 # 1.3.0-era images install into the system python and have NO venv.
                 if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
-                LOG=/shared/${DEPLOYMENT_NAME}-prefill-pp2-${DOLLAR}(date -u +%FT%TZ).log
+                # Pick a WRITABLE log dir. /shared (FSx) is preferred because the log then
+                # outlives the pod, but on some clusters the PVC is exported root-squashed or
+                # owned by another uid and every `tee` line fails with "Permission denied" --
+                # the run then leaves no trail at all, which is exactly when you need one.
+                LOG_DIR=/shared
+                if ! ( : > "${DOLLAR}LOG_DIR/.wtest-${DOLLAR}HOSTNAME" ) 2>/dev/null; then
+                  echo "[prefill-leader] ${DOLLAR}LOG_DIR not writable; logging to /tmp instead"
+                  LOG_DIR=/tmp
+                else
+                  rm -f "${DOLLAR}LOG_DIR/.wtest-${DOLLAR}HOSTNAME"
+                fi
+                LOG=${DOLLAR}LOG_DIR/${DEPLOYMENT_NAME}-prefill-pp2-${DOLLAR}(date -u +%FT%TZ).log
                 echo "[prefill-leader] starting; piping to ${DOLLAR}LOG"
                 python3 -c "import vllm; print(f'vllm {vllm.__version__}')" 2>&1 | tee -a "${DOLLAR}LOG"
                 for i in ${DOLLAR}(seq 1 150); do
@@ -245,7 +256,15 @@ spec:
   rolloutStrategy:
     type: RollingUpdate
   leaderWorkerTemplate:
-    restartPolicy: RecreateGroupOnPodRestart
+    # size: 1 => the group IS one pod, so there is no sibling to keep consistent and
+    # nothing to gain from recreating the group. RecreateGroupOnPodRestart here DELETES
+    # the pod on any container exit, which (a) discards `kubectl logs --previous` so the
+    # crash that caused it is unrecoverable, and (b) restarts the ~25 min weight load
+    # from zero, so a group that fails during engine init never reaches Ready. `None`
+    # lets the kubelet restart just the container in place and keeps the previous log.
+    # The prefill LWS above keeps RecreateGroupOnPodRestart on purpose: size: 2 with a
+    # Ray head/worker pair genuinely must be recreated together.
+    restartPolicy: None
     size: 1
     workerTemplate:
       metadata:
@@ -283,7 +302,17 @@ spec:
                 unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
                       HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
                 if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
-                LOG=/shared/${DEPLOYMENT_NAME}-decode-pp1-${DOLLAR}(date -u +%FT%TZ).log
+                # Same writable-log-dir probe as the prefill leader: keep /shared when the PVC
+                # accepts our writes, fall back to /tmp instead of losing the log to EACCES.
+                LOG_DIR=/shared
+                if ! ( : > "${DOLLAR}LOG_DIR/.wtest-${DOLLAR}HOSTNAME" ) 2>/dev/null; then
+                  echo "[decode] ${DOLLAR}LOG_DIR not writable; logging to /tmp instead"
+                  LOG_DIR=/tmp
+                else
+                  rm -f "${DOLLAR}LOG_DIR/.wtest-${DOLLAR}HOSTNAME"
+                fi
+                LOG=${DOLLAR}LOG_DIR/${DEPLOYMENT_NAME}-decode-pp1-${DOLLAR}(date -u +%FT%TZ).log
+                echo "[decode] starting; piping to ${DOLLAR}LOG"
                 python3 -c "import vllm; print(f'vllm {vllm.__version__}')" 2>&1 | tee -a "${DOLLAR}LOG"
                 # Single-node decode: TP8/PP1, no Ray - the validated decode shape for hybrid-Mamba.
                 exec python3 -m dynamo.vllm \

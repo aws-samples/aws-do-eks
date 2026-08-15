@@ -106,7 +106,18 @@ spec:
                 # 1.3.0-era images (NGC vllm-runtime:1.3.0 and derivatives) install into the system
                 # python and have NO venv. Activate only when present so one manifest serves both.
                 if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
-                LOG=/shared/disagg-prefill-p5en-$(date -u +%FT%TZ).log
+                # Pick a WRITABLE log dir. /shared (FSx) is preferred because the log then
+                # outlives the pod, but on some clusters the PVC is exported root-squashed or
+                # owned by another uid and every `tee` line fails with "Permission denied" --
+                # the run then leaves no trail at all, which is exactly when you need one.
+                LOG_DIR=/shared
+                if ! ( : > "${DOLLAR}LOG_DIR/.wtest-${DOLLAR}HOSTNAME" ) 2>/dev/null; then
+                  echo "[prefill-leader p5en] ${DOLLAR}LOG_DIR not writable; logging to /tmp instead"
+                  LOG_DIR=/tmp
+                else
+                  rm -f "${DOLLAR}LOG_DIR/.wtest-${DOLLAR}HOSTNAME"
+                fi
+                LOG=${DOLLAR}LOG_DIR/disagg-prefill-p5en-$(date -u +%FT%TZ).log
                 echo "[prefill-leader p5en] starting; piping to ${DOLLAR}LOG"
                 python3 -c "import vllm; print(f'vllm {vllm.__version__}')" 2>&1 | tee -a "${DOLLAR}LOG"
                 # Verify the PR #42522 patch is present
@@ -331,7 +342,17 @@ spec:
                 # 1.3.0-era images (NGC vllm-runtime:1.3.0 and derivatives) install into the system
                 # python and have NO venv. Activate only when present so one manifest serves both.
                 if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
-                LOG=/shared/disagg-decode-p5en-$(date -u +%FT%TZ).log
+                # Same writable-log-dir probe as the prefill leader: keep /shared when the PVC
+                # accepts our writes, fall back to /tmp instead of losing the log to EACCES.
+                LOG_DIR=/shared
+                if ! ( : > "${DOLLAR}LOG_DIR/.wtest-${DOLLAR}HOSTNAME" ) 2>/dev/null; then
+                  echo "[decode p5en] ${DOLLAR}LOG_DIR not writable; logging to /tmp instead"
+                  LOG_DIR=/tmp
+                else
+                  rm -f "${DOLLAR}LOG_DIR/.wtest-${DOLLAR}HOSTNAME"
+                fi
+                LOG=${DOLLAR}LOG_DIR/disagg-decode-p5en-$(date -u +%FT%TZ).log
+                echo "[decode p5en] starting; piping to ${DOLLAR}LOG"
                 python3 -c "import vllm; print(f'vllm {vllm.__version__}')" 2>&1 | tee -a "${DOLLAR}LOG"
                 VLLM_DIR=${DOLLAR}(python3 -c "import vllm, os; print(os.path.dirname(vllm.__file__))")
                 grep -A2 "is_kv_consumer" "${DOLLAR}VLLM_DIR/model_executor/models/config.py" 2>&1 | tee -a "${DOLLAR}LOG"
