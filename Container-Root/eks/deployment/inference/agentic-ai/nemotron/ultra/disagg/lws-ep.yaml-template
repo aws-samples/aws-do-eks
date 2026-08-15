@@ -12,6 +12,12 @@
 #
 # This is the AGGREGATED expert-parallel permutation - no prefill/decode split,
 # no Dynamo platform required (the vllm leader serves OpenAI API directly).
+#
+# PORTABILITY 2026-08-15 (all-GPU clusters such as p6-b200): the podAntiAffinity selector
+# matches only the GPU role (component In [ep-agg]) rather than every pod carrying
+# `part-of`, and cpu/memory come from CPU_PER_WORKER / MEM_PER_WORKER in .env (the old
+# hardcoded cpu: "96" was a p5en-192-vCPU assumption). Same change as the sibling
+# templates - see the PR for the live-scheduler probe.
 # =============================================================================
 ---
 apiVersion: leaderworkerset.x-k8s.io/v1
@@ -44,8 +50,11 @@ spec:
           podAntiAffinity:
             requiredDuringSchedulingIgnoredDuringExecution:
               - labelSelector:
-                  matchLabels:
-                    app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
+                  matchExpressions:
+                    # GPU roles ONLY. A bare part-of match also selects the frontend pod, and
+                    # required anti-affinity is enforced against EXISTING pods too - see header.
+                    - { key: app.kubernetes.io/part-of,   operator: In, values: [ "${DEPLOYMENT_NAME}" ] }
+                    - { key: app.kubernetes.io/component, operator: In, values: [ ep-agg ] }
                 topologyKey: kubernetes.io/hostname
         volumes:
           - { name: dshm,       emptyDir: { medium: Memory, sizeLimit: 64Gi } }
@@ -110,8 +119,8 @@ spec:
               timeoutSeconds: 10
               failureThreshold: 120
             resources:
-              requests: { cpu: "96", memory: 1000Gi, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
-              limits:   { cpu: "96", memory: 1000Gi, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
+              requests: { cpu: "${CPU_PER_WORKER}", memory: ${MEM_PER_WORKER}, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
+              limits:   { cpu: "${CPU_PER_WORKER}", memory: ${MEM_PER_WORKER}, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
             volumeMounts:
               - { name: dshm,       mountPath: /dev/shm }
               - { name: gdrdrv,     mountPath: /dev/gdrdrv }
@@ -132,8 +141,11 @@ spec:
           podAntiAffinity:
             requiredDuringSchedulingIgnoredDuringExecution:
               - labelSelector:
-                  matchLabels:
-                    app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
+                  matchExpressions:
+                    # GPU roles ONLY. A bare part-of match also selects the frontend pod, and
+                    # required anti-affinity is enforced against EXISTING pods too - see header.
+                    - { key: app.kubernetes.io/part-of,   operator: In, values: [ "${DEPLOYMENT_NAME}" ] }
+                    - { key: app.kubernetes.io/component, operator: In, values: [ ep-agg ] }
                 topologyKey: kubernetes.io/hostname
         volumes:
           - { name: dshm,       emptyDir: { medium: Memory, sizeLimit: 64Gi } }
@@ -203,8 +215,8 @@ spec:
               - { name: NCCL_CUMEM_ENABLE, value: "1" }
               - { name: NCCL_SOCKET_IFNAME, value: "^lo,docker,veth,eni" }
             resources:
-              requests: { cpu: "96", memory: 1000Gi, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
-              limits:   { cpu: "96", memory: 1000Gi, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
+              requests: { cpu: "${CPU_PER_WORKER}", memory: ${MEM_PER_WORKER}, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
+              limits:   { cpu: "${CPU_PER_WORKER}", memory: ${MEM_PER_WORKER}, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
             volumeMounts:
               - { name: dshm,       mountPath: /dev/shm }
               - { name: gdrdrv,     mountPath: /dev/gdrdrv }

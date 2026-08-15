@@ -4,7 +4,7 @@
 #
 # Author: Anton Alexander
 #
-# Topology (4 GPU nodes + 1 CPU node):
+# Topology (4 GPU nodes + 1 CPU node - the CPU node is preferred, not required):
 #   - prefill: 1 LWS group of size 2 -> TP=${GPU_PER_WORKER} PP=2 across 2 nodes
 #              (Ray distributed executor, Ray V2 executor backend)
 #   - decode:  1 LWS with 2 single-node groups -> 2x independent TP=${GPU_PER_WORKER} PP=1 workers
@@ -17,6 +17,14 @@
 # etcd/NATS come from the Dynamo platform (see ../../../nvidia-dynamo): ${ETCD_URL} / ${NATS_URL}.
 # Scheduling uses resource requests + instance-type nodeSelector + podAntiAffinity
 # only - no node hostnames, so the manifest is portable across clusters.
+#
+# PORTABILITY 2026-08-15 (all-GPU clusters such as p6-b200, verified against a live v1.35
+# scheduler - see PR): the podAntiAffinity selector matches only the GPU roles. A bare
+# `part-of` match also selects the frontend pod, and required anti-affinity is enforced
+# against EXISTING pods too, so every node holding a GPU pod rejected the frontend with
+# "didn't satisfy existing pods anti-affinity rules" - fatal when the cluster has no spare
+# CPU node. The frontend now PREFERS INSTANCE_TYPE_FRONTEND (+ GPU/EFA tolerations) rather
+# than requiring it, and cpu/memory come from CPU_PER_WORKER / MEM_PER_WORKER in .env.
 # =============================================================================
 ---
 apiVersion: leaderworkerset.x-k8s.io/v1
@@ -49,7 +57,12 @@ spec:
         affinity:
           podAntiAffinity:
             requiredDuringSchedulingIgnoredDuringExecution:
-              - labelSelector: { matchLabels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME} } }
+              - labelSelector:
+                  matchExpressions:
+                    # GPU roles ONLY. A bare part-of match also selects the frontend pod, and
+                    # required anti-affinity is enforced against EXISTING pods too - see header.
+                    - { key: app.kubernetes.io/part-of,   operator: In, values: [ "${DEPLOYMENT_NAME}" ] }
+                    - { key: app.kubernetes.io/component, operator: In, values: [ prefill, decode ] }
                 topologyKey: kubernetes.io/hostname
         volumes:
           - { name: dshm,       emptyDir: { medium: Memory, sizeLimit: 64Gi } }
@@ -134,8 +147,8 @@ spec:
               timeoutSeconds: 10
               failureThreshold: 240
             resources:
-              requests: { cpu: "96", memory: 1000Gi, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
-              limits:   { cpu: "96", memory: 1000Gi, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
+              requests: { cpu: "${CPU_PER_WORKER}", memory: ${MEM_PER_WORKER}, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
+              limits:   { cpu: "${CPU_PER_WORKER}", memory: ${MEM_PER_WORKER}, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
             volumeMounts:
               - { name: dshm,       mountPath: /dev/shm }
               - { name: gdrdrv,     mountPath: /dev/gdrdrv }
@@ -154,7 +167,12 @@ spec:
         affinity:
           podAntiAffinity:
             requiredDuringSchedulingIgnoredDuringExecution:
-              - labelSelector: { matchLabels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME} } }
+              - labelSelector:
+                  matchExpressions:
+                    # GPU roles ONLY. A bare part-of match also selects the frontend pod, and
+                    # required anti-affinity is enforced against EXISTING pods too - see header.
+                    - { key: app.kubernetes.io/part-of,   operator: In, values: [ "${DEPLOYMENT_NAME}" ] }
+                    - { key: app.kubernetes.io/component, operator: In, values: [ prefill, decode ] }
                 topologyKey: kubernetes.io/hostname
         volumes:
           - { name: dshm,       emptyDir: { medium: Memory, sizeLimit: 64Gi } }
@@ -203,8 +221,8 @@ spec:
               - { name: NCCL_TUNER_PLUGIN, value: ofi }
               - { name: OFI_NCCL_FORCE_NUM_RAILS, value: "4" }
             resources:
-              requests: { cpu: "96", memory: 1000Gi, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
-              limits:   { cpu: "96", memory: 1000Gi, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
+              requests: { cpu: "${CPU_PER_WORKER}", memory: ${MEM_PER_WORKER}, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
+              limits:   { cpu: "${CPU_PER_WORKER}", memory: ${MEM_PER_WORKER}, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
             volumeMounts:
               - { name: dshm,       mountPath: /dev/shm }
               - { name: gdrdrv,     mountPath: /dev/gdrdrv }
@@ -242,7 +260,12 @@ spec:
         affinity:
           podAntiAffinity:
             requiredDuringSchedulingIgnoredDuringExecution:
-              - labelSelector: { matchLabels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME} } }
+              - labelSelector:
+                  matchExpressions:
+                    # GPU roles ONLY. A bare part-of match also selects the frontend pod, and
+                    # required anti-affinity is enforced against EXISTING pods too - see header.
+                    - { key: app.kubernetes.io/part-of,   operator: In, values: [ "${DEPLOYMENT_NAME}" ] }
+                    - { key: app.kubernetes.io/component, operator: In, values: [ prefill, decode ] }
                 topologyKey: kubernetes.io/hostname
         volumes:
           - { name: dshm,       emptyDir: { medium: Memory, sizeLimit: 64Gi } }
@@ -306,8 +329,8 @@ spec:
               timeoutSeconds: 10
               failureThreshold: 240
             resources:
-              requests: { cpu: "96", memory: 1000Gi, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
-              limits:   { cpu: "96", memory: 1000Gi, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
+              requests: { cpu: "${CPU_PER_WORKER}", memory: ${MEM_PER_WORKER}, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
+              limits:   { cpu: "${CPU_PER_WORKER}", memory: ${MEM_PER_WORKER}, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
             volumeMounts:
               - { name: dshm,       mountPath: /dev/shm }
               - { name: gdrdrv,     mountPath: /dev/gdrdrv }
@@ -333,7 +356,19 @@ spec:
         app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
         app.kubernetes.io/component: frontend
     spec:
-      nodeSelector: { node.kubernetes.io/instance-type: ${INSTANCE_TYPE_FRONTEND} }
+      # PREFER the small CPU node when the cluster has one, but stay schedulable when it
+      # does not (all-GPU cluster): a hard nodeSelector on an absent instance type pins
+      # this pod to Pending. Tolerations let it land on a GPU node as the fallback.
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - { key: node.kubernetes.io/instance-type, operator: In, values: [ "${INSTANCE_TYPE_FRONTEND}" ] }
+      tolerations:
+        - { key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
+        - { key: vpc.amazonaws.com/efa, operator: Exists, effect: NoSchedule }
       volumes:
         - { name: shared, persistentVolumeClaim: { claimName: fsx-pvc } }
       containers:
