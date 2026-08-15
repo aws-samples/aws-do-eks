@@ -102,16 +102,29 @@ spec:
                 # only the startupProbe failure hinted otherwise; SIGTERM on pod delete also went to bash
                 # instead of the engine. Verified: the status propagates and the traceback still reaches both
                 # `kubectl logs` and "${DOLLAR}LOG" (10/10 runs).
+                # Save the container's REAL stdout before the tee takes over. bash does not wait for a
+                # process substitution to drain, and when this shell exits PID 1 goes with it - so a line
+                # echoed into the tee microseconds before `exit 1` never reaches `kubectl logs`. Measured
+                # 2026-08-15 on the 4-node p6-b200 disagg run: the preflight below fired correctly and the
+                # container exited 1 in under a second, but `kubectl logs` AND --previous showed only the
+                # two lines printed BEFORE this redirect, so the operator saw a bare crash-loop with no
+                # diagnosis at all. `say` writes each fatal line to the log file AND to fd 3 (real stdout).
+                exec 3>&1
                 exec > >(tee -a "${DOLLAR}LOG") 2>&1
+                say() { printf '%s\n' "${DOLLAR}*"; printf '%s\n' "${DOLLAR}*" >&3; }
                 # Same node-fault preflight as disagg/lws-2pp.yaml-template - a duplicate pod address
                 # (podIP == hostIP) is fatal and un-restartable, then a bounded wait for cluster DNS.
                 # See that file for the mechanism and the measured incident.
                 if [ -n "${DOLLAR}{MY_IP:-}" ] && [ "${DOLLAR}{MY_IP:-}" = "${DOLLAR}{NODE_IP:-}" ]; then
-                  echo "[prefill-leader] FATAL: pod IP ${DOLLAR}MY_IP == node IP ${DOLLAR}NODE_IP with hostNetwork=false."
-                  echo "[prefill-leader]        The CNI gave this sandbox the node's primary ENI address, so cluster DNS"
-                  echo "[prefill-leader]        cannot answer and NATS/etcd are unreachable. RESTARTING WILL NOT HELP -"
-                  echo "[prefill-leader]        the sandbox keeps the address. Remedy:"
-                  echo "[prefill-leader]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
+                  say "[prefill-leader] FATAL: pod IP ${DOLLAR}MY_IP == node IP ${DOLLAR}NODE_IP with hostNetwork=false."
+                  say "[prefill-leader]        The CNI gave this sandbox the node's primary ENI address, so cluster DNS"
+                  say "[prefill-leader]        cannot answer and NATS/etcd are unreachable. RESTARTING WILL NOT HELP -"
+                  say "[prefill-leader]        the sandbox keeps the address. Remedy:"
+                  say "[prefill-leader]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
+                  say "[prefill-leader]        If the REPLACEMENT pod lands on this node and draws ${DOLLAR}NODE_IP again,"
+                  say "[prefill-leader]        the node's own address is inside the CNI's assignable pool - ipamd re-adds"
+                  say "[prefill-leader]        it every 60s - so it is a NODE fault, not this manifest. Confirm on the node:"
+                  say "[prefill-leader]          grep \"Trying to add ${DOLLAR}NODE_IP\" /var/log/aws-routed-eni/ipamd.log"
                   exit 1
                 fi
                 if command -v getent >/dev/null 2>&1; then
@@ -119,9 +132,9 @@ spec:
                   for i in ${DOLLAR}(seq 1 30); do
                     if getent hosts "${DOLLAR}NATS_HOST" >/dev/null 2>&1; then break; fi
                     if [ "${DOLLAR}i" = 30 ]; then
-                      echo "[prefill-leader] FATAL: cannot resolve ${DOLLAR}NATS_HOST after 60s - cluster DNS is broken for"
-                      echo "[prefill-leader]        this pod. Check CoreDNS and the CNI, then:"
-                      echo "[prefill-leader]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
+                      say "[prefill-leader] FATAL: cannot resolve ${DOLLAR}NATS_HOST after 60s - cluster DNS is broken for"
+                      say "[prefill-leader]        this pod. Check CoreDNS and the CNI, then:"
+                      say "[prefill-leader]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
                       exit 1
                     fi
                     sleep 2
@@ -140,7 +153,7 @@ spec:
                 done
                 echo "[prefill-leader] LEADER_IP=${DOLLAR}LEADER_IP MY_IP=${DOLLAR}MY_IP"
                 if [ -z "${DOLLAR}LEADER_IP" ]; then
-                  echo "[prefill-leader] FATAL: ${DOLLAR}LWS_LEADER_ADDRESS did not resolve within 300s; exiting for a clean restart (do NOT proceed with an empty leader address)"
+                  say "[prefill-leader] FATAL: ${DOLLAR}LWS_LEADER_ADDRESS did not resolve within 300s; exiting for a clean restart (do NOT proceed with an empty leader address)"
                   exit 1
                 fi
                 ray start --head --port=6379 --node-ip-address="${DOLLAR}LEADER_IP" --num-gpus=${GPU_PER_WORKER}
@@ -367,7 +380,16 @@ spec:
                 # only the startupProbe failure hinted otherwise; SIGTERM on pod delete also went to bash
                 # instead of the engine. Verified: the status propagates and the traceback still reaches both
                 # `kubectl logs` and "${DOLLAR}LOG" (10/10 runs).
+                # Save the container's REAL stdout before the tee takes over. bash does not wait for a
+                # process substitution to drain, and when this shell exits PID 1 goes with it - so a line
+                # echoed into the tee microseconds before `exit 1` never reaches `kubectl logs`. Measured
+                # 2026-08-15 on the 4-node p6-b200 disagg run: the preflight below fired correctly and the
+                # container exited 1 in under a second, but `kubectl logs` AND --previous showed only the
+                # two lines printed BEFORE this redirect, so the operator saw a bare crash-loop with no
+                # diagnosis at all. `say` writes each fatal line to the log file AND to fd 3 (real stdout).
+                exec 3>&1
                 exec > >(tee -a "${DOLLAR}LOG") 2>&1
+                say() { printf '%s\n' "${DOLLAR}*"; printf '%s\n' "${DOLLAR}*" >&3; }
                 # Preflight for the two node-local faults that otherwise surface ~40s from now as a Python
                 # traceback at the BOTTOM of the log instead of a diagnosis at the top.
                 # (a) Duplicate pod address. When the CNI hands this sandbox the node's own primary ENI
@@ -379,14 +401,27 @@ spec:
                 #     be deleted. Measured on a 4-node ml.p6-b200.48xlarge disagg run (2026-08-15): one decode
                 #     pod looped 6x on a byte-identical failure, 47s per attempt, while its sibling on another
                 #     node loaded normally. Fail in 1s and name the remedy instead of loading for 47s first.
+                #     FOLLOW-UP, measured 2026-08-15 22:14-22:40Z on that same cluster: this is a RECURRING node
+                #     fault, not a one-off. ipamd's reconciler re-adds the node's OWN kubelet InternalIP to the
+                #     pod-assignable datastore once a minute ("Trying to add <nodeIP>" then "Adding <nodeIP>/32 to
+                #     DS for eni-..."), because on a SageMaker HyperPod EKS node the device-number-0 ENI sits in
+                #     the SageMaker-managed VPC (172.16/16), so the customer-VPC ENI that carries the node IP is
+                #     treated as a secondary ENI and its primary address becomes assignable to pods. Verified on
+                #     2 of 4 nodes (3,527 re-adds on the second). So a FRESH pod object can draw the node IP
+                #     again: deleting the pod is the correct remedy and it worked here (the replacement drew a
+                #     clean address and loaded), but it is a retry, not a cure - hence the extra lines below.
                 # (b) Cluster DNS not answering for this pod YET, which is transient on a fresh node - so retry
                 #     for 60s before giving up. That converts a crash-loop into a normal start.
                 if [ -n "${DOLLAR}{MY_IP:-}" ] && [ "${DOLLAR}{MY_IP:-}" = "${DOLLAR}{NODE_IP:-}" ]; then
-                  echo "[decode] FATAL: pod IP ${DOLLAR}MY_IP == node IP ${DOLLAR}NODE_IP with hostNetwork=false."
-                  echo "[decode]        The CNI gave this sandbox the node's primary ENI address, so cluster DNS"
-                  echo "[decode]        cannot answer and NATS/etcd are unreachable. RESTARTING WILL NOT HELP -"
-                  echo "[decode]        the sandbox keeps the address. Remedy:"
-                  echo "[decode]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
+                  say "[decode] FATAL: pod IP ${DOLLAR}MY_IP == node IP ${DOLLAR}NODE_IP with hostNetwork=false."
+                  say "[decode]        The CNI gave this sandbox the node's primary ENI address, so cluster DNS"
+                  say "[decode]        cannot answer and NATS/etcd are unreachable. RESTARTING WILL NOT HELP -"
+                  say "[decode]        the sandbox keeps the address. Remedy:"
+                  say "[decode]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
+                  say "[decode]        If the REPLACEMENT pod lands on this node and draws ${DOLLAR}NODE_IP again,"
+                  say "[decode]        the node's own address is inside the CNI's assignable pool - ipamd re-adds"
+                  say "[decode]        it every 60s - so it is a NODE fault, not this manifest. Confirm on the node:"
+                  say "[decode]          grep \"Trying to add ${DOLLAR}NODE_IP\" /var/log/aws-routed-eni/ipamd.log"
                   exit 1
                 fi
                 if command -v getent >/dev/null 2>&1; then
@@ -394,9 +429,9 @@ spec:
                   for i in ${DOLLAR}(seq 1 30); do
                     if getent hosts "${DOLLAR}NATS_HOST" >/dev/null 2>&1; then break; fi
                     if [ "${DOLLAR}i" = 30 ]; then
-                      echo "[decode] FATAL: cannot resolve ${DOLLAR}NATS_HOST after 60s - cluster DNS is broken for"
-                      echo "[decode]        this pod. Check CoreDNS and the CNI, then:"
-                      echo "[decode]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
+                      say "[decode] FATAL: cannot resolve ${DOLLAR}NATS_HOST after 60s - cluster DNS is broken for"
+                      say "[decode]        this pod. Check CoreDNS and the CNI, then:"
+                      say "[decode]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
                       exit 1
                     fi
                     sleep 2

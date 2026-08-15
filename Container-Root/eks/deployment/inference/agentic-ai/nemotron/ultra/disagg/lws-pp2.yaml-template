@@ -167,16 +167,29 @@ spec:
                 # only the startupProbe failure hinted otherwise; SIGTERM on pod delete also went to bash
                 # instead of the engine. Verified: the status propagates and the traceback still reaches both
                 # `kubectl logs` and "${DOLLAR}LOG" (10/10 runs).
+                # Save the container's REAL stdout before the tee takes over. bash does not wait for a
+                # process substitution to drain, and when this shell exits PID 1 goes with it - so a line
+                # echoed into the tee microseconds before `exit 1` never reaches `kubectl logs`. Measured
+                # 2026-08-15 on the 4-node p6-b200 disagg run: the preflight below fired correctly and the
+                # container exited 1 in under a second, but `kubectl logs` AND --previous showed only the
+                # two lines printed BEFORE this redirect, so the operator saw a bare crash-loop with no
+                # diagnosis at all. `say` writes each fatal line to the log file AND to fd 3 (real stdout).
+                exec 3>&1
                 exec > >(tee -a "${DOLLAR}LOG") 2>&1
+                say() { printf '%s\n' "${DOLLAR}*"; printf '%s\n' "${DOLLAR}*" >&3; }
                 # Same node-fault preflight as disagg/lws-2pp.yaml-template - a duplicate pod address
                 # (podIP == hostIP) is fatal and un-restartable, then a bounded wait for cluster DNS.
                 # See that file for the mechanism and the measured incident.
                 if [ -n "${DOLLAR}{MY_IP:-}" ] && [ "${DOLLAR}{MY_IP:-}" = "${DOLLAR}{NODE_IP:-}" ]; then
-                  echo "[prefill-leader p5en] FATAL: pod IP ${DOLLAR}MY_IP == node IP ${DOLLAR}NODE_IP with hostNetwork=false."
-                  echo "[prefill-leader p5en]        The CNI gave this sandbox the node's primary ENI address, so cluster DNS"
-                  echo "[prefill-leader p5en]        cannot answer and NATS/etcd are unreachable. RESTARTING WILL NOT HELP -"
-                  echo "[prefill-leader p5en]        the sandbox keeps the address. Remedy:"
-                  echo "[prefill-leader p5en]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
+                  say "[prefill-leader p5en] FATAL: pod IP ${DOLLAR}MY_IP == node IP ${DOLLAR}NODE_IP with hostNetwork=false."
+                  say "[prefill-leader p5en]        The CNI gave this sandbox the node's primary ENI address, so cluster DNS"
+                  say "[prefill-leader p5en]        cannot answer and NATS/etcd are unreachable. RESTARTING WILL NOT HELP -"
+                  say "[prefill-leader p5en]        the sandbox keeps the address. Remedy:"
+                  say "[prefill-leader p5en]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
+                  say "[prefill-leader p5en]        If the REPLACEMENT pod lands on this node and draws ${DOLLAR}NODE_IP again,"
+                  say "[prefill-leader p5en]        the node's own address is inside the CNI's assignable pool - ipamd re-adds"
+                  say "[prefill-leader p5en]        it every 60s - so it is a NODE fault, not this manifest. Confirm on the node:"
+                  say "[prefill-leader p5en]          grep \"Trying to add ${DOLLAR}NODE_IP\" /var/log/aws-routed-eni/ipamd.log"
                   exit 1
                 fi
                 if command -v getent >/dev/null 2>&1; then
@@ -184,9 +197,9 @@ spec:
                   for i in ${DOLLAR}(seq 1 30); do
                     if getent hosts "${DOLLAR}NATS_HOST" >/dev/null 2>&1; then break; fi
                     if [ "${DOLLAR}i" = 30 ]; then
-                      echo "[prefill-leader p5en] FATAL: cannot resolve ${DOLLAR}NATS_HOST after 60s - cluster DNS is broken for"
-                      echo "[prefill-leader p5en]        this pod. Check CoreDNS and the CNI, then:"
-                      echo "[prefill-leader p5en]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
+                      say "[prefill-leader p5en] FATAL: cannot resolve ${DOLLAR}NATS_HOST after 60s - cluster DNS is broken for"
+                      say "[prefill-leader p5en]        this pod. Check CoreDNS and the CNI, then:"
+                      say "[prefill-leader p5en]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
                       exit 1
                     fi
                     sleep 2
@@ -208,7 +221,7 @@ spec:
                 done
                 echo "[prefill-leader p5en] LEADER_IP=${DOLLAR}LEADER_IP"
                 if [ -z "${DOLLAR}LEADER_IP" ]; then
-                  echo "[prefill-leader] FATAL: ${DOLLAR}LWS_LEADER_ADDRESS did not resolve within 300s; exiting for a clean restart (do NOT proceed with an empty leader address)"
+                  say "[prefill-leader] FATAL: ${DOLLAR}LWS_LEADER_ADDRESS did not resolve within 300s; exiting for a clean restart (do NOT proceed with an empty leader address)"
                   exit 1
                 fi
                 # ---- Gloo bind interface: REQUIRED whenever hostNetwork: true (see header note 6) ----
@@ -459,16 +472,29 @@ spec:
                 # only the startupProbe failure hinted otherwise; SIGTERM on pod delete also went to bash
                 # instead of the engine. Verified: the status propagates and the traceback still reaches both
                 # `kubectl logs` and "${DOLLAR}LOG" (10/10 runs).
+                # Save the container's REAL stdout before the tee takes over. bash does not wait for a
+                # process substitution to drain, and when this shell exits PID 1 goes with it - so a line
+                # echoed into the tee microseconds before `exit 1` never reaches `kubectl logs`. Measured
+                # 2026-08-15 on the 4-node p6-b200 disagg run: the preflight below fired correctly and the
+                # container exited 1 in under a second, but `kubectl logs` AND --previous showed only the
+                # two lines printed BEFORE this redirect, so the operator saw a bare crash-loop with no
+                # diagnosis at all. `say` writes each fatal line to the log file AND to fd 3 (real stdout).
+                exec 3>&1
                 exec > >(tee -a "${DOLLAR}LOG") 2>&1
+                say() { printf '%s\n' "${DOLLAR}*"; printf '%s\n' "${DOLLAR}*" >&3; }
                 # Same node-fault preflight as disagg/lws-2pp.yaml-template - a duplicate pod address
                 # (podIP == hostIP) is fatal and un-restartable, then a bounded wait for cluster DNS.
                 # See that file for the mechanism and the measured incident.
                 if [ -n "${DOLLAR}{MY_IP:-}" ] && [ "${DOLLAR}{MY_IP:-}" = "${DOLLAR}{NODE_IP:-}" ]; then
-                  echo "[decode p5en] FATAL: pod IP ${DOLLAR}MY_IP == node IP ${DOLLAR}NODE_IP with hostNetwork=false."
-                  echo "[decode p5en]        The CNI gave this sandbox the node's primary ENI address, so cluster DNS"
-                  echo "[decode p5en]        cannot answer and NATS/etcd are unreachable. RESTARTING WILL NOT HELP -"
-                  echo "[decode p5en]        the sandbox keeps the address. Remedy:"
-                  echo "[decode p5en]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
+                  say "[decode p5en] FATAL: pod IP ${DOLLAR}MY_IP == node IP ${DOLLAR}NODE_IP with hostNetwork=false."
+                  say "[decode p5en]        The CNI gave this sandbox the node's primary ENI address, so cluster DNS"
+                  say "[decode p5en]        cannot answer and NATS/etcd are unreachable. RESTARTING WILL NOT HELP -"
+                  say "[decode p5en]        the sandbox keeps the address. Remedy:"
+                  say "[decode p5en]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
+                  say "[decode p5en]        If the REPLACEMENT pod lands on this node and draws ${DOLLAR}NODE_IP again,"
+                  say "[decode p5en]        the node's own address is inside the CNI's assignable pool - ipamd re-adds"
+                  say "[decode p5en]        it every 60s - so it is a NODE fault, not this manifest. Confirm on the node:"
+                  say "[decode p5en]          grep \"Trying to add ${DOLLAR}NODE_IP\" /var/log/aws-routed-eni/ipamd.log"
                   exit 1
                 fi
                 if command -v getent >/dev/null 2>&1; then
@@ -476,9 +502,9 @@ spec:
                   for i in ${DOLLAR}(seq 1 30); do
                     if getent hosts "${DOLLAR}NATS_HOST" >/dev/null 2>&1; then break; fi
                     if [ "${DOLLAR}i" = 30 ]; then
-                      echo "[decode p5en] FATAL: cannot resolve ${DOLLAR}NATS_HOST after 60s - cluster DNS is broken for"
-                      echo "[decode p5en]        this pod. Check CoreDNS and the CNI, then:"
-                      echo "[decode p5en]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
+                      say "[decode p5en] FATAL: cannot resolve ${DOLLAR}NATS_HOST after 60s - cluster DNS is broken for"
+                      say "[decode p5en]        this pod. Check CoreDNS and the CNI, then:"
+                      say "[decode p5en]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
                       exit 1
                     fi
                     sleep 2
@@ -498,7 +524,7 @@ spec:
                   sleep 2
                 done
                 if [ -z "${DOLLAR}LEADER_IP" ]; then
-                  echo "[decode-leader] FATAL: ${DOLLAR}LWS_LEADER_ADDRESS did not resolve within 300s; exiting for a clean restart (do NOT proceed with an empty leader address)"
+                  say "[decode-leader] FATAL: ${DOLLAR}LWS_LEADER_ADDRESS did not resolve within 300s; exiting for a clean restart (do NOT proceed with an empty leader address)"
                   exit 1
                 fi
                 # ---- Gloo bind interface: REQUIRED whenever hostNetwork: true (see header note 6) ----
@@ -566,7 +592,7 @@ spec:
                     0|false|no) echo "[warmup] WARMUP_ENABLED=${DOLLAR}WARMUP_ENABLED; skipping (non-fatal)"; exit 0 ;;
                   esac
                   if ! command -v curl >/dev/null 2>&1; then
-                    echo "[warmup] curl not present; skipping cold-start warmup (non-fatal)"
+                    say "[warmup] curl not present; skipping cold-start warmup (non-fatal)"
                   else
                     warmed=0
                     for i in ${DOLLAR}(seq 1 360); do
@@ -574,7 +600,7 @@ spec:
                       # (the model only appears in /v1/models once the backend has registered).
                       if curl -sf -o /dev/null --max-time 5 "${DOLLAR}LH" 2>/dev/null \
                          && curl -sf --max-time 5 "${DOLLAR}FE/v1/models" 2>/dev/null | grep -q "${MODEL_NAME}"; then
-                        echo "[warmup] engine ready (leader /health 200 + model registered); priming batch=1 Mamba decode kernel (one-time JIT, ~4min)"
+                        say "[warmup] engine ready (leader /health 200 + model registered); priming batch=1 Mamba decode kernel (one-time JIT, ~4min)"
                         curl -s -o /dev/null --max-time 900 "${DOLLAR}FE/v1/completions" \
                           -H 'Content-Type: application/json' \
                           -d "{\"model\":\"${MODEL_NAME}\",\"prompt\":\"warmup\",\"max_tokens\":4,\"temperature\":0}" \
@@ -588,7 +614,7 @@ spec:
                             -d "{\"model\":\"${MODEL_NAME}\",\"prompt\":\"warmup\",\"max_tokens\":4,\"temperature\":0}" &
                         done
                         wait
-                        echo "[warmup] concurrent batch buckets warm; benchmark opening will be fast"
+                        say "[warmup] concurrent batch buckets warm; benchmark opening will be fast"
                         warmed=1
                         break
                       fi
