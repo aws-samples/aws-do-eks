@@ -82,6 +82,69 @@ spec:
                 mkdir -p /tmp/hf_cache
                 echo "[ep dp0/leader] MY_IP=${DOLLAR}MY_IP EP=$((${EP_DP_SIZE}*${GPU_PER_WORKER}))"
                 python3 -c "import vllm; print(f'vllm {vllm.__version__}')"
+                # NVFP4 cold-start warmup (detached, non-fatal). A fresh pod's FIRST requests pay a
+                # one-time Triton JIT tax compiling the Mamba DECODE kernels (_selective_scan_update,
+                # _causal_conv1d_update) plus _zero_kv_blocks / _compute_slot_mapping: vLLM's startup
+                # warmup only exercises the PREFILL SSD path, and --enforce-eager skips CUDA-graph
+                # capture, so those kernels compile INSIDE the first real requests.
+                # Measured on a live NVFP4 disagg run (2026-08-15, p6-b200, this manifest family): first
+                # request 119.5s, JIT window 18 min, and the AIPerf report came out TTFT max 340,349ms /
+                # p90 128,579ms against a p50 of 759ms - the aggregate columns were unusable while steady
+                # state was fine (0.148 req/s). ITL p50 was inflated too: 146.77ms reported vs ~124-129ms
+                # measured warm, so "just ignore TTFT" is not enough - the run has to start warm.
+                # This manifest renders ONE `vllm serve` and the LEADER owns :8000 itself, so the warmer
+                # gates on its own /v1/models and warms over localhost - no frontend hop. Backgrounded
+                # (never blocks the engine launch), swallows every error, cannot fail the pod.
+                # NOTE: the Mamba decode kernel compiles a DIFFERENT Triton variant per batch size
+                # (BLOCK_SIZE_M/num_warps are tuned on effective_batch = batch*nheads, see mamba_ssm.py),
+                # so a single bs=1 request only compiles the batch=1 bucket and a concurrent benchmark
+                # (aiperf --concurrency 10) still pays per-bucket JIT on its opening. Warm bs=1 first
+                # (fastest to first token), then fire a CONCURRENT burst so buckets 1..N compile up front.
+                # Precision gate: this is an NVFP4 concern (that checkpoint FP8-quantizes the Mamba mixer
+                # and NVFP4-quantizes MoE, pulling in more kernel variants); BF16 completes the same
+                # benchmark without it. WARMUP_ENABLED=auto (default) follows the served model's precision
+                # suffix; set WARMUP_ENABLED=1/0 to force on/off and WARMUP_CONCURRENCY to size the burst
+                # (default 10 = the concurrency ../test/test-aiperf.sh drives). Both are read INSIDE
+                # the container, so override them in this role's env: list (or `kubectl set env`) -
+                # they are not .env/envsubst variables.
+                (
+                  LH="http://localhost:8000"
+                  WARMUP_CONCURRENCY=${DOLLAR}{WARMUP_CONCURRENCY:-10}
+                  WARMUP_ENABLED=${DOLLAR}{WARMUP_ENABLED:-auto}
+                  case "${DOLLAR}WARMUP_ENABLED" in
+                    auto) case "${MODEL_NAME}" in
+                            *NVFP4*|*nvfp4*) : ;;
+                            *) echo "[warmup] ${MODEL_NAME} is not NVFP4; warmup not needed, skipping (non-fatal)"; exit 0 ;;
+                          esac ;;
+                    0|false|no) echo "[warmup] WARMUP_ENABLED=${DOLLAR}WARMUP_ENABLED; skipping (non-fatal)"; exit 0 ;;
+                  esac
+                  if ! command -v curl >/dev/null 2>&1; then
+                    echo "[warmup] curl not present; skipping cold-start warmup (non-fatal)"
+                    exit 0
+                  fi
+                  # /v1/models on a self-serving `vllm serve` only lists the model once the engine is
+                  # loaded, so it is a real readiness signal here (unlike the dynamo frontend case).
+                  for i in ${DOLLAR}(seq 1 720); do
+                    if curl -sf --max-time 5 "${DOLLAR}LH/v1/models" 2>/dev/null | grep -q "${MODEL_NAME}"; then
+                      echo "[warmup] engine ready; priming batch=1 Mamba decode kernels (one-time JIT)"
+                      curl -s -o /dev/null --max-time 900 "${DOLLAR}LH/v1/completions" \
+                        -H 'Content-Type: application/json' \
+                        -d "{\"model\":\"${MODEL_NAME}\",\"prompt\":\"warmup\",\"max_tokens\":4,\"temperature\":0}" \
+                        && echo "[warmup] batch=1 warm; priming concurrent batch buckets 1..${DOLLAR}WARMUP_CONCURRENCY" \
+                        || echo "[warmup] batch=1 warmup returned non-zero (non-fatal)"
+                      for j in ${DOLLAR}(seq 1 "${DOLLAR}WARMUP_CONCURRENCY"); do
+                        curl -s -o /dev/null --max-time 900 "${DOLLAR}LH/v1/completions" \
+                          -H 'Content-Type: application/json' \
+                          -d "{\"model\":\"${MODEL_NAME}\",\"prompt\":\"warmup\",\"max_tokens\":4,\"temperature\":0}" &
+                      done
+                      wait
+                      echo "[warmup] concurrent batch buckets warm; benchmark opening will be fast"
+                      exit 0
+                    fi
+                    sleep 5
+                  done
+                  echo "[warmup] gave up after 60min waiting for ${MODEL_NAME} in ${DOLLAR}LH/v1/models; the FIRST benchmark requests will pay the Mamba JIT (non-fatal)"
+                ) &
                 exec vllm serve ${MODEL_PATH} \
                   --served-model-name ${MODEL_NAME} \
                   --tensor-parallel-size ${GPU_PER_WORKER} \

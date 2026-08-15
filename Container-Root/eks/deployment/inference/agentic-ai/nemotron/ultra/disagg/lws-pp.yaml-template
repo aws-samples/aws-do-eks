@@ -325,6 +325,81 @@ spec:
                 echo "[decode] starting; piping to ${DOLLAR}LOG"
                 python3 -c "import vllm; print(f'vllm {vllm.__version__}')" 2>&1 | tee -a "${DOLLAR}LOG"
                 # Single-node decode: TP8/PP1, no Ray - the validated decode shape for hybrid-Mamba.
+                # NVFP4 cold-start warmup (detached, non-fatal). A fresh pod's FIRST requests pay a
+                # one-time Triton JIT tax compiling the Mamba DECODE kernels (_selective_scan_update,
+                # _causal_conv1d_update) plus _zero_kv_blocks / _compute_slot_mapping: vLLM's startup
+                # warmup only exercises the PREFILL SSD path, and --enforce-eager skips CUDA-graph
+                # capture, so those kernels compile INSIDE the first real requests.
+                # Measured on a live NVFP4 disagg run (2026-08-15, p6-b200, this manifest family): first
+                # request 119.5s, JIT window 18 min, and the AIPerf report came out TTFT max 340,349ms /
+                # p90 128,579ms against a p50 of 759ms - the aggregate columns were unusable while steady
+                # state was fine (0.148 req/s). ITL p50 was inflated too: 146.77ms reported vs ~124-129ms
+                # measured warm, so "just ignore TTFT" is not enough - the run has to start warm.
+                # DISAGG-SPECIFIC: this matters MORE here than on agg. While one engine compiles, the
+                # other blocks, and that lands on the KV handoff - the same run logged 15x "No available
+                # shared memory broadcast block found in 60 seconds" and KV-transfer P90 spikes of
+                # 62-63s that stopped 9s after the last compile, then held 125-133ms for the rest of the
+                # run (Avg post time never moved: 3.05-3.56ms, so the fabric was healthy throughout).
+                # The warmer drives requests through the FRONTEND, so one request warms prefill AND
+                # decode over the real P->D path. Backgrounded (never blocks the engine launch), swallows
+                # every error, cannot fail the pod.
+                # NOTE: the Mamba decode kernel compiles a DIFFERENT Triton variant per batch size
+                # (BLOCK_SIZE_M/num_warps are tuned on effective_batch = batch*nheads, see mamba_ssm.py),
+                # so a single bs=1 request only compiles the batch=1 bucket and a concurrent benchmark
+                # (aiperf --concurrency 10) still pays per-bucket JIT on its opening. Warm bs=1 first
+                # (fastest to first token), then fire a CONCURRENT burst so buckets 1..N compile up front.
+                # Precision gate: this is an NVFP4 concern (that checkpoint FP8-quantizes the Mamba mixer
+                # and NVFP4-quantizes MoE, pulling in more kernel variants); BF16 completes the same
+                # benchmark without it. WARMUP_ENABLED=auto (default) follows the served model's precision
+                # suffix; set WARMUP_ENABLED=1/0 to force on/off and WARMUP_CONCURRENCY to size the burst
+                # (default 10 = the concurrency ../test/test-aiperf.sh drives). Both are read INSIDE
+                # the container, so override them in this role's env: list (or `kubectl set env`) -
+                # they are not .env/envsubst variables.
+                (
+                  FE="http://${DEPLOYMENT_NAME}-frontend.${NAMESPACE}.svc.cluster.local:8000"
+                  # Gate on BOTH signals. This role's own dyn-system /health is the same signal the
+                  # startupProbe uses and only returns 200 once THIS engine is loaded; the frontend
+                  # answers /v1/models 200 many minutes BEFORE that, so gating on the frontend alone
+                  # fires the warmup at a not-yet-ready engine and compiles nothing.
+                  LH="http://localhost:${DOLLAR}{DYN_SYSTEM_PORT:-9092}/health"
+                  WARMUP_CONCURRENCY=${DOLLAR}{WARMUP_CONCURRENCY:-10}
+                  WARMUP_ENABLED=${DOLLAR}{WARMUP_ENABLED:-auto}
+                  case "${DOLLAR}WARMUP_ENABLED" in
+                    auto) case "${MODEL_NAME}" in
+                            *NVFP4*|*nvfp4*) : ;;
+                            *) echo "[warmup] ${MODEL_NAME} is not NVFP4; warmup not needed, skipping (non-fatal)"; exit 0 ;;
+                          esac ;;
+                    0|false|no) echo "[warmup] WARMUP_ENABLED=${DOLLAR}WARMUP_ENABLED; skipping (non-fatal)"; exit 0 ;;
+                  esac
+                  if ! command -v curl >/dev/null 2>&1; then
+                    echo "[warmup] curl not present; skipping cold-start warmup (non-fatal)"
+                    exit 0
+                  fi
+                  for i in ${DOLLAR}(seq 1 360); do
+                    if curl -sf -o /dev/null --max-time 5 "${DOLLAR}LH" 2>/dev/null \
+                       && curl -sf --max-time 5 "${DOLLAR}FE/v1/models" 2>/dev/null | grep -q "${MODEL_NAME}"; then
+                      echo "[warmup] engine ready (decode-leader /health 200 + model registered); priming batch=1 Mamba decode kernels (one-time JIT)"
+                      curl -s -o /dev/null --max-time 900 "${DOLLAR}FE/v1/completions" \
+                        -H 'Content-Type: application/json' \
+                        -d "{\"model\":\"${MODEL_NAME}\",\"prompt\":\"warmup\",\"max_tokens\":4,\"temperature\":0}" \
+                        && echo "[warmup] batch=1 warm; priming concurrent batch buckets 1..${DOLLAR}WARMUP_CONCURRENCY" \
+                        || echo "[warmup] batch=1 warmup returned non-zero (non-fatal)"
+                      for j in ${DOLLAR}(seq 1 "${DOLLAR}WARMUP_CONCURRENCY"); do
+                        curl -s -o /dev/null --max-time 900 "${DOLLAR}FE/v1/completions" \
+                          -H 'Content-Type: application/json' \
+                          -d "{\"model\":\"${MODEL_NAME}\",\"prompt\":\"warmup\",\"max_tokens\":4,\"temperature\":0}" &
+                      done
+                      wait
+                      echo "[warmup] concurrent batch buckets warm; benchmark opening will be fast"
+                      exit 0
+                    fi
+                    sleep 5
+                  done
+                  # Fail LOUD in the log (still non-fatal to the pod): a silent fall-out here is
+                  # indistinguishable from "warmed up fine", and the next benchmark would quietly
+                  # pay the JIT tax again.
+                  echo "[warmup] gave up after 30min waiting for ${DOLLAR}LH 200 + ${MODEL_NAME} in ${DOLLAR}FE/v1/models; the FIRST benchmark requests will pay the Mamba JIT (non-fatal)"
+                ) &
                 exec python3 -m dynamo.vllm \
                   --model ${MODEL_PATH} \
                   --served-model-name ${MODEL_NAME} \
