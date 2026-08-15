@@ -32,8 +32,9 @@
 #      GPU_PER_WORKER GPUs) and on ITL / p50 TTFT.
 #   -> EFA is still exercised hard here, just not by NIXL: the expert all-to-all is NCCL over
 #      EFA on every token (see the all2all note below).
-# For P/D disaggregation use ../disagg: lws (PP2/PP2) | lws-2pp | lws-pp2 | deployment | dgd —
-# all of those carry --kv-transfer-config.
+# For P/D disaggregation use ../disagg: deployment | lws-2pp | lws-pp2 | dgd — all of those
+# carry --kv-transfer-config. (../disagg/lws.yaml-template is gone: it was byte-identical to
+# ../disagg/lws-pp2.yaml-template, which is the symmetrical-PP2 name.)
 #
 # all2all note (why per-token cost differs from the disagg siblings): vLLM's default EP
 # backend here is allgather/reduce-scatter — the pod logs it as
