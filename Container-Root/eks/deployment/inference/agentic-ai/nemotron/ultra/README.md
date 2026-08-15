@@ -53,7 +53,22 @@ cd /eks/deployment/inference/agentic-ai/nemotron/ultra/download
 
 ## Deploy the model
 
-The model can be deployed in aggregated or disaggregated mode. In aggregated mode the prefill and decode work in any inference operation is performed by a single worker. In disaggregated mode the prefill and decode operations are done by different workers which are deployed on different nodes and can be scaled independently. The model can also be deployed using deployment manifests when running one instance of the model on one node, or using a [LeaderWorkerSet]() manifest when running a model instance distributed between two nodes. Set `MANIFEST_TYPE` to `deployment` or `lws` in the corresponding `.env` file per your preference.
+The model can be deployed in aggregated or disaggregated mode. In aggregated mode the prefill and decode work in any inference operation is performed by a single worker. In disaggregated mode the prefill and decode operations are done by different workers which are deployed on different nodes and can be scaled independently. The model can also be deployed using deployment manifests when running one instance of the model on one node, or using a [LeaderWorkerSet](https://github.com/kubernetes-sigs/lws) manifest when running a model instance distributed between two nodes. Set `MANIFEST_TYPE` in the corresponding `.env` file per your preference.
+
+The folder decides whether prefill and decode are split; `MANIFEST_TYPE` decides the topology within that mode:
+
+| Folder | `MANIFEST_TYPE` | Topology | Nodes | P/D split? |
+|---|---|---|---|---|
+| `agg/` | `deployment` | one worker, TP8/PP1 | 1 | no |
+| `agg/` | `lws` | one worker, TP8/PP2 across 2 nodes | 2 | no |
+| `agg/` | `lws-ep` | wide expert parallelism, DP`EP_DP_SIZE` x TP8 (EP16 by default) | 2 | no |
+| `agg/` | `dgd` | `DynamoGraphDeployment`, one worker (needs the Dynamo operator) | 1 | no |
+| `disagg/` | `deployment` | 1 prefill + 1 decode, TP8/PP1 each | 2 | yes |
+| `disagg/` | `lws-2pp` | prefill TP8/PP2 + 2x decode TP8/PP1 | 4 | yes |
+| `disagg/` | `lws-pp2` | symmetrical PP2: prefill AND decode each TP8/PP2 | 4 | yes |
+| `disagg/` | `dgd` | `DynamoGraphDeployment` prefill + decode (needs the Dynamo operator) | 2 | yes |
+
+Every `disagg/` template carries `--kv-transfer-config` with `NixlConnector` and moves the KV cache over EFA; no `agg/` template does. In particular `lws-ep` is **aggregated** wide-EP -- it exercises EFA heavily (the MoE all-to-all is NCCL across nodes on every token) but it does not disaggregate, so its benchmark numbers should be labelled aggregated and compared against a P/D run only at equal GPU count.
 
 ### Aggregated mode
 
@@ -67,7 +82,7 @@ cd /eks/deployment/inference/agentic-ai/nemotron/ultra/agg
 
 ### Disaggregated mode
 
-Disaggregated mode on EFA requires a patched version of the `nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.2.0-efa` container. A pre-built container image is available at `public.ecr.aws/hpc-cloud/dynamo-vllm-efa:disagg-1.2.0`. If you prefer to build your own image, use the [dynamo-vllm-efa](https://github.com/aws-samples/aws-do-eks/tree/main/Container-Root/eks/deployment/inference/agentic-ai/nemotron/ultra/disagg/dynamo-vllm-efa) folder. The example here is configured to use the pre-built image.
+Disaggregated mode on EFA requires a patched version of the `nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.2.0-efa` container. A pre-built container image is available at `public.ecr.aws/hpc-cloud/dynamo-vllm-efa:disagg-1.2.0`. If you prefer to build your own image, use the [dynamo-vllm-efa](https://github.com/aws-samples/aws-do-eks/tree/main/Container-Root/eks/deployment/inference/agentic-ai/nemotron/ultra/dynamo-vllm-efa) folder. The example here is configured to use the pre-built image.
 
 In the `aws-do-eks` shell, execute:
 
