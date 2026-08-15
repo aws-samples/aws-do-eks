@@ -22,10 +22,50 @@
 #   MEASURED aggregated DP2/TP8/EP16 serving of 550B over EFA (NET/OFI efa both
 #   nodes, socket_fallback=0, coherent completions).
 #
+# THERE IS A SECOND lws-ep TEMPLATE, IN ../disagg/, AND IT IS A DIFFERENT TOPOLOGY. Same
+# MANIFEST_TYPE name on purpose (parity); the FOLDER is the discriminator. This one is
+# AGGREGATED — grep it: no --kv-transfer-config, no NixlConnector, no --disaggregation-mode,
+# and a running pod logs zero `NIXL` / `KV Transfer metrics` lines. ../disagg/lws-ep has all
+# three on BOTH roles and moves KV prefill->decode over EFA per request.
+# (Until 2026-08-15 the file at that path was a COPY of this aggregated one — a mislabel that
+# got an aggregated result reported as "disagg" once. It was replaced by the real P/D+EP shape.)
+#   -> Report aiperf/benchmark numbers from this template as EP16 AGGREGATED, and numbers from
+#      ../disagg/lws-ep as EP16 DISAGGREGATED. Comparing the two is only fair at EQUAL GPU
+#      COUNT (this template = EP_DP_SIZE x GPU_PER_WORKER GPUs, that one = 2x that) and on
+#      ITL / p50 TTFT.
+#   -> EFA is still exercised hard here, just not by NIXL: the expert all-to-all is NCCL over
+#      EFA on every token (see the all2all note below).
+# For P/D disaggregation use ../disagg: deployment | lws-2pp | lws-pp2 | lws-ep | dgd — all of
+# those carry --kv-transfer-config. (../disagg/lws.yaml-template is gone: it was byte-identical
+# to ../disagg/lws-pp2.yaml-template, which is the symmetrical-PP2 name.)
+#
+# all2all note (why per-token cost differs from the disagg siblings): vLLM's default EP
+# backend here is allgather/reduce-scatter — the pod logs it as
+#   cuda_communicator.py  Using AgRsAll2AllManager all2all manager
+#   expert_map_manager.py [EP Rank 0/16] ... Local/global number of experts: 32/512
+# so EVERY MoE layer of EVERY token allgathers activations across all EP ranks and
+# reduce-scatters back, and half those ranks sit on the other node -> cross-node traffic is in
+# the per-TOKEN path. A disagg sibling instead pays one KV transfer per REQUEST and keeps the
+# expert compute inside one NVLink domain. Expect the two to differ on inter-token latency for
+# that structural reason.
+#
 # IMAGE: the golden image (../.env — covers agg/EP16/PP>1 + the NVFP4 cubin fix).
 # For NVFP4 set MODEL_VARIANT=NVFP4 in ../.env (MODEL_PATH/NAME switch automatically).
 #
-# RENDER: MANIFEST_TYPE=ep ./run.sh   (run.sh envsubst's this + kubectl apply)
+# SHAPE comes from .env: EP_DP_SIZE (DP group size, EP degree = EP_DP_SIZE x GPU_PER_WORKER)
+# and CPU_PER_WORKER / MEM_PER_WORKER (the old hardcoded cpu: "48" / 1000Gi were a p5en
+# assumption; p6-b200 wants its own budget).
+#
+# LABELS: part-of is ${DOLLAR}{DEPLOYMENT_NAME}, NOT ${DOLLAR}{DEPLOYMENT_NAME}-ep. Only the
+# LWS/Service resource NAMES carry the -ep suffix. Label selectors are exact-match, so the -ep
+# label made both run.sh's verify listing and stop.sh's step-2 residue sweep
+# (--selector app.kubernetes.io/part-of=${DOLLAR}{DEPLOYMENT_NAME}) match NOTHING for this
+# permutation: `./run.sh` printed no resources for a deployment it had just applied, and
+# `./stop.sh` reported "Verifying teardown ... (empty)" without that sweep ever having looked
+# at an lws-ep object. The component label (agg-ep) is the discriminator instead, and the
+# podAntiAffinity selector now carries it so it still matches only the two GPU pods.
+#
+# RENDER: MANIFEST_TYPE=lws-ep ./run.sh   (run.sh envsubst's this + kubectl apply)
 # =============================================================================
 ---
 apiVersion: leaderworkerset.x-k8s.io/v1
@@ -33,19 +73,26 @@ kind: LeaderWorkerSet
 metadata:
   name: ${DEPLOYMENT_NAME}-ep
   namespace: ${NAMESPACE}
-  labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}-ep, app.kubernetes.io/component: agg-ep }
+  labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}, app.kubernetes.io/component: agg-ep }
 spec:
   replicas: 1
   startupPolicy: LeaderCreated
   leaderWorkerTemplate:
+    # RecreateGroupOnPodRestart, not the default None: the DP ranks share one TCPStore and one DP
+    # coordinator hosted by the leader, so a leader restart invalidates every rank. With None,
+    # a leader container restart leaves the DP1 worker alive on the dead store - measured on
+    # B200 2026-08-15: worker pid 1 still from the previous epoch 31 minutes later, logging
+    # "sendBytes failed ... remote=[...-ep-0...]:50413: Broken pipe" - and the new leader can
+    # never assemble --data-parallel-size, so it re-times-out every ~25 min forever.
+    # Trade-off: recreating the group discards the crashed pod's logs (see #68).
     restartPolicy: RecreateGroupOnPodRestart
-    size: 2
+    size: ${EP_DP_SIZE}
     # -------------------------------------------------------------------------
     # LEADER = DP rank 0 + API server
     # -------------------------------------------------------------------------
     leaderTemplate:
       metadata:
-        labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}-ep, app.kubernetes.io/component: agg-ep, dp-role: leader }
+        labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}, app.kubernetes.io/component: agg-ep, dp-role: leader }
       spec:
         hostNetwork: true
         dnsPolicy: ClusterFirstWithHostNet
@@ -57,7 +104,7 @@ spec:
         affinity:
           podAntiAffinity:
             requiredDuringSchedulingIgnoredDuringExecution:
-              - labelSelector: { matchLabels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}-ep } }
+              - labelSelector: { matchLabels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}, app.kubernetes.io/component: agg-ep } }
                 topologyKey: kubernetes.io/hostname
         volumes:
           - { name: dshm,       emptyDir: { medium: Memory, sizeLimit: 64Gi } }
@@ -110,6 +157,7 @@ spec:
                 (
                   LH="http://localhost:8000"
                   WARMUP_CONCURRENCY=${DOLLAR}{WARMUP_CONCURRENCY:-10}
+                  warmed=0
                   for i in ${DOLLAR}(seq 1 720); do
                     if curl -sf --max-time 5 "${DOLLAR}LH/v1/models" 2>/dev/null | grep -q "${MODEL_NAME}"; then
                       echo "[warmup] engine ready; priming batch=1 Mamba decode kernel (one-time JIT)"
@@ -124,17 +172,22 @@ spec:
                       done
                       wait
                       echo "[warmup] concurrent buckets warm"
+                      warmed=1
                       break
                     fi
                     sleep 5
                   done
+                  # Fail LOUD if the gate never opened (still non-fatal to the pod): falling out of
+                  # this loop silently is indistinguishable from "warmed up fine", and the next
+                  # benchmark would quietly pay the JIT tax again.
+                  [ "${DOLLAR}warmed" = 1 ] || echo "[warmup] gave up after 60min waiting for ${DOLLAR}LH 200 + ${MODEL_NAME} in ${DOLLAR}FE/v1/models; the FIRST benchmark requests will pay the Mamba JIT (non-fatal)"
                 ) &
                 fi
                 # DP rank 0 = DP coordinator + API server; rank 1 dials in here. TP=8 in-node.
                 exec vllm serve ${MODEL_PATH} \
                   --served-model-name ${MODEL_NAME} \
                   --tensor-parallel-size ${GPU_PER_WORKER} \
-                  --data-parallel-size 2 \
+                  --data-parallel-size ${EP_DP_SIZE} \
                   --data-parallel-size-local 1 \
                   --data-parallel-address "${DOLLAR}LEADER_IP" \
                   --data-parallel-rpc-port 29550 \
@@ -149,6 +202,11 @@ spec:
                   --host 0.0.0.0 --port 8000
             env:
               - { name: MY_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
+              # The warmup subshell above reads these INSIDE the container, so they have to be
+              # passed through here - without these two lines the knobs in .env are inert and the
+              # ladder is always 1..10 no matter what you set in your shell.
+              - { name: WARMUP_ENABLED, value: "${WARMUP_ENABLED}" }
+              - { name: WARMUP_CONCURRENCY, value: "${WARMUP_CONCURRENCY}" }
               - { name: HF_HOME, value: /tmp/hf_cache }
               - { name: HF_MODULES_CACHE, value: /tmp/hf_cache/modules }
               - { name: VLLM_LOGGING_LEVEL, value: INFO }
@@ -181,8 +239,8 @@ spec:
               # NVFP4 loads far faster; the ceiling is harmless once ready.
               failureThreshold: 240
             resources:
-              requests: { cpu: "48", memory: 1000Gi, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
-              limits:   { cpu: "48", memory: 1000Gi, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
+              requests: { cpu: "${CPU_PER_WORKER}", memory: ${MEM_PER_WORKER}, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
+              limits:   { cpu: "${CPU_PER_WORKER}", memory: ${MEM_PER_WORKER}, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
             volumeMounts:
               - { name: dshm,       mountPath: /dev/shm }
               - { name: shared,     mountPath: /shared }
@@ -191,7 +249,7 @@ spec:
     # -------------------------------------------------------------------------
     workerTemplate:
       metadata:
-        labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}-ep, app.kubernetes.io/component: agg-ep, dp-role: worker }
+        labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}, app.kubernetes.io/component: agg-ep, dp-role: worker }
       spec:
         hostNetwork: true
         dnsPolicy: ClusterFirstWithHostNet
@@ -202,7 +260,7 @@ spec:
         affinity:
           podAntiAffinity:
             requiredDuringSchedulingIgnoredDuringExecution:
-              - labelSelector: { matchLabels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}-ep } }
+              - labelSelector: { matchLabels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}, app.kubernetes.io/component: agg-ep } }
                 topologyKey: kubernetes.io/hostname
         volumes:
           - { name: dshm,       emptyDir: { medium: Memory, sizeLimit: 64Gi } }
@@ -250,7 +308,7 @@ spec:
                   --headless \
                   --data-parallel-start-rank 1 \
                   --tensor-parallel-size ${GPU_PER_WORKER} \
-                  --data-parallel-size 2 \
+                  --data-parallel-size ${EP_DP_SIZE} \
                   --data-parallel-size-local 1 \
                   --data-parallel-address "${DOLLAR}LEADER_IP" \
                   --data-parallel-rpc-port 29550 \
@@ -284,8 +342,8 @@ spec:
               - { name: NCCL_DEBUG, value: INFO }
               - { name: NCCL_DEBUG_SUBSYS, value: "INIT,NET" }
             resources:
-              requests: { cpu: "48", memory: 1000Gi, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
-              limits:   { cpu: "48", memory: 1000Gi, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
+              requests: { cpu: "${CPU_PER_WORKER}", memory: ${MEM_PER_WORKER}, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
+              limits:   { cpu: "${CPU_PER_WORKER}", memory: ${MEM_PER_WORKER}, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
             volumeMounts:
               - { name: dshm,       mountPath: /dev/shm }
               - { name: shared,     mountPath: /shared }
@@ -295,21 +353,34 @@ kind: Service
 metadata:
   name: ${DEPLOYMENT_NAME}-ep
   namespace: ${NAMESPACE}
-  labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}-ep, app.kubernetes.io/component: agg-ep }
+  labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}, app.kubernetes.io/component: agg-ep }
 spec:
-  selector: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}-ep, app.kubernetes.io/component: agg-ep, dp-role: leader }
+  selector: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}, app.kubernetes.io/component: agg-ep, dp-role: leader }
   ports: [ { port: 8000, targetPort: 8000, name: http } ]
 ---
-# Frontend service — the EP16 leader runs native `vllm serve` (not dynamo.vllm) so it
-# already exposes the full OpenAI-compatible API on port 8000 (/v1/completions,
-# /v1/chat/completions, /v1/models, /health). This service aliases the leader under the
-# ${DEPLOYMENT_NAME}-frontend name that test/test-*.sh scripts resolve via SERVICE_URL.
+# Frontend service alias - the piece that makes ../test/*.sh work against this permutation.
+#
+# The EP16 leader runs native `vllm serve` (not dynamo.vllm), so it already exposes the whole
+# OpenAI-compatible API on :8000 (/v1/completions, /v1/chat/completions, /v1/models, /health)
+# and no dynamo.frontend pod exists here - unlike deployment / lws / dgd, which each ship a
+# real ${DEPLOYMENT_NAME}-frontend Deployment. But ../test/.env hardcodes
+# SERVICE_NAME=${DOLLAR}{DEPLOYMENT_NAME}-frontend, so every test script (test-aiperf.sh,
+# test-chat-completions.sh, test-completions.sh, models-health.sh, models-list.sh,
+# aiperf-sweep) resolves a name that this template would never create: the tests fail on DNS
+# while the deployment itself is perfectly healthy and serving.
+#
+# Why a SECOND Service rather than relying on ${DEPLOYMENT_NAME}-ep above: that name collides
+# with the headless Service the LeaderWorkerSet controller creates for its own pod DNS, and
+# the controller OWNS it (ownerReferences controller=true, clusterIP: None,
+# publishNotReadyAddresses: true) - so it also answers for a leader that is still loading
+# weights. This alias is a plain ClusterIP nothing else owns, and it routes only to a READY
+# leader (readinessProbe = GET /health).
 apiVersion: v1
 kind: Service
 metadata:
   name: ${DEPLOYMENT_NAME}-frontend
   namespace: ${NAMESPACE}
-  labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}-ep, app.kubernetes.io/component: frontend }
+  labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}, app.kubernetes.io/component: frontend }
 spec:
-  selector: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}-ep, app.kubernetes.io/component: agg-ep, dp-role: leader }
+  selector: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}, app.kubernetes.io/component: agg-ep, dp-role: leader }
   ports: [ { port: 8000, targetPort: 8000, name: http } ]

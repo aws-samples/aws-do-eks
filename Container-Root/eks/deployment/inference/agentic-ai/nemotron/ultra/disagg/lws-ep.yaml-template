@@ -1,55 +1,92 @@
 # =============================================================================
-# Nemotron-3 Ultra EP16 — expert-parallel aggregated serving (DP2 x TP8 = EP16)
+# Nemotron-3 Ultra — EP16 *DISAGGREGATED*: expert-parallel AND a prefill/decode split
 # =============================================================================
 #
 # Author: Anton Alexander
 #
-# The MoE expert layers are sharded 16 ways across 2 nodes (EFA NCCL all-to-all);
-# each data-parallel rank is one full TP8 node. vLLM's OpenAI server runs on the
-# DP rank-0 leader; the LWS worker joins headless. EP degree = EP_DP_SIZE x
-# GPU_PER_WORKER, and the model's expert count must be divisible by it
-# (Nemotron-3-Ultra and Qwen3-235B: yes; Mixtral's 8 experts: no).
+# This is the answer to "is there a disagg+EP scenario?" — yes, and it is the shape this
+# folder was missing. Expert parallelism and P/D disaggregation are orthogonal: EP shards the
+# MoE expert layers across DP ranks (all-to-all per token), disagg splits prefill from decode
+# (one KV transfer per request). You can run both, and each role gets its own EP group.
 #
-# This is the AGGREGATED expert-parallel permutation - no prefill/decode split,
-# no Dynamo platform required (the vllm leader serves OpenAI API directly).
+# SAME NAME AS ../agg/lws-ep.yaml-template, DIFFERENT MODE — the FOLDER is the discriminator.
+# `lws-ep` means "wide expert parallelism" in both folders; agg/ runs it as ONE engine with no
+# split, disagg/ (here) runs it as prefill + decode with a real KV transfer between them. Grep
+# this file for the difference: --disaggregation-mode on both roles, NixlConnector on both roles,
+# --kv-transfer-config on both roles. ../agg/lws-ep has none of those; it is one `vllm serve`.
 #
-# PORTABILITY 2026-08-15 (all-GPU clusters such as p6-b200): the podAntiAffinity selector
-# matches only the GPU role (component In [ep-disagg]) rather than every pod carrying
-# `part-of`, and cpu/memory come from CPU_PER_WORKER / MEM_PER_WORKER in .env (the old
-# hardcoded cpu: "96" was a p5en-192-vCPU assumption). Same change as the sibling
-# templates - see the PR for the live-scheduler probe.
+# WARNING for anyone carrying an older .env: the file that sat at THIS path until 2026-08-15 was
+# a copy of the AGGREGATED template (one `vllm serve`, no split) — a mislabel, which is why it
+# was removed to ../agg only. It was briefly an error to select `lws-ep` here. From this commit
+# `MANIFEST_TYPE=lws-ep` in disagg/ is valid again and deploys a genuine P/D split at
+# 2 * EP_DP_SIZE nodes (default 4), not the 2-node aggregated stack an old .env may have meant.
+# This file was named lws-ep-pd for one commit. run.sh no longer special-cases that name (it
+# renders ${DOLLAR}MANIFEST_TYPE.yaml-template directly); the pointer lives in .env and the README table.
+#
+# Topology (2 * EP_DP_SIZE GPU nodes + 1 preferred CPU node; default EP_DP_SIZE=2 -> 4 GPU nodes):
+#   - prefill: 1 LWS group of size ${EP_DP_SIZE}. Leader = DP rank 0 AND the DP coordinator;
+#              each worker pod is one more DP rank joining headless. TP=${GPU_PER_WORKER} per
+#              rank, PP=1, EP degree = EP_DP_SIZE * GPU_PER_WORKER (=16 by default).
+#   - decode:  the same, independently (its own DP coordinator, its own EP group).
+#   - frontend: CPU-only dynamo.frontend router Deployment + Service.
+# PP stays 1 on BOTH roles: PP>1 on the decode side of the hybrid-Mamba 550B deadlocks the Ray
+# static DAG (see lws-2pp / lws-pp2 for the PP shapes), and EP does not need PP.
+#
+# Two fabrics are in play at once, which is the point of this permutation:
+#   - per REQUEST: KV prefill->decode over EFA RDMA via NIXL LIBFABRIC (rdma_read_bytes)
+#   - per TOKEN:   the MoE expert all-to-all across each role's EP ranks, NCCL over EFA
+#                  (rdma_write_bytes on every node). vLLM's default backend here is
+#                  allgather/reduce-scatter (AgRsAll2AllManager), so expect inter-token
+#                  latency to differ structurally from the PP siblings; compare on ITL and
+#                  p50 TTFT at equal GPU count.
+#
+# PROVENANCE — read this before quoting numbers from this file.
+# The TOPOLOGY is measured: we ran exactly this composition (dynamo.vllm, DP2 x TP8 = EP16 per
+# role, PP1, prefill LWS + decode LWS + dynamo frontend, NixlConnector backends ["LIBFABRIC"])
+# on 4x p5en and it works end to end — needle recalled, HTTP 200, decode-node
+# rdma_read_bytes +595,600,544 B for one request (8 transfers, ~60.8 MB each, 1608 descriptors,
+# 0 failures), rdma_write +0.70-1.49 GB on all four nodes in the same window (that is the EP
+# all-to-all), EP world 16 with 32/512 local/global experts per rank.
+# What is NOT measured is THIS FILE: that run used a hand-rolled manifest pair, and this is its
+# composition re-expressed in the repo's template conventions (EP_DP_SIZE, envsubst, LWS,
+# part-of labels, the ../test gate). Run ../test/models-health.sh + a single request and check
+# the decode node's rdma_read_bytes delta before you attach benchmark numbers to it.
+#
+# Portability: podAntiAffinity matches GPU roles only (a bare part-of match also selects the
+# frontend pod and required anti-affinity is enforced against EXISTING pods, which pins the
+# frontend Pending on an all-GPU cluster); cpu/memory come from CPU_PER_WORKER /
+# MEM_PER_WORKER. Same as the sibling templates.
 # =============================================================================
 ---
 apiVersion: leaderworkerset.x-k8s.io/v1
 kind: LeaderWorkerSet
 metadata:
-  name: ${DEPLOYMENT_NAME}-ep
+  name: ${DEPLOYMENT_NAME}-prefill
   namespace: ${NAMESPACE}
   labels:
     app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
-    app.kubernetes.io/component: ep-disagg
+    app.kubernetes.io/component: prefill
 spec:
   replicas: 1
   startupPolicy: LeaderCreated
+  rolloutStrategy:
+    type: RollingUpdate
   leaderWorkerTemplate:
-    # RecreateGroupOnPodRestart, matching agg/lws-ep: the DP ranks share one TCPStore and one DP
-    # coordinator hosted by the leader, so a leader restart invalidates every rank. With None,
-    # a leader container restart leaves the DP1 worker alive on the dead store - measured on
-    # B200 2026-08-15: worker pid 1 still from the previous epoch 31 minutes later, logging
-    # "sendBytes failed ... remote=[...-ep-0...]:50413: Broken pipe" - and the new leader can
-    # never assemble data_parallel_size=2, so it re-times-out every ~25 min forever.
-    # Trade-off: recreating the group discards the crashed pod's logs (see #68).
+    # RecreateGroupOnPodRestart, matching ../agg/lws-ep: the DP ranks share ONE TCPStore and one
+    # DP coordinator hosted by the leader, so a leader restart invalidates every rank. With
+    # None, a leader container restart leaves the other ranks alive on the dead store
+    # ("sendBytes failed ... Broken pipe") and the new leader can never assemble
+    # data_parallel_size=${EP_DP_SIZE}. Trade-off: recreating discards the crashed pod's logs.
     restartPolicy: RecreateGroupOnPodRestart
     size: ${EP_DP_SIZE}
     leaderTemplate:
       metadata:
         labels:
           app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
-          app.kubernetes.io/component: ep-disagg
+          app.kubernetes.io/component: prefill
           dynamo-role: leader
       spec:
-        nodeSelector:
-          node.kubernetes.io/instance-type: ${INSTANCE_TYPE_WORKER}
+        nodeSelector: { node.kubernetes.io/instance-type: ${INSTANCE_TYPE_WORKER} }
         tolerations:
           - { key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
           - { key: vpc.amazonaws.com/efa, operator: Exists, effect: NoSchedule }
@@ -58,10 +95,9 @@ spec:
             requiredDuringSchedulingIgnoredDuringExecution:
               - labelSelector:
                   matchExpressions:
-                    # GPU roles ONLY. A bare part-of match also selects the frontend pod, and
-                    # required anti-affinity is enforced against EXISTING pods too - see header.
+                    # GPU roles ONLY - see header.
                     - { key: app.kubernetes.io/part-of,   operator: In, values: [ "${DEPLOYMENT_NAME}" ] }
-                    - { key: app.kubernetes.io/component, operator: In, values: [ ep-disagg ] }
+                    - { key: app.kubernetes.io/component, operator: In, values: [ prefill, decode ] }
                 topologyKey: kubernetes.io/hostname
         volumes:
           - { name: dshm,       emptyDir: { medium: Memory, sizeLimit: 64Gi } }
@@ -78,11 +114,23 @@ spec:
                 set -u
                 unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
                       HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
+                # 1.2.0-era images ship /opt/dynamo/venv; 1.3.0-era images have none.
                 if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
-                mkdir -p /tmp/hf_cache
-                echo "[ep dp0/leader] MY_IP=${DOLLAR}MY_IP EP=$((${EP_DP_SIZE}*${GPU_PER_WORKER}))"
-                python3 -c "import vllm; print(f'vllm {vllm.__version__}')"
-                exec vllm serve ${MODEL_PATH} \
+                # Writable-log-dir probe: keep /shared when the PVC accepts our writes, fall
+                # back to /tmp rather than losing every log line to EACCES.
+                LOG_DIR=/shared
+                if ! ( : > "${DOLLAR}LOG_DIR/.wtest-${DOLLAR}HOSTNAME" ) 2>/dev/null; then
+                  echo "[prefill-dp0] ${DOLLAR}LOG_DIR not writable; logging to /tmp instead"
+                  LOG_DIR=/tmp
+                else
+                  rm -f "${DOLLAR}LOG_DIR/.wtest-${DOLLAR}HOSTNAME"
+                fi
+                LOG=${DOLLAR}LOG_DIR/${DEPLOYMENT_NAME}-prefill-ep-${DOLLAR}(date -u +%FT%TZ).log
+                echo "[prefill-dp0] MY_IP=${DOLLAR}MY_IP EP=$((${EP_DP_SIZE}*${GPU_PER_WORKER})); piping to ${DOLLAR}LOG"
+                python3 -c "import vllm; print(f'vllm {vllm.__version__}')" 2>&1 | tee -a "${DOLLAR}LOG"
+                # DP rank 0 also hosts the DP coordinator + TCPStore on --data-parallel-address.
+                exec python3 -m dynamo.vllm \
+                  --model ${MODEL_PATH} \
                   --served-model-name ${MODEL_NAME} \
                   --tensor-parallel-size ${GPU_PER_WORKER} \
                   --data-parallel-size ${EP_DP_SIZE} \
@@ -92,46 +140,57 @@ spec:
                   --enable-expert-parallel \
                   --pipeline-parallel-size 1 \
                   --max-model-len 8192 \
-                  --gpu-memory-utilization 0.95 \
+                  --gpu-memory-utilization 0.92 \
                   --enforce-eager \
                   --trust-remote-code \
-                  --load-format runai_streamer \
                   ${MAMBA_FLAGS} \
-                  --host 0.0.0.0 --port 8000
+                  --load-format runai_streamer \
+                  --disaggregation-mode prefill \
+                  --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_connector_extra_config":{"backends":["LIBFABRIC"]}}' 2>&1 | tee -a "${DOLLAR}LOG"
             env:
               - { name: MY_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
-              - { name: HF_HOME, value: /tmp/hf_cache }
-              - { name: HF_HUB_OFFLINE, value: "1" }
-              - { name: TRANSFORMERS_OFFLINE, value: "1" }
+              - { name: DYNAMO_BACKEND, value: vllm }
+              - { name: DYN_NAMESPACE, value: dynamo-disagg }
+              - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }
+              - { name: NATS_SERVER, value: "${NATS_URL}" }
+              - { name: HF_HOME, value: /shared/hf_cache }
+              - { name: DYN_SYSTEM_ENABLED, value: "true" }
+              - { name: DYN_SYSTEM_PORT, value: "9091" }
               - { name: VLLM_LOGGING_LEVEL, value: INFO }
-              # 2400 not 1200: with data_parallel_size > 1 vLLM builds a DPLBAsyncMPClient and the
-              # API-server process waits for the engine cores INSIDE this budget, so the whole
-              # weight load counts against it. Measured on B200 (2026-08-15): 51023-tensor
-              # runai_streamer load 21:06 + 70.8s engine init, engine ready 07:18:18Z against a
-              # 1200s deadline that expired 07:18:22Z - it missed by 4 seconds and the pod died
-              # with "TimeoutError: Timed out waiting for engine core processes to start".
-              # agg/lws-ep.yaml-template already uses 2400 for this checkpoint.
-              - { name: VLLM_ENGINE_READY_TIMEOUT_S, value: "2400" }
               - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
+              # See the decode leader for why 1800 (JIT-heavy first concurrent step vs the
+              # 300s execute_model RPC default). Kept on both roles so a prefill-side compile
+              # cannot kill EngineCore either.
+              - { name: VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS, value: "1800" }
+              # data_parallel_size > 1 makes the API-server wait for every engine core inside
+              # this budget, so the whole weight load counts against it (a 1200s deadline
+              # missed a 51023-tensor runai_streamer load by 4 seconds on B200).
+              - { name: VLLM_ENGINE_READY_TIMEOUT_S, value: "2400" }
               - { name: FLASHINFER_DISABLE_VERSION_CHECK, value: "1" }
               - { name: FI_PROVIDER, value: efa }
               - { name: FI_EFA_USE_DEVICE_RDMA, value: "1" }
               - { name: FI_EFA_FORK_SAFE, value: "1" }
               - { name: FI_HMEM_CUDA_USE_DMABUF, value: "1" }
+              - { name: NIXL_LIBFABRIC_MAX_RAILS, value: "1" }
+              - { name: NIXL_SKIP_TOPOLOGY_CHECK, value: "1" }
               - { name: NCCL_NET_PLUGIN, value: ofi }
               - { name: NCCL_TUNER_PLUGIN, value: ofi }
               - { name: OFI_NCCL_FORCE_NUM_RAILS, value: "4" }
+              - { name: NCCL_RUNTIME_CONNECT, value: "0" }
+              # 0 here, not the 1 the PP siblings use: this matches the EP permutation in
+              # ../agg/lws-ep.yaml-template, whose cross-node expert all-to-all is the path
+              # NVLS init failures showed up on.
               - { name: NCCL_NVLS_ENABLE, value: "0" }
               - { name: NCCL_CUMEM_ENABLE, value: "1" }
               - { name: NCCL_SOCKET_IFNAME, value: "^lo,docker,veth,eni" }
             ports:
-              - { containerPort: 8000, name: http }
+              - { containerPort: 9091, name: dyn-system }
               - { containerPort: 29550, name: dp-rpc }
-            readinessProbe:
-              httpGet: { path: /health, port: 8000 }
+            startupProbe:
+              httpGet: { path: /health, port: 9091 }
               periodSeconds: 30
               timeoutSeconds: 10
-              failureThreshold: 120
+              failureThreshold: 240
             resources:
               requests: { cpu: "${CPU_PER_WORKER}", memory: ${MEM_PER_WORKER}, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
               limits:   { cpu: "${CPU_PER_WORKER}", memory: ${MEM_PER_WORKER}, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
@@ -143,11 +202,10 @@ spec:
       metadata:
         labels:
           app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
-          app.kubernetes.io/component: ep-disagg
+          app.kubernetes.io/component: prefill
           dynamo-role: worker
       spec:
-        nodeSelector:
-          node.kubernetes.io/instance-type: ${INSTANCE_TYPE_WORKER}
+        nodeSelector: { node.kubernetes.io/instance-type: ${INSTANCE_TYPE_WORKER} }
         tolerations:
           - { key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
           - { key: vpc.amazonaws.com/efa, operator: Exists, effect: NoSchedule }
@@ -156,10 +214,8 @@ spec:
             requiredDuringSchedulingIgnoredDuringExecution:
               - labelSelector:
                   matchExpressions:
-                    # GPU roles ONLY. A bare part-of match also selects the frontend pod, and
-                    # required anti-affinity is enforced against EXISTING pods too - see header.
                     - { key: app.kubernetes.io/part-of,   operator: In, values: [ "${DEPLOYMENT_NAME}" ] }
-                    - { key: app.kubernetes.io/component, operator: In, values: [ ep-disagg ] }
+                    - { key: app.kubernetes.io/component, operator: In, values: [ prefill, decode ] }
                 topologyKey: kubernetes.io/hostname
         volumes:
           - { name: dshm,       emptyDir: { medium: Memory, sizeLimit: 64Gi } }
@@ -177,27 +233,30 @@ spec:
                 unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
                       HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
                 if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
-                mkdir -p /tmp/hf_cache
-                # Resolve in ONE getent per attempt and break only on a NON-EMPTY address. The previous
-                # shape probed with one getent and captured the address with a second one, so a single
-                # empty capture immediately after a successful probe killed the pod ~2s in while printing
-                # a 300s timeout it had never waited for (measured: B200 lws-ep worker, 2026-08-15).
-                # NR==1 also keeps a multi-record answer from producing a two-word LEADER_IP.
+                # ONE getent per attempt, break only on a NON-EMPTY address: probing with one
+                # getent and capturing with a second let a single empty capture kill the pod ~2s
+                # in while printing a 300s timeout it never waited. NR==1 keeps a multi-record
+                # answer from producing a two-word LEADER_IP.
                 for i in ${DOLLAR}(seq 1 150); do
                   LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk 'NR==1{print ${DOLLAR}1; exit}')
                   if [ -n "${DOLLAR}LEADER_IP" ]; then break; fi
                   sleep 2
                 done
-                echo "[ep dp${DOLLAR}{LWS_WORKER_INDEX}/worker] LEADER_IP=${DOLLAR}LEADER_IP MY_IP=${DOLLAR}MY_IP"
+                echo "[prefill-dp${DOLLAR}{LWS_WORKER_INDEX}] LEADER_IP=${DOLLAR}LEADER_IP MY_IP=${DOLLAR}MY_IP"
                 if [ -z "${DOLLAR}LEADER_IP" ]; then
-                  echo "[ep worker] FATAL: ${DOLLAR}LWS_LEADER_ADDRESS did not resolve within 300s; exiting for a clean restart (do NOT proceed with an empty leader address)"
+                  echo "[prefill-dp${DOLLAR}{LWS_WORKER_INDEX}] FATAL: ${DOLLAR}LWS_LEADER_ADDRESS did not resolve within 300s; exiting for a clean restart (do NOT proceed with an empty leader address)"
                   exit 1
                 fi
                 for i in ${DOLLAR}(seq 1 120); do
                   if (echo > /dev/tcp/${DOLLAR}LEADER_IP/29550) 2>/dev/null; then break; fi
                   sleep 5
                 done
-                exec vllm serve ${MODEL_PATH} \
+                # --headless: no API server here. LWS_WORKER_INDEX is 1-based for workers
+                # (the leader is index 0 = DP rank 0), so it IS the DP start rank. Every engine
+                # arg must match the leader's - each DP rank builds its own EngineCore, so the
+                # kv-transfer-config and --disaggregation-mode belong here too.
+                exec python3 -m dynamo.vllm \
+                  --model ${MODEL_PATH} \
                   --served-model-name ${MODEL_NAME} \
                   --headless \
                   --data-parallel-start-rank ${DOLLAR}{LWS_WORKER_INDEX} \
@@ -209,34 +268,35 @@ spec:
                   --enable-expert-parallel \
                   --pipeline-parallel-size 1 \
                   --max-model-len 8192 \
-                  --gpu-memory-utilization 0.95 \
+                  --gpu-memory-utilization 0.92 \
                   --enforce-eager \
                   --trust-remote-code \
+                  ${MAMBA_FLAGS} \
                   --load-format runai_streamer \
-                  ${MAMBA_FLAGS}
+                  --disaggregation-mode prefill \
+                  --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_connector_extra_config":{"backends":["LIBFABRIC"]}}'
             env:
               - { name: MY_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
-              - { name: HF_HOME, value: /tmp/hf_cache }
-              - { name: HF_HUB_OFFLINE, value: "1" }
-              - { name: TRANSFORMERS_OFFLINE, value: "1" }
+              - { name: DYNAMO_BACKEND, value: vllm }
+              - { name: DYN_NAMESPACE, value: dynamo-disagg }
+              - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }
+              - { name: NATS_SERVER, value: "${NATS_URL}" }
+              - { name: HF_HOME, value: /shared/hf_cache }
               - { name: VLLM_LOGGING_LEVEL, value: INFO }
-              # 2400 not 1200: with data_parallel_size > 1 vLLM builds a DPLBAsyncMPClient and the
-              # API-server process waits for the engine cores INSIDE this budget, so the whole
-              # weight load counts against it. Measured on B200 (2026-08-15): 51023-tensor
-              # runai_streamer load 21:06 + 70.8s engine init, engine ready 07:18:18Z against a
-              # 1200s deadline that expired 07:18:22Z - it missed by 4 seconds and the pod died
-              # with "TimeoutError: Timed out waiting for engine core processes to start".
-              # agg/lws-ep.yaml-template already uses 2400 for this checkpoint.
-              - { name: VLLM_ENGINE_READY_TIMEOUT_S, value: "2400" }
               - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
+              - { name: VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS, value: "1800" }
+              - { name: VLLM_ENGINE_READY_TIMEOUT_S, value: "2400" }
               - { name: FLASHINFER_DISABLE_VERSION_CHECK, value: "1" }
               - { name: FI_PROVIDER, value: efa }
               - { name: FI_EFA_USE_DEVICE_RDMA, value: "1" }
               - { name: FI_EFA_FORK_SAFE, value: "1" }
               - { name: FI_HMEM_CUDA_USE_DMABUF, value: "1" }
+              - { name: NIXL_LIBFABRIC_MAX_RAILS, value: "1" }
+              - { name: NIXL_SKIP_TOPOLOGY_CHECK, value: "1" }
               - { name: NCCL_NET_PLUGIN, value: ofi }
               - { name: NCCL_TUNER_PLUGIN, value: ofi }
               - { name: OFI_NCCL_FORCE_NUM_RAILS, value: "4" }
+              - { name: NCCL_RUNTIME_CONNECT, value: "0" }
               - { name: NCCL_NVLS_ENABLE, value: "0" }
               - { name: NCCL_CUMEM_ENABLE, value: "1" }
               - { name: NCCL_SOCKET_IFNAME, value: "^lo,docker,veth,eni" }
@@ -248,48 +308,309 @@ spec:
               - { name: gdrdrv,     mountPath: /dev/gdrdrv }
               - { name: shared,     mountPath: /shared }
 ---
-apiVersion: v1
-kind: Service
+# Decode: its OWN EP group of the same width, with its own DP coordinator on its own leader.
+# One LWS group of size ${EP_DP_SIZE}; replicas stays 1 (unlike lws-2pp's 2x single-node decode
+# groups) because the DP ranks of one EP group must stay one group.
+apiVersion: leaderworkerset.x-k8s.io/v1
+kind: LeaderWorkerSet
 metadata:
-  name: ${DEPLOYMENT_NAME}-ep
+  name: ${DEPLOYMENT_NAME}-decode
   namespace: ${NAMESPACE}
   labels:
     app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
-    app.kubernetes.io/component: ep-disagg
+    app.kubernetes.io/component: decode
 spec:
-  selector:
-    app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
-    app.kubernetes.io/component: ep-disagg
-    dynamo-role: leader
-  ports:
-    - port: 8000
-      targetPort: 8000
-      name: http
+  replicas: 1
+  startupPolicy: LeaderCreated
+  rolloutStrategy:
+    type: RollingUpdate
+  leaderWorkerTemplate:
+    # Same reasoning as prefill: a shared TCPStore/DP coordinator means the group is the unit.
+    restartPolicy: RecreateGroupOnPodRestart
+    size: ${EP_DP_SIZE}
+    leaderTemplate:
+      metadata:
+        labels:
+          app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
+          app.kubernetes.io/component: decode
+          dynamo-role: leader
+      spec:
+        nodeSelector: { node.kubernetes.io/instance-type: ${INSTANCE_TYPE_WORKER} }
+        tolerations:
+          - { key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
+          - { key: vpc.amazonaws.com/efa, operator: Exists, effect: NoSchedule }
+        affinity:
+          podAntiAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchExpressions:
+                    - { key: app.kubernetes.io/part-of,   operator: In, values: [ "${DEPLOYMENT_NAME}" ] }
+                    - { key: app.kubernetes.io/component, operator: In, values: [ prefill, decode ] }
+                topologyKey: kubernetes.io/hostname
+        volumes:
+          - { name: dshm,       emptyDir: { medium: Memory, sizeLimit: 64Gi } }
+          - { name: gdrdrv,     hostPath: { path: /dev/gdrdrv, type: CharDevice } }
+          - { name: shared,     persistentVolumeClaim: { claimName: fsx-pvc } }
+        containers:
+          - name: vllm
+            image: ${REGISTRY}${IMAGE}${TAG}
+            imagePullPolicy: Always
+            securityContext: { capabilities: { add: ["IPC_LOCK"] } }
+            command: ["/bin/bash", "-c"]
+            args:
+              - |-
+                set -u
+                unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
+                      HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
+                if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
+                LOG_DIR=/shared
+                if ! ( : > "${DOLLAR}LOG_DIR/.wtest-${DOLLAR}HOSTNAME" ) 2>/dev/null; then
+                  echo "[decode-dp0] ${DOLLAR}LOG_DIR not writable; logging to /tmp instead"
+                  LOG_DIR=/tmp
+                else
+                  rm -f "${DOLLAR}LOG_DIR/.wtest-${DOLLAR}HOSTNAME"
+                fi
+                LOG=${DOLLAR}LOG_DIR/${DEPLOYMENT_NAME}-decode-ep-${DOLLAR}(date -u +%FT%TZ).log
+                echo "[decode-dp0] MY_IP=${DOLLAR}MY_IP EP=$((${EP_DP_SIZE}*${GPU_PER_WORKER})); piping to ${DOLLAR}LOG"
+                python3 -c "import vllm; print(f'vllm {vllm.__version__}')" 2>&1 | tee -a "${DOLLAR}LOG"
+                # Cold-start warmup (detached) - identical block to the other templates in this
+                # folder and in ../agg; see ../.env for the WARMUP_* knobs. A fresh pod's FIRST
+                # request pays a one-time ~4min Triton JIT compiling the Mamba DECODE kernels
+                # (_selective_scan_update, _causal_conv1d_update): startup only warms the PREFILL
+                # SSD path, and --enforce-eager skips cudagraph capture, not JIT. This warmer
+                # drives generations through the frontend so those kernels compile before real
+                # traffic. It shares the pod, never blocks the engine launch, and swallows every
+                # error so it cannot crash the pod. CONCURRENCY is a Triton compile key on the
+                # decode path (_causal_conv1d_update_kernel: seqlen / state_len / NP2_STATELEN /
+                # strides are tl.constexpr), so bs=1 alone leaves a concurrent benchmark paying
+                # that JIT on its opening - hence bs=1 first, then a concurrent burst of
+                # WARMUP_CONCURRENCY; see lws-pp2.yaml-template for why it is that kernel and not
+                # selective_state_update on this device/dtype.
+                # Precision gate: this is an NVFP4 concern (that checkpoint
+                # FP8-quantizes the Mamba mixer and pulls in more kernel variants); BF16 does not
+                # need it, so WARMUP_ENABLED=auto keys off the served model's precision suffix.
+                # Only the DECODE LEADER runs it: one warmer per deployment, and the requests it
+                # sends fan out across both roles and all EP ranks through the frontend anyway.
+                (
+                  FE="http://${DEPLOYMENT_NAME}-frontend.${NAMESPACE}.svc.cluster.local:8000"
+                  # Gate on THIS leader's dyn-system /health, the same signal the startupProbe
+                  # uses. The frontend answers /v1/models 200 long before the engine finishes
+                  # loading, so gating on the frontend alone fires the warmup against a
+                  # not-yet-ready engine and compiles nothing.
+                  LH="http://localhost:${DOLLAR}{DYN_SYSTEM_PORT:-9092}/health"
+                  WARMUP_CONCURRENCY=${DOLLAR}{WARMUP_CONCURRENCY:-10}
+                  WARMUP_ENABLED=${DOLLAR}{WARMUP_ENABLED:-auto}
+                  case "${DOLLAR}WARMUP_ENABLED" in
+                    auto) case "${MODEL_NAME}" in
+                            *NVFP4*|*nvfp4*) : ;;
+                            *) echo "[warmup] ${MODEL_NAME} is not NVFP4; warmup not needed, skipping (non-fatal)"; exit 0 ;;
+                          esac ;;
+                    0|false|no) echo "[warmup] WARMUP_ENABLED=${DOLLAR}WARMUP_ENABLED; skipping (non-fatal)"; exit 0 ;;
+                  esac
+                  if ! command -v curl >/dev/null 2>&1; then
+                    echo "[warmup] curl not present; skipping cold-start warmup (non-fatal)"
+                  else
+                    warmed=0
+                    for i in ${DOLLAR}(seq 1 360); do
+                      if curl -sf -o /dev/null --max-time 5 "${DOLLAR}LH" 2>/dev/null \
+                         && curl -sf --max-time 5 "${DOLLAR}FE/v1/models" 2>/dev/null | grep -q "${MODEL_NAME}"; then
+                        echo "[warmup] engine ready (leader /health 200 + model registered); priming batch=1 Mamba decode kernel (one-time JIT, ~4min)"
+                        curl -s -o /dev/null --max-time 900 "${DOLLAR}FE/v1/completions" \
+                          -H 'Content-Type: application/json' \
+                          -d "{\"model\":\"${MODEL_NAME}\",\"prompt\":\"warmup\",\"max_tokens\":4,\"temperature\":0}" \
+                          && echo "[warmup] batch=1 warm; priming concurrent batch buckets 1..${DOLLAR}WARMUP_CONCURRENCY" \
+                          || echo "[warmup] batch=1 warmup returned non-zero (non-fatal)"
+                        for j in ${DOLLAR}(seq 1 "${DOLLAR}WARMUP_CONCURRENCY"); do
+                          curl -s -o /dev/null --max-time 900 "${DOLLAR}FE/v1/completions" \
+                            -H 'Content-Type: application/json' \
+                            -d "{\"model\":\"${MODEL_NAME}\",\"prompt\":\"warmup\",\"max_tokens\":4,\"temperature\":0}" &
+                        done
+                        wait
+                        echo "[warmup] concurrent batch buckets warm; benchmark opening will be fast"
+                        warmed=1
+                        break
+                      fi
+                      sleep 5
+                    done
+                    # Fail LOUD if the gate never opened (still non-fatal to the pod): falling out of
+                    # this loop silently is indistinguishable from "warmed up fine", and the next
+                    # benchmark would quietly pay the JIT tax again.
+                    [ "${DOLLAR}warmed" = 1 ] || echo "[warmup] gave up after 30min waiting for ${DOLLAR}LH 200 + ${MODEL_NAME} in ${DOLLAR}FE/v1/models; the FIRST benchmark requests will pay the Mamba JIT (non-fatal)"
+                  fi
+                ) &
+                exec python3 -m dynamo.vllm \
+                  --model ${MODEL_PATH} \
+                  --served-model-name ${MODEL_NAME} \
+                  --tensor-parallel-size ${GPU_PER_WORKER} \
+                  --data-parallel-size ${EP_DP_SIZE} \
+                  --data-parallel-size-local 1 \
+                  --data-parallel-address "${DOLLAR}MY_IP" \
+                  --data-parallel-rpc-port 29551 \
+                  --enable-expert-parallel \
+                  --pipeline-parallel-size 1 \
+                  --max-model-len 8192 \
+                  --gpu-memory-utilization 0.98 \
+                  --enforce-eager \
+                  --trust-remote-code \
+                  ${MAMBA_FLAGS} \
+                  --load-format runai_streamer \
+                  --disaggregation-mode decode \
+                  --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_connector_extra_config":{"backends":["LIBFABRIC"]}}' 2>&1 | tee -a "${DOLLAR}LOG"
+            env:
+              - { name: MY_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
+              - { name: DYNAMO_BACKEND, value: vllm }
+              - { name: DYN_NAMESPACE, value: dynamo-disagg }
+              - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }
+              - { name: NATS_SERVER, value: "${NATS_URL}" }
+              - { name: HF_HOME, value: /shared/hf_cache }
+              - { name: DYN_SYSTEM_ENABLED, value: "true" }
+              - { name: DYN_SYSTEM_PORT, value: "9092" }
+              # The warmer reads these INSIDE the container, so they must be passed through here
+              # or the knobs in .env are inert (they were, until this line existed).
+              - { name: WARMUP_ENABLED, value: "${WARMUP_ENABLED}" }
+              - { name: WARMUP_CONCURRENCY, value: "${WARMUP_CONCURRENCY}" }
+              - { name: VLLM_LOGGING_LEVEL, value: INFO }
+              - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
+              # Raise the execute_model RPC deadline (default 300s) so a JIT-heavy first
+              # concurrent decode step (per-batch-bucket Mamba Triton compile under an aiperf
+              # --concurrency N opening) cannot trip the timeout and kill EngineCore with
+              # "RPC call to execute_model timed out" -> EngineDeadError.
+              - { name: VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS, value: "1800" }
+              - { name: VLLM_ENGINE_READY_TIMEOUT_S, value: "2400" }
+              - { name: FLASHINFER_DISABLE_VERSION_CHECK, value: "1" }
+              - { name: FI_PROVIDER, value: efa }
+              - { name: FI_EFA_USE_DEVICE_RDMA, value: "1" }
+              - { name: FI_EFA_FORK_SAFE, value: "1" }
+              - { name: FI_HMEM_CUDA_USE_DMABUF, value: "1" }
+              - { name: NIXL_LIBFABRIC_MAX_RAILS, value: "1" }
+              - { name: NIXL_SKIP_TOPOLOGY_CHECK, value: "1" }
+              - { name: NCCL_NET_PLUGIN, value: ofi }
+              - { name: NCCL_TUNER_PLUGIN, value: ofi }
+              - { name: OFI_NCCL_FORCE_NUM_RAILS, value: "4" }
+              - { name: NCCL_RUNTIME_CONNECT, value: "0" }
+              - { name: NCCL_NVLS_ENABLE, value: "0" }
+              - { name: NCCL_CUMEM_ENABLE, value: "1" }
+              - { name: NCCL_SOCKET_IFNAME, value: "^lo,docker,veth,eni" }
+            ports:
+              - { containerPort: 9092, name: dyn-system }
+              - { containerPort: 29551, name: dp-rpc }
+            startupProbe:
+              httpGet: { path: /health, port: 9092 }
+              periodSeconds: 30
+              timeoutSeconds: 10
+              failureThreshold: 240
+            resources:
+              requests: { cpu: "${CPU_PER_WORKER}", memory: ${MEM_PER_WORKER}, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
+              limits:   { cpu: "${CPU_PER_WORKER}", memory: ${MEM_PER_WORKER}, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
+            volumeMounts:
+              - { name: dshm,       mountPath: /dev/shm }
+              - { name: gdrdrv,     mountPath: /dev/gdrdrv }
+              - { name: shared,     mountPath: /shared }
+    workerTemplate:
+      metadata:
+        labels:
+          app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
+          app.kubernetes.io/component: decode
+          dynamo-role: worker
+      spec:
+        nodeSelector: { node.kubernetes.io/instance-type: ${INSTANCE_TYPE_WORKER} }
+        tolerations:
+          - { key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
+          - { key: vpc.amazonaws.com/efa, operator: Exists, effect: NoSchedule }
+        affinity:
+          podAntiAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchExpressions:
+                    - { key: app.kubernetes.io/part-of,   operator: In, values: [ "${DEPLOYMENT_NAME}" ] }
+                    - { key: app.kubernetes.io/component, operator: In, values: [ prefill, decode ] }
+                topologyKey: kubernetes.io/hostname
+        volumes:
+          - { name: dshm,       emptyDir: { medium: Memory, sizeLimit: 64Gi } }
+          - { name: gdrdrv,     hostPath: { path: /dev/gdrdrv, type: CharDevice } }
+          - { name: shared,     persistentVolumeClaim: { claimName: fsx-pvc } }
+        containers:
+          - name: vllm
+            image: ${REGISTRY}${IMAGE}${TAG}
+            imagePullPolicy: Always
+            securityContext: { capabilities: { add: ["IPC_LOCK"] } }
+            command: ["/bin/bash", "-c"]
+            args:
+              - |-
+                set -u
+                unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
+                      HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
+                if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
+                # One getent per attempt, break only on a NON-EMPTY address - see the prefill worker.
+                for i in ${DOLLAR}(seq 1 150); do
+                  LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk 'NR==1{print ${DOLLAR}1; exit}')
+                  if [ -n "${DOLLAR}LEADER_IP" ]; then break; fi
+                  sleep 2
+                done
+                echo "[decode-dp${DOLLAR}{LWS_WORKER_INDEX}] LEADER_IP=${DOLLAR}LEADER_IP MY_IP=${DOLLAR}MY_IP"
+                if [ -z "${DOLLAR}LEADER_IP" ]; then
+                  echo "[decode-dp${DOLLAR}{LWS_WORKER_INDEX}] FATAL: ${DOLLAR}LWS_LEADER_ADDRESS did not resolve within 300s; exiting for a clean restart (do NOT proceed with an empty leader address)"
+                  exit 1
+                fi
+                for i in ${DOLLAR}(seq 1 120); do
+                  if (echo > /dev/tcp/${DOLLAR}LEADER_IP/29551) 2>/dev/null; then break; fi
+                  sleep 5
+                done
+                exec python3 -m dynamo.vllm \
+                  --model ${MODEL_PATH} \
+                  --served-model-name ${MODEL_NAME} \
+                  --headless \
+                  --data-parallel-start-rank ${DOLLAR}{LWS_WORKER_INDEX} \
+                  --tensor-parallel-size ${GPU_PER_WORKER} \
+                  --data-parallel-size ${EP_DP_SIZE} \
+                  --data-parallel-size-local 1 \
+                  --data-parallel-address "${DOLLAR}LEADER_IP" \
+                  --data-parallel-rpc-port 29551 \
+                  --enable-expert-parallel \
+                  --pipeline-parallel-size 1 \
+                  --max-model-len 8192 \
+                  --gpu-memory-utilization 0.98 \
+                  --enforce-eager \
+                  --trust-remote-code \
+                  ${MAMBA_FLAGS} \
+                  --load-format runai_streamer \
+                  --disaggregation-mode decode \
+                  --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_connector_extra_config":{"backends":["LIBFABRIC"]}}'
+            env:
+              - { name: MY_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
+              - { name: DYNAMO_BACKEND, value: vllm }
+              - { name: DYN_NAMESPACE, value: dynamo-disagg }
+              - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }
+              - { name: NATS_SERVER, value: "${NATS_URL}" }
+              - { name: HF_HOME, value: /shared/hf_cache }
+              - { name: VLLM_LOGGING_LEVEL, value: INFO }
+              - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
+              - { name: VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS, value: "1800" }
+              - { name: VLLM_ENGINE_READY_TIMEOUT_S, value: "2400" }
+              - { name: FLASHINFER_DISABLE_VERSION_CHECK, value: "1" }
+              - { name: FI_PROVIDER, value: efa }
+              - { name: FI_EFA_USE_DEVICE_RDMA, value: "1" }
+              - { name: FI_EFA_FORK_SAFE, value: "1" }
+              - { name: FI_HMEM_CUDA_USE_DMABUF, value: "1" }
+              - { name: NIXL_LIBFABRIC_MAX_RAILS, value: "1" }
+              - { name: NIXL_SKIP_TOPOLOGY_CHECK, value: "1" }
+              - { name: NCCL_NET_PLUGIN, value: ofi }
+              - { name: NCCL_TUNER_PLUGIN, value: ofi }
+              - { name: OFI_NCCL_FORCE_NUM_RAILS, value: "4" }
+              - { name: NCCL_RUNTIME_CONNECT, value: "0" }
+              - { name: NCCL_NVLS_ENABLE, value: "0" }
+              - { name: NCCL_CUMEM_ENABLE, value: "1" }
+              - { name: NCCL_SOCKET_IFNAME, value: "^lo,docker,veth,eni" }
+            resources:
+              requests: { cpu: "${CPU_PER_WORKER}", memory: ${MEM_PER_WORKER}, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
+              limits:   { cpu: "${CPU_PER_WORKER}", memory: ${MEM_PER_WORKER}, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
+            volumeMounts:
+              - { name: dshm,       mountPath: /dev/shm }
+              - { name: gdrdrv,     mountPath: /dev/gdrdrv }
+              - { name: shared,     mountPath: /shared }
 ---
-# Frontend service alias - the piece that makes ../test/*.sh work against this permutation.
-#
-# The EP16 leader runs native `vllm serve` (not dynamo.vllm), so it already exposes the whole
-# OpenAI-compatible API on :8000 (/v1/completions, /v1/chat/completions, /v1/models, /health)
-# and no dynamo.frontend pod exists here - unlike lws / lws-pp / deployment, which each ship a
-# real ${DEPLOYMENT_NAME}-frontend Deployment. But ../test/.env hardcodes
-# SERVICE_NAME=${DOLLAR}{DEPLOYMENT_NAME}-frontend, so every test script (test-aiperf.sh,
-# test-chat-completions.sh, test-completions.sh, models-health.sh, models-list.sh,
-# aiperf-sweep) resolves a name that this template never created: the tests fail on DNS while
-# the deployment itself is perfectly healthy and serving. This alias closes that gap, exactly
-# as agg/lws-ep.yaml-template already does.
-#
-# Why a SECOND Service rather than relying on ${DEPLOYMENT_NAME}-ep above: that name collides
-# with the headless Service the LeaderWorkerSet controller creates for its own pod DNS, and
-# the controller OWNS it (ownerReferences controller=true, clusterIP: None,
-# publishNotReadyAddresses: true) - so it also answers for a leader that is still loading
-# weights. This alias is a plain ClusterIP nothing else owns, and it routes only to a READY
-# leader (readinessProbe = GET /health).
-#
-# Selector note: disagg labels the leader `dynamo-role: leader` where agg uses `dp-role`, and
-# the part-of label must stay ${DOLLAR}{DEPLOYMENT_NAME} (not -ep) because stop.sh sweeps
-# leftovers by `--selector app.kubernetes.io/part-of=${DOLLAR}{DEPLOYMENT_NAME}`.
-apiVersion: v1
-kind: Service
+apiVersion: apps/v1
+kind: Deployment
 metadata:
   name: ${DEPLOYMENT_NAME}-frontend
   namespace: ${NAMESPACE}
@@ -297,11 +618,63 @@ metadata:
     app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
     app.kubernetes.io/component: frontend
 spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
+      app.kubernetes.io/component: frontend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
+        app.kubernetes.io/component: frontend
+    spec:
+      # PREFER the small CPU node, but stay schedulable on an all-GPU cluster: a hard
+      # nodeSelector on an absent instance type pins this pod Pending.
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - { key: node.kubernetes.io/instance-type, operator: In, values: [ "${INSTANCE_TYPE_FRONTEND}" ] }
+      tolerations:
+        - { key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
+        - { key: vpc.amazonaws.com/efa, operator: Exists, effect: NoSchedule }
+      volumes:
+        - { name: shared, persistentVolumeClaim: { claimName: fsx-pvc } }
+      containers:
+        - name: frontend
+          image: ${REGISTRY}${IMAGE}${TAG}
+          imagePullPolicy: Always
+          command: ["/bin/bash", "-c"]
+          args:
+            - |-
+              if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
+              exec python3 -m dynamo.frontend --http-port 8000 --http-host 0.0.0.0
+          env:
+            - { name: DYNAMO_BACKEND, value: vllm }
+            - { name: DYN_NAMESPACE, value: dynamo-disagg }
+            - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }
+            - { name: NATS_SERVER, value: "${NATS_URL}" }
+            - { name: HF_HOME, value: /tmp/hf_cache }
+          ports: [{ containerPort: 8000, name: http }]
+          readinessProbe: { tcpSocket: { port: 8000 }, periodSeconds: 10, failureThreshold: 30 }
+          resources:
+            requests: { cpu: "2", memory: 4Gi }
+            limits:   { cpu: "4", memory: 8Gi }
+          volumeMounts:
+            - { name: shared, mountPath: /shared, readOnly: true }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ${DEPLOYMENT_NAME}-frontend
+  namespace: ${NAMESPACE}
+  labels:
+    app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
+spec:
   selector:
     app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
-    app.kubernetes.io/component: ep-disagg
-    dynamo-role: leader
-  ports:
-    - port: 8000
-      targetPort: 8000
-      name: http
+    app.kubernetes.io/component: frontend
+  ports: [{ port: 8000, targetPort: 8000, name: http }]

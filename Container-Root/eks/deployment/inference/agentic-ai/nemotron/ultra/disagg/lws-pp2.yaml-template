@@ -164,11 +164,16 @@ spec:
                 # Verify the PR #42522 patch is present
                 VLLM_DIR=${DOLLAR}(python3 -c "import vllm, os; print(os.path.dirname(vllm.__file__))")
                 grep -A2 "is_kv_consumer" "${DOLLAR}VLLM_DIR/model_executor/models/config.py" 2>&1 | tee -a "${DOLLAR}LOG"
+                # Resolve in ONE getent per attempt and break only on a NON-EMPTY address. The previous
+                # shape probed with one getent and captured the address with a second one, so a single
+                # empty capture immediately after a successful probe killed the pod ~2s in while printing
+                # a 300s timeout it had never waited for (measured: B200 lws-ep worker, 2026-08-15).
+                # NR==1 also keeps a multi-record answer from producing a two-word LEADER_IP.
                 for i in ${DOLLAR}(seq 1 150); do
-                  if getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" >/dev/null 2>&1; then break; fi
+                  LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk 'NR==1{print ${DOLLAR}1; exit}')
+                  if [ -n "${DOLLAR}LEADER_IP" ]; then break; fi
                   sleep 2
                 done
-                LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk '{print ${DOLLAR}1}')
                 echo "[prefill-leader p5en] LEADER_IP=${DOLLAR}LEADER_IP" | tee -a "${DOLLAR}LOG"
                 if [ -z "${DOLLAR}LEADER_IP" ]; then
                   echo "[prefill-leader] FATAL: ${DOLLAR}LWS_LEADER_ADDRESS did not resolve within 300s; exiting for a clean restart (do NOT proceed with an empty leader address)"
@@ -289,11 +294,16 @@ spec:
                 # 1.3.0-era images (NGC vllm-runtime:1.3.0 and derivatives) install into the system
                 # python and have NO venv. Activate only when present so one manifest serves both.
                 if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
+                # Resolve in ONE getent per attempt and break only on a NON-EMPTY address. The previous
+                # shape probed with one getent and captured the address with a second one, so a single
+                # empty capture immediately after a successful probe killed the pod ~2s in while printing
+                # a 300s timeout it had never waited for (measured: B200 lws-ep worker, 2026-08-15).
+                # NR==1 also keeps a multi-record answer from producing a two-word LEADER_IP.
                 for i in ${DOLLAR}(seq 1 150); do
-                  if getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" >/dev/null 2>&1; then break; fi
+                  LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk 'NR==1{print ${DOLLAR}1; exit}')
+                  if [ -n "${DOLLAR}LEADER_IP" ]; then break; fi
                   sleep 2
                 done
-                LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk '{print ${DOLLAR}1}')
                 if [ -z "${DOLLAR}LEADER_IP" ]; then
                   echo "[prefill-worker] FATAL: ${DOLLAR}LWS_LEADER_ADDRESS did not resolve within 300s; exiting for a clean restart (do NOT proceed with an empty leader address)"
                   exit 1
@@ -411,11 +421,16 @@ spec:
                 python3 -c "import vllm; print(f'vllm {vllm.__version__}')" 2>&1 | tee -a "${DOLLAR}LOG"
                 VLLM_DIR=${DOLLAR}(python3 -c "import vllm, os; print(os.path.dirname(vllm.__file__))")
                 grep -A2 "is_kv_consumer" "${DOLLAR}VLLM_DIR/model_executor/models/config.py" 2>&1 | tee -a "${DOLLAR}LOG"
+                # Resolve in ONE getent per attempt and break only on a NON-EMPTY address. The previous
+                # shape probed with one getent and captured the address with a second one, so a single
+                # empty capture immediately after a successful probe killed the pod ~2s in while printing
+                # a 300s timeout it had never waited for (measured: B200 lws-ep worker, 2026-08-15).
+                # NR==1 also keeps a multi-record answer from producing a two-word LEADER_IP.
                 for i in ${DOLLAR}(seq 1 150); do
-                  if getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" >/dev/null 2>&1; then break; fi
+                  LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk 'NR==1{print ${DOLLAR}1; exit}')
+                  if [ -n "${DOLLAR}LEADER_IP" ]; then break; fi
                   sleep 2
                 done
-                LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk '{print ${DOLLAR}1}')
                 if [ -z "${DOLLAR}LEADER_IP" ]; then
                   echo "[decode-leader] FATAL: ${DOLLAR}LWS_LEADER_ADDRESS did not resolve within 300s; exiting for a clean restart (do NOT proceed with an empty leader address)"
                   exit 1
@@ -443,13 +458,25 @@ spec:
                 # arrives. It shares the pod, never blocks the engine launch, and swallows all
                 # errors so it can never crash the pod. Polls /v1/models (frontend readiness uses
                 # a tcpSocket probe, so /health may be absent) until the worker registers.
-                # NOTE: the Mamba decode kernel (selective_state_update) compiles a DIFFERENT
-                # Triton variant per batch size (it tunes BLOCK_SIZE_M/num_warps keyed on
-                # effective_batch = batch*nheads, see mamba_ssm.py). A single bs=1 request only
-                # compiles the batch=1 bucket, so a concurrent benchmark (e.g. aiperf
-                # --concurrency 10) still pays per-bucket JIT on its opening. We therefore warm
-                # bs=1 first (fastest to first-token) and then fire a CONCURRENT burst so buckets
-                # 1..N compile up front.
+                # NOTE (long-form rationale; the sibling templates point here): CONCURRENCY is a
+                # Triton compile key on the decode path, so a single bs=1 request is not enough.
+                # A concurrent benchmark (e.g. aiperf --concurrency 10) can still select an
+                # uncompiled variant and pay JIT on its opening. We therefore warm bs=1 first
+                # (fastest to first-token) and then fire a CONCURRENT burst so the levels the
+                # benchmark will hit compile up front.
+                #   The axis is _causal_conv1d_update_kernel: seqlen, state_len, NP2_STATELEN and
+                #   every stride_* are tl.constexpr with NO do_not_specialize
+                #   (causal_conv1d.py:748, launch :1069), so a new concurrency level is a new key.
+                #   It is NOT selective_state_update on this device/dtype - an earlier version of
+                #   this comment said that kernel compiles one variant per
+                #   effective_batch = batch*nheads bucket, which is wrong HERE: it is
+                #   @triton.jit(do_not_specialize=["N"]) and the bundled
+                #   NVIDIA_B200/cache_dtype=float32 table (NemotronH forces float32) returns only
+                #   TWO distinct BLOCK_SIZE_M/num_warps pairs across its 21 keys - key 8 -> (4,4),
+                #   every key >=16 -> (4,1) - so effective_batch cannot key a new compile. It can
+                #   on B200/float16 (7 pairs) and on H200 (6 float32 / 8 float16), which is why
+                #   the claim looked right. The remediation is unchanged either way: ladder to the
+                #   sweep's highest concurrency.
                 # Precision gate: the extra JIT-heavy opening is an NVFP4 concern (the NVFP4
                 # checkpoint FP8-quantizes the Mamba mixer + NVFP4-quantizes MoE, pulling in more
                 # kernel variants). BF16 completes this benchmark without the warmup, so skip it
@@ -475,6 +502,7 @@ spec:
                   if ! command -v curl >/dev/null 2>&1; then
                     echo "[warmup] curl not present; skipping cold-start warmup (non-fatal)"
                   else
+                    warmed=0
                     for i in ${DOLLAR}(seq 1 360); do
                       # Engine ready = leader /health is 200 AND the frontend lists this model
                       # (the model only appears in /v1/models once the backend has registered).
@@ -486,8 +514,8 @@ spec:
                           -d "{\"model\":\"${MODEL_NAME}\",\"prompt\":\"warmup\",\"max_tokens\":4,\"temperature\":0}" \
                           && echo "[warmup] batch=1 warm; priming concurrent batch buckets 1..${DOLLAR}WARMUP_CONCURRENCY" \
                           || echo "[warmup] batch=1 warmup returned non-zero (non-fatal)"
-                        # Concurrent burst: compile the batch>1 kernel buckets a concurrent
-                        # benchmark will hit, so its opening doesn't pay per-bucket JIT.
+                        # Concurrent burst: compile the decode-kernel variants a concurrent
+                        # benchmark will hit, so its opening doesn't pay that JIT.
                         for j in ${DOLLAR}(seq 1 "${DOLLAR}WARMUP_CONCURRENCY"); do
                           curl -s -o /dev/null --max-time 900 "${DOLLAR}FE/v1/completions" \
                             -H 'Content-Type: application/json' \
@@ -495,10 +523,15 @@ spec:
                         done
                         wait
                         echo "[warmup] concurrent batch buckets warm; benchmark opening will be fast"
+                        warmed=1
                         break
                       fi
                       sleep 5
                     done
+                    # Fail LOUD if the gate never opened (still non-fatal to the pod): falling out of
+                    # this loop silently is indistinguishable from "warmed up fine", and the next
+                    # benchmark would quietly pay the JIT tax again.
+                    [ "${DOLLAR}warmed" = 1 ] || echo "[warmup] gave up after 30min waiting for ${DOLLAR}LH 200 + ${MODEL_NAME} in ${DOLLAR}FE/v1/models; the FIRST benchmark requests will pay the Mamba JIT (non-fatal)"
                   fi
                 ) &
                 exec python3 -m dynamo.vllm \
@@ -525,6 +558,11 @@ spec:
               # FIX: start the dyn-system health server the startupProbe (httpGet /health:9092) gates on
               - { name: DYN_SYSTEM_ENABLED, value: "true" }
               - { name: DYN_SYSTEM_PORT, value: "9092" }
+              # The warmup subshell above reads these INSIDE the container, so they have to be
+              # passed through here - without these two lines the knobs in .env are inert and the
+              # ladder is always 1..10 no matter what you set in your shell.
+              - { name: WARMUP_ENABLED, value: "${WARMUP_ENABLED}" }
+              - { name: WARMUP_CONCURRENCY, value: "${WARMUP_CONCURRENCY}" }
               - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
               # Raise the execute_model RPC deadline (default 300s) so a JIT-heavy first
               # concurrent decode step (per-batch-size Mamba kernel Triton compile under an
@@ -599,11 +637,16 @@ spec:
                 # 1.3.0-era images (NGC vllm-runtime:1.3.0 and derivatives) install into the system
                 # python and have NO venv. Activate only when present so one manifest serves both.
                 if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
+                # Resolve in ONE getent per attempt and break only on a NON-EMPTY address. The previous
+                # shape probed with one getent and captured the address with a second one, so a single
+                # empty capture immediately after a successful probe killed the pod ~2s in while printing
+                # a 300s timeout it had never waited for (measured: B200 lws-ep worker, 2026-08-15).
+                # NR==1 also keeps a multi-record answer from producing a two-word LEADER_IP.
                 for i in ${DOLLAR}(seq 1 150); do
-                  if getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" >/dev/null 2>&1; then break; fi
+                  LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk 'NR==1{print ${DOLLAR}1; exit}')
+                  if [ -n "${DOLLAR}LEADER_IP" ]; then break; fi
                   sleep 2
                 done
-                LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk '{print ${DOLLAR}1}')
                 if [ -z "${DOLLAR}LEADER_IP" ]; then
                   echo "[decode-worker] FATAL: ${DOLLAR}LWS_LEADER_ADDRESS did not resolve within 300s; exiting for a clean restart (do NOT proceed with an empty leader address)"
                   exit 1

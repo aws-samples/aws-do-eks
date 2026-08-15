@@ -6,17 +6,8 @@ if [ "${MANIFEST_TYPE}" == "" ]; then
 	export MANIFEST_TYPE=deployment
 fi
 
-export CMD=""
-
-case "${MANIFEST_TYPE}" in
-        deployment|lws|lws-pp|lws-ep|dgd)
-                cat ${MANIFEST_TYPE}.yaml-template | envsubst > ${MANIFEST_TYPE}.yaml
-                export CMD="kubectl apply -f ./${MANIFEST_TYPE}.yaml"
-                ;;
-        *)
-                echo "Unknown MANIFEST_TYPE ${MANIFEST_TYPE}"
-                ;;
-esac
+cat ${MANIFEST_TYPE}.yaml-template | envsubst > ${MANIFEST_TYPE}.yaml
+export CMD="kubectl apply -f ./${MANIFEST_TYPE}.yaml"
 
 if [ ! "$VERBOSE" == "false" ]; then echo -e "\n${CMD}\n"; fi
 eval "$CMD"

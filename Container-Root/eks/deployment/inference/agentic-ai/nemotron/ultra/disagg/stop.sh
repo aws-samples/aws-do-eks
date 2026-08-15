@@ -7,16 +7,8 @@ if [ "${MANIFEST_TYPE}" == "" ]; then
 fi
 
 # 1. Delete the declared resources for the selected manifest type.
-case "${MANIFEST_TYPE}" in
-	deployment|lws|lws-pp|lws-ep|dgd)
-		cat ${MANIFEST_TYPE}.yaml-template | envsubst > ${MANIFEST_TYPE}.yaml
-		export CMD="kubectl delete -f ./${MANIFEST_TYPE}.yaml --ignore-not-found"
-		;;
-	*)
-		echo "Unknown MANIFEST_TYPE ${MANIFEST_TYPE}"
-		export CMD=""
-		;;
-esac
+cat ${MANIFEST_TYPE}.yaml-template | envsubst > ${MANIFEST_TYPE}.yaml
+export CMD="kubectl delete -f ./${MANIFEST_TYPE}.yaml --ignore-not-found"
 
 if [ ! "$VERBOSE" == "false" ]; then echo -e "\n${CMD}\n"; fi
 eval "$CMD"
