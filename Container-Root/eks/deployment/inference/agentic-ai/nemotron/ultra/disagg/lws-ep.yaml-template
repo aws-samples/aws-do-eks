@@ -32,7 +32,14 @@ spec:
   replicas: 1
   startupPolicy: LeaderCreated
   leaderWorkerTemplate:
-    restartPolicy: None
+    # RecreateGroupOnPodRestart, matching agg/lws-ep: the DP ranks share one TCPStore and one DP
+    # coordinator hosted by the leader, so a leader restart invalidates every rank. With None,
+    # a leader container restart leaves the DP1 worker alive on the dead store - measured on
+    # B200 2026-08-15: worker pid 1 still from the previous epoch 31 minutes later, logging
+    # "sendBytes failed ... remote=[...-ep-0...]:50413: Broken pipe" - and the new leader can
+    # never assemble data_parallel_size=2, so it re-times-out every ~25 min forever.
+    # Trade-off: recreating the group discards the crashed pod's logs (see #68).
+    restartPolicy: RecreateGroupOnPodRestart
     size: ${EP_DP_SIZE}
     leaderTemplate:
       metadata:
