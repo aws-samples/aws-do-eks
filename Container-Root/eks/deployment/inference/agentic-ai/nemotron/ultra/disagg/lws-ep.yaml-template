@@ -409,6 +409,7 @@ spec:
                   if ! command -v curl >/dev/null 2>&1; then
                     echo "[warmup] curl not present; skipping cold-start warmup (non-fatal)"
                   else
+                    warmed=0
                     for i in ${DOLLAR}(seq 1 360); do
                       if curl -sf -o /dev/null --max-time 5 "${DOLLAR}LH" 2>/dev/null \
                          && curl -sf --max-time 5 "${DOLLAR}FE/v1/models" 2>/dev/null | grep -q "${MODEL_NAME}"; then
@@ -425,10 +426,15 @@ spec:
                         done
                         wait
                         echo "[warmup] concurrent batch buckets warm; benchmark opening will be fast"
+                        warmed=1
                         break
                       fi
                       sleep 5
                     done
+                    # Fail LOUD if the gate never opened (still non-fatal to the pod): falling out of
+                    # this loop silently is indistinguishable from "warmed up fine", and the next
+                    # benchmark would quietly pay the JIT tax again.
+                    [ "${DOLLAR}warmed" = 1 ] || echo "[warmup] gave up after 30min waiting for ${DOLLAR}LH 200 + ${MODEL_NAME} in ${DOLLAR}FE/v1/models; the FIRST benchmark requests will pay the Mamba JIT (non-fatal)"
                   fi
                 ) &
                 exec python3 -m dynamo.vllm \

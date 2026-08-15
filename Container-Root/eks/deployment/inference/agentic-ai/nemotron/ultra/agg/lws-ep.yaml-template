@@ -157,6 +157,7 @@ spec:
                 (
                   LH="http://localhost:8000"
                   WARMUP_CONCURRENCY=${DOLLAR}{WARMUP_CONCURRENCY:-10}
+                  warmed=0
                   for i in ${DOLLAR}(seq 1 720); do
                     if curl -sf --max-time 5 "${DOLLAR}LH/v1/models" 2>/dev/null | grep -q "${MODEL_NAME}"; then
                       echo "[warmup] engine ready; priming batch=1 Mamba decode kernel (one-time JIT)"
@@ -171,10 +172,15 @@ spec:
                       done
                       wait
                       echo "[warmup] concurrent buckets warm"
+                      warmed=1
                       break
                     fi
                     sleep 5
                   done
+                  # Fail LOUD if the gate never opened (still non-fatal to the pod): falling out of
+                  # this loop silently is indistinguishable from "warmed up fine", and the next
+                  # benchmark would quietly pay the JIT tax again.
+                  [ "${DOLLAR}warmed" = 1 ] || echo "[warmup] gave up after 60min waiting for ${DOLLAR}LH 200 + ${MODEL_NAME} in ${DOLLAR}FE/v1/models; the FIRST benchmark requests will pay the Mamba JIT (non-fatal)"
                 ) &
                 fi
                 # DP rank 0 = DP coordinator + API server; rank 1 dials in here. TP=8 in-node.

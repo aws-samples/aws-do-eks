@@ -110,7 +110,13 @@ spec:
               # hence bs=1 first then a concurrent burst of WARMUP_CONCURRENCY. NVFP4-only by default
               # (WARMUP_ENABLED=auto keys off the served model's precision suffix); see .env for the
               # knobs. Shares the pod, never blocks the engine launch, swallows every error so it
-              # cannot crash the pod (note `|| true` on wait - this script runs under `set -e`).
+              # cannot crash the pod: the ladder's `wait` takes no pid argument, and argless `wait`
+              # returns 0 whatever the background curls did, so `set -e` cannot kill this subshell.
+              # ALSO measured UNWARMED on a live NVFP4 p6-b200 run (2026-08-15): first request 119.5s,
+              # an 18-minute JIT window, and an AIPerf report with TTFT max 340,349ms / p90 128,579ms
+              # against a p50 of 759ms - the aggregate columns are unusable while steady state is fine
+              # (0.148 req/s), and ITL p50 reads 146.77ms vs ~124-129ms warm. So "ignore the TTFT
+              # column" is not a workaround; the run has to START warm.
               (
                 FE="http://${DEPLOYMENT_NAME}-frontend.${NAMESPACE}.svc.cluster.local:8000"
                 # Gate on THIS pod's dyn-system /health, the signal the startupProbe uses: the
@@ -129,6 +135,7 @@ spec:
                 if ! command -v curl >/dev/null 2>&1; then
                   echo "[warmup] curl not present; skipping cold-start warmup (non-fatal)"
                 else
+                  warmed=0
                   for i in ${DOLLAR}(seq 1 360); do
                     if curl -sf -o /dev/null --max-time 5 "${DOLLAR}LH" 2>/dev/null \
                        && curl -sf --max-time 5 "${DOLLAR}FE/v1/models" 2>/dev/null | grep -q "${MODEL_NAME}"; then
@@ -143,12 +150,17 @@ spec:
                           -H 'Content-Type: application/json' \
                           -d "{\"model\":\"${MODEL_NAME}\",\"prompt\":\"warmup\",\"max_tokens\":4,\"temperature\":0}" &
                       done
-                      wait || true
+                      wait
                       echo "[warmup] concurrent batch buckets warm; benchmark opening will be fast"
+                      warmed=1
                       break
                     fi
                     sleep 5
                   done
+                  # Fail LOUD if the gate never opened (still non-fatal to the pod): falling out of
+                  # this loop silently is indistinguishable from "warmed up fine", and the next
+                  # benchmark would quietly pay the JIT tax again.
+                  [ "${DOLLAR}warmed" = 1 ] || echo "[warmup] gave up after 30min waiting for ${DOLLAR}LH 200 + ${MODEL_NAME} in ${DOLLAR}FE/v1/models; the FIRST benchmark requests will pay the Mamba JIT (non-fatal)"
                 fi
               ) &
               exec python3 -m dynamo.vllm \

@@ -189,6 +189,15 @@ spec:
               # blocks the engine launch, swallows every error so it cannot crash the pod.
               # The frontend Service name is the operator-generated ${DEPLOYMENT_NAME}-frontend,
               # the same name ../test/.env resolves for this manifest type.
+              # ALSO measured UNWARMED on a live NVFP4 p6-b200 run (2026-08-15): first request 119.5s,
+              # an 18-minute JIT window, and an AIPerf report with TTFT max 340,349ms / p90 128,579ms
+              # against a p50 of 759ms - the aggregate columns are unusable while steady state is fine
+              # (0.148 req/s), and ITL p50 reads 146.77ms vs ~124-129ms warm. So "ignore the TTFT
+              # column" is not a workaround; the run has to START warm.
+              # DISAGG-SPECIFIC, from that same run: while one engine compiles the other blocks, and it
+              # lands on the KV handoff - 15x "No available shared memory broadcast block found in 60
+              # seconds" plus KV-transfer P90 spikes of 62-63s that stopped 9s after the last compile,
+              # then held 125-133ms (Avg post time never moved, 3.05-3.56ms: the fabric was healthy).
               (
                 FE="http://${DEPLOYMENT_NAME}-frontend.${NAMESPACE}.svc.cluster.local:8000"
                 # Gate on THIS pod's dyn-system /health: the frontend answers /v1/models 200 long
@@ -207,6 +216,7 @@ spec:
                 if ! command -v curl >/dev/null 2>&1; then
                   echo "[warmup] curl not present; skipping cold-start warmup (non-fatal)"
                 else
+                  warmed=0
                   for i in ${DOLLAR}(seq 1 360); do
                     if curl -sf -o /dev/null --max-time 5 "${DOLLAR}LH" 2>/dev/null \
                        && curl -sf --max-time 5 "${DOLLAR}FE/v1/models" 2>/dev/null | grep -q "${MODEL_NAME}"; then
@@ -223,10 +233,15 @@ spec:
                       done
                       wait
                       echo "[warmup] concurrent batch buckets warm; benchmark opening will be fast"
+                      warmed=1
                       break
                     fi
                     sleep 5
                   done
+                  # Fail LOUD if the gate never opened (still non-fatal to the pod): falling out of
+                  # this loop silently is indistinguishable from "warmed up fine", and the next
+                  # benchmark would quietly pay the JIT tax again.
+                  [ "${DOLLAR}warmed" = 1 ] || echo "[warmup] gave up after 30min waiting for ${DOLLAR}LH 200 + ${MODEL_NAME} in ${DOLLAR}FE/v1/models; the FIRST benchmark requests will pay the Mamba JIT (non-fatal)"
                 fi
               ) &
               exec python3 -m dynamo.vllm \
