@@ -9,10 +9,18 @@
 # MoE expert layers across DP ranks (all-to-all per token), disagg splits prefill from decode
 # (one KV transfer per request). You can run both, and each role gets its own EP group.
 #
-# The template that used to sit here (lws-ep.yaml-template) was NOT this: it renders one
-# `vllm serve` with no split and no --kv-transfer-config, i.e. AGGREGATED, and now lives only
-# in ../agg. Grep this file instead: --disaggregation-mode on both roles, NixlConnector on
-# both roles, --enable-expert-parallel on both roles.
+# SAME NAME AS ../agg/lws-ep.yaml-template, DIFFERENT MODE — the FOLDER is the discriminator.
+# `lws-ep` means "wide expert parallelism" in both folders; agg/ runs it as ONE engine with no
+# split, disagg/ (here) runs it as prefill + decode with a real KV transfer between them. Grep
+# this file for the difference: --disaggregation-mode on both roles, NixlConnector on both roles,
+# --kv-transfer-config on both roles. ../agg/lws-ep has none of those; it is one `vllm serve`.
+#
+# WARNING for anyone carrying an older .env: the file that sat at THIS path until 2026-08-15 was
+# a copy of the AGGREGATED template (one `vllm serve`, no split) — a mislabel, which is why it
+# was removed to ../agg only. It was briefly an error to select `lws-ep` here. From this commit
+# `MANIFEST_TYPE=lws-ep` in disagg/ is valid again and deploys a genuine P/D split at
+# 2 * EP_DP_SIZE nodes (default 4), not the 2-node aggregated stack an old .env may have meant.
+# This file was named lws-ep-pd for one commit; that name now only prints a pointer in run.sh.
 #
 # Topology (2 * EP_DP_SIZE GPU nodes + 1 preferred CPU node; default EP_DP_SIZE=2 -> 4 GPU nodes):
 #   - prefill: 1 LWS group of size ${EP_DP_SIZE}. Leader = DP rank 0 AND the DP coordinator;

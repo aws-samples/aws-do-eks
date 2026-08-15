@@ -8,7 +8,7 @@ fi
 
 # 1. Delete the declared resources for the selected manifest type.
 case "${MANIFEST_TYPE}" in
-	deployment|lws-2pp|lws-pp2|lws-ep-pd|dgd)
+	deployment|lws-2pp|lws-pp2|lws-ep|dgd)
 		cat ${MANIFEST_TYPE}.yaml-template | envsubst > ${MANIFEST_TYPE}.yaml
 		export CMD="kubectl delete -f ./${MANIFEST_TYPE}.yaml --ignore-not-found"
 		;;
@@ -19,11 +19,11 @@ case "${MANIFEST_TYPE}" in
 		echo "MANIFEST_TYPE=${MANIFEST_TYPE} was removed from disagg/ (see lws-2pp / lws-pp2). Sweeping by label instead."
 		export CMD=""
 		;;
-	lws-ep)
-		# Removed from disagg/ (aggregated topology; it lives in ../agg now). Resources from
-		# an earlier lws-ep run in THIS namespace are still cleaned: step 2 below sweeps
-		# everything labelled app.kubernetes.io/part-of=${DEPLOYMENT_NAME} regardless of type.
-		echo "MANIFEST_TYPE=lws-ep is not valid in disagg/ (aggregated; see ../agg). Sweeping by label instead."
+	lws-ep-pd)
+		# Renamed 2026-08-15 to lws-ep. Resources from an earlier lws-ep-pd run in THIS
+		# namespace are still cleaned: step 2 below sweeps everything labelled
+		# app.kubernetes.io/part-of=${DEPLOYMENT_NAME} regardless of manifest type.
+		echo "MANIFEST_TYPE=lws-ep-pd was renamed to lws-ep in disagg/. Sweeping by label instead."
 		export CMD=""
 		;;
 	*)

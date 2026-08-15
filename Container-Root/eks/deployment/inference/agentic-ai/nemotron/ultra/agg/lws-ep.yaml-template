@@ -22,19 +22,22 @@
 #   MEASURED aggregated DP2/TP8/EP16 serving of 550B over EFA (NET/OFI efa both
 #   nodes, socket_fallback=0, coherent completions).
 #
-# THIS IS THE ONLY lws-ep TEMPLATE. A second copy used to live in ../disagg/ and was
-# removed (2026-08-15): it rendered this same aggregated topology, so the folder name made
-# its results look disaggregated when they are not. Grep either copy and you find no
-# --kv-transfer-config, no NixlConnector, no --disaggregation-mode; a running pod logs zero
-# `NIXL` / `KV Transfer metrics` lines where the ../disagg siblings log both.
-#   -> Report aiperf/benchmark numbers from this template as EP16 AGGREGATED. Comparing them
-#      against a P/D run is only fair at EQUAL GPU COUNT (this template = EP_DP_SIZE x
-#      GPU_PER_WORKER GPUs) and on ITL / p50 TTFT.
+# THERE IS A SECOND lws-ep TEMPLATE, IN ../disagg/, AND IT IS A DIFFERENT TOPOLOGY. Same
+# MANIFEST_TYPE name on purpose (parity); the FOLDER is the discriminator. This one is
+# AGGREGATED — grep it: no --kv-transfer-config, no NixlConnector, no --disaggregation-mode,
+# and a running pod logs zero `NIXL` / `KV Transfer metrics` lines. ../disagg/lws-ep has all
+# three on BOTH roles and moves KV prefill->decode over EFA per request.
+# (Until 2026-08-15 the file at that path was a COPY of this aggregated one — a mislabel that
+# got an aggregated result reported as "disagg" once. It was replaced by the real P/D+EP shape.)
+#   -> Report aiperf/benchmark numbers from this template as EP16 AGGREGATED, and numbers from
+#      ../disagg/lws-ep as EP16 DISAGGREGATED. Comparing the two is only fair at EQUAL GPU
+#      COUNT (this template = EP_DP_SIZE x GPU_PER_WORKER GPUs, that one = 2x that) and on
+#      ITL / p50 TTFT.
 #   -> EFA is still exercised hard here, just not by NIXL: the expert all-to-all is NCCL over
 #      EFA on every token (see the all2all note below).
-# For P/D disaggregation use ../disagg: deployment | lws-2pp | lws-pp2 | dgd — all of those
-# carry --kv-transfer-config. (../disagg/lws.yaml-template is gone: it was byte-identical to
-# ../disagg/lws-pp2.yaml-template, which is the symmetrical-PP2 name.)
+# For P/D disaggregation use ../disagg: deployment | lws-2pp | lws-pp2 | lws-ep | dgd — all of
+# those carry --kv-transfer-config. (../disagg/lws.yaml-template is gone: it was byte-identical
+# to ../disagg/lws-pp2.yaml-template, which is the symmetrical-PP2 name.)
 #
 # all2all note (why per-token cost differs from the disagg siblings): vLLM's default EP
 # backend here is allgather/reduce-scatter — the pod logs it as
