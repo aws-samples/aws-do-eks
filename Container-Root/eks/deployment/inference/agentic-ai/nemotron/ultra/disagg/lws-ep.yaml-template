@@ -97,7 +97,14 @@ spec:
               - { name: HF_HUB_OFFLINE, value: "1" }
               - { name: TRANSFORMERS_OFFLINE, value: "1" }
               - { name: VLLM_LOGGING_LEVEL, value: INFO }
-              - { name: VLLM_ENGINE_READY_TIMEOUT_S, value: "1200" }
+              # 2400 not 1200: with data_parallel_size > 1 vLLM builds a DPLBAsyncMPClient and the
+              # API-server process waits for the engine cores INSIDE this budget, so the whole
+              # weight load counts against it. Measured on B200 (2026-08-15): 51023-tensor
+              # runai_streamer load 21:06 + 70.8s engine init, engine ready 07:18:18Z against a
+              # 1200s deadline that expired 07:18:22Z - it missed by 4 seconds and the pod died
+              # with "TimeoutError: Timed out waiting for engine core processes to start".
+              # agg/lws-ep.yaml-template already uses 2400 for this checkpoint.
+              - { name: VLLM_ENGINE_READY_TIMEOUT_S, value: "2400" }
               - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
               - { name: FLASHINFER_DISABLE_VERSION_CHECK, value: "1" }
               - { name: FI_PROVIDER, value: efa }
@@ -206,7 +213,14 @@ spec:
               - { name: HF_HUB_OFFLINE, value: "1" }
               - { name: TRANSFORMERS_OFFLINE, value: "1" }
               - { name: VLLM_LOGGING_LEVEL, value: INFO }
-              - { name: VLLM_ENGINE_READY_TIMEOUT_S, value: "1200" }
+              # 2400 not 1200: with data_parallel_size > 1 vLLM builds a DPLBAsyncMPClient and the
+              # API-server process waits for the engine cores INSIDE this budget, so the whole
+              # weight load counts against it. Measured on B200 (2026-08-15): 51023-tensor
+              # runai_streamer load 21:06 + 70.8s engine init, engine ready 07:18:18Z against a
+              # 1200s deadline that expired 07:18:22Z - it missed by 4 seconds and the pod died
+              # with "TimeoutError: Timed out waiting for engine core processes to start".
+              # agg/lws-ep.yaml-template already uses 2400 for this checkpoint.
+              - { name: VLLM_ENGINE_READY_TIMEOUT_S, value: "2400" }
               - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
               - { name: FLASHINFER_DISABLE_VERSION_CHECK, value: "1" }
               - { name: FI_PROVIDER, value: efa }
