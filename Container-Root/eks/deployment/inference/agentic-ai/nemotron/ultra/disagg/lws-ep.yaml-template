@@ -20,7 +20,8 @@
 # was removed to ../agg only. It was briefly an error to select `lws-ep` here. From this commit
 # `MANIFEST_TYPE=lws-ep` in disagg/ is valid again and deploys a genuine P/D split at
 # 2 * EP_DP_SIZE nodes (default 4), not the 2-node aggregated stack an old .env may have meant.
-# This file was named lws-ep-pd for one commit; that name now only prints a pointer in run.sh.
+# This file was named lws-ep-pd for one commit. run.sh no longer special-cases that name (it
+# renders ${DOLLAR}MANIFEST_TYPE.yaml-template directly); the pointer lives in .env and the README table.
 #
 # Topology (2 * EP_DP_SIZE GPU nodes + 1 preferred CPU node; default EP_DP_SIZE=2 -> 4 GPU nodes):
 #   - prefill: 1 LWS group of size ${EP_DP_SIZE}. Leader = DP rank 0 AND the DP coordinator;
