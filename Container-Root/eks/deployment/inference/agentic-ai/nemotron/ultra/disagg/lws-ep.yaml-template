@@ -52,6 +52,13 @@
 # part-of labels, the ../test gate). Run ../test/models-health.sh + a single request and check
 # the decode node's rdma_read_bytes delta before you attach benchmark numbers to it.
 #
+# Gloo (why every serve block pins GLOO_SOCKET_IFNAME): data_parallel_size > 1 + async
+# scheduling makes vLLM run the per-step DP-padding all-reduce on the Gloo CPU group
+# (dp_utils.py "Using CPU all reduce to synchronize DP padding between ranks"), so a cross-node
+# TCP barrier executes once per decode step. Gloo ignores NCCL_SOCKET_IFNAME; unpinned under
+# hostNetwork: true it can bind loopback. Each block derives the default-route iface and FATALs
+# if the bound address is empty or 127.*, the same guard lws-pp2 carries.
+#
 # Portability: podAntiAffinity matches GPU roles only (a bare part-of match also selects the
 # frontend pod and required anti-affinity is enforced against EXISTING pods, which pins the
 # frontend Pending on an all-GPU cluster); cpu/memory come from CPU_PER_WORKER /
@@ -181,6 +188,20 @@ spec:
                 fi
                 python3 -c "import vllm; print(f'vllm {vllm.__version__}')"
                 # DP rank 0 also hosts the DP coordinator + TCPStore on --data-parallel-address.
+                # ---- Gloo bind interface: REQUIRED whenever hostNetwork: true ----
+                # This is the only shape in the tree with data_parallel_size > 1, and vLLM routes the
+                # PER-STEP DP-padding all-reduce onto the Gloo CPU group whenever async scheduling is on
+                # ("Disabling NCCL for DP synchronization when using async scheduling" -> dp_utils.py
+                # "Using CPU all reduce to synchronize DP padding between ranks"). That barrier therefore
+                # runs cross-node on TCP once per decode step. NCCL_SOCKET_IFNAME does NOT apply to it -
+                # Gloo reads GLOO_SOCKET_IFNAME only - so unpinned it binds whatever Gloo guesses, which
+                # under hostNetwork: true is the loopback failure mode already fixed in lws-pp2 (#69/#77).
+                export GLOO_SOCKET_IFNAME=${DOLLAR}{GLOO_SOCKET_IFNAME:-${DOLLAR}(ip -o -4 route show default | awk '{print ${DOLLAR}5; exit}')}
+                GLOO_BIND_IP=${DOLLAR}(ip -o -4 addr show dev "${DOLLAR}GLOO_SOCKET_IFNAME" 2>/dev/null | awk '{print ${DOLLAR}4; exit}' | cut -d/ -f1)
+                say "[prefill-dp0] GLOO_SOCKET_IFNAME=${DOLLAR}GLOO_SOCKET_IFNAME bind=${DOLLAR}GLOO_BIND_IP"
+                case "${DOLLAR}{GLOO_BIND_IP:-}" in
+                  ""|127.*) say "[prefill-dp0] FATAL: GLOO_SOCKET_IFNAME=${DOLLAR}GLOO_SOCKET_IFNAME has no routable IPv4 (got '${DOLLAR}GLOO_BIND_IP'); the cross-node DP-padding all-reduce would bind loopback. Exiting for a clean restart."; exit 1 ;;
+                esac
                 exec python3 -m dynamo.vllm \
                   --model ${MODEL_PATH} \
                   --served-model-name ${MODEL_NAME} \
@@ -337,6 +358,13 @@ spec:
                 # (the leader is index 0 = DP rank 0), so it IS the DP start rank. Every engine
                 # arg must match the leader's - each DP rank builds its own EngineCore, so the
                 # kv-transfer-config and --disaggregation-mode belong here too.
+                # ---- Gloo bind interface: REQUIRED whenever hostNetwork: true (see header note "Gloo") ----
+                export GLOO_SOCKET_IFNAME=${DOLLAR}{GLOO_SOCKET_IFNAME:-${DOLLAR}(ip -o -4 route show default | awk '{print ${DOLLAR}5; exit}')}
+                GLOO_BIND_IP=${DOLLAR}(ip -o -4 addr show dev "${DOLLAR}GLOO_SOCKET_IFNAME" 2>/dev/null | awk '{print ${DOLLAR}4; exit}' | cut -d/ -f1)
+                echo "[prefill-dp${DOLLAR}{LWS_WORKER_INDEX}] GLOO_SOCKET_IFNAME=${DOLLAR}GLOO_SOCKET_IFNAME bind=${DOLLAR}GLOO_BIND_IP"
+                case "${DOLLAR}{GLOO_BIND_IP:-}" in
+                  ""|127.*) echo "[prefill-dp${DOLLAR}{LWS_WORKER_INDEX}] FATAL: GLOO_SOCKET_IFNAME=${DOLLAR}GLOO_SOCKET_IFNAME has no routable IPv4 (got '${DOLLAR}GLOO_BIND_IP'); the cross-node DP-padding all-reduce would bind loopback. Exiting for a clean restart."; exit 1 ;;
+                esac
                 exec python3 -m dynamo.vllm \
                   --model ${MODEL_PATH} \
                   --served-model-name ${MODEL_NAME} \
@@ -574,6 +602,13 @@ spec:
                     [ "${DOLLAR}warmed" = 1 ] || echo "[warmup] gave up after 30min waiting for ${DOLLAR}LH 200 + ${MODEL_NAME} in ${DOLLAR}FE/v1/models; the FIRST benchmark requests will pay the Mamba JIT (non-fatal)"
                   fi
                 ) &
+                # ---- Gloo bind interface: REQUIRED whenever hostNetwork: true (see header note "Gloo") ----
+                export GLOO_SOCKET_IFNAME=${DOLLAR}{GLOO_SOCKET_IFNAME:-${DOLLAR}(ip -o -4 route show default | awk '{print ${DOLLAR}5; exit}')}
+                GLOO_BIND_IP=${DOLLAR}(ip -o -4 addr show dev "${DOLLAR}GLOO_SOCKET_IFNAME" 2>/dev/null | awk '{print ${DOLLAR}4; exit}' | cut -d/ -f1)
+                say "[decode-dp0] GLOO_SOCKET_IFNAME=${DOLLAR}GLOO_SOCKET_IFNAME bind=${DOLLAR}GLOO_BIND_IP"
+                case "${DOLLAR}{GLOO_BIND_IP:-}" in
+                  ""|127.*) say "[decode-dp0] FATAL: GLOO_SOCKET_IFNAME=${DOLLAR}GLOO_SOCKET_IFNAME has no routable IPv4 (got '${DOLLAR}GLOO_BIND_IP'); the cross-node DP-padding all-reduce would bind loopback. Exiting for a clean restart."; exit 1 ;;
+                esac
                 # --gpu-memory-utilization must stay at 0.92 on the EP decode blocks. It is NOT
                 # interchangeable with the 0.98 that the single-node decode groups in disagg/lws-2pp and
                 # disagg/lws-pp2 use. vLLM 0.23's gpu_worker.init_device -> worker/utils.request_memory
@@ -746,6 +781,13 @@ spec:
                   if (echo > /dev/tcp/${DOLLAR}LEADER_IP/29551) 2>/dev/null; then break; fi
                   sleep 5
                 done
+                # ---- Gloo bind interface: REQUIRED whenever hostNetwork: true (see header note "Gloo") ----
+                export GLOO_SOCKET_IFNAME=${DOLLAR}{GLOO_SOCKET_IFNAME:-${DOLLAR}(ip -o -4 route show default | awk '{print ${DOLLAR}5; exit}')}
+                GLOO_BIND_IP=${DOLLAR}(ip -o -4 addr show dev "${DOLLAR}GLOO_SOCKET_IFNAME" 2>/dev/null | awk '{print ${DOLLAR}4; exit}' | cut -d/ -f1)
+                echo "[decode-dp${DOLLAR}{LWS_WORKER_INDEX}] GLOO_SOCKET_IFNAME=${DOLLAR}GLOO_SOCKET_IFNAME bind=${DOLLAR}GLOO_BIND_IP"
+                case "${DOLLAR}{GLOO_BIND_IP:-}" in
+                  ""|127.*) echo "[decode-dp${DOLLAR}{LWS_WORKER_INDEX}] FATAL: GLOO_SOCKET_IFNAME=${DOLLAR}GLOO_SOCKET_IFNAME has no routable IPv4 (got '${DOLLAR}GLOO_BIND_IP'); the cross-node DP-padding all-reduce would bind loopback. Exiting for a clean restart."; exit 1 ;;
+                esac
                 # --gpu-memory-utilization must stay at 0.92 on the EP decode blocks. It is NOT
                 # interchangeable with the 0.98 that the single-node decode groups in disagg/lws-2pp and
                 # disagg/lws-pp2 use. vLLM 0.23's gpu_worker.init_device -> worker/utils.request_memory
