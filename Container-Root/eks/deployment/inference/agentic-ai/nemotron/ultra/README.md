@@ -124,3 +124,9 @@ Then run any or all of the following tests:
 * `./test-aiperf.sh` - runs aiperf against the model endpoint, reports benchmark results
 * `./aiperf-sweep-run.sh` - runs a sweep of aiperf tests with concurrency 1,4,8,16,32,64 to explore scalability
 
+`test-aiperf.sh` writes its artifacts to
+`${MODEL_PATH}/aiperf/${DEPLOYMENT_TYPE}/${MANIFEST_TYPE}/${AIPERF_RUN_ID}` and prints the path
+before it starts. `AIPERF_RUN_ID` defaults to a UTC timestamp, so comparing topologies or rerunning
+one of them keeps every report -- set `MANIFEST_TYPE` in `test/.env` to match the deployed topology
+so the folder is labelled correctly, and set `AIPERF_RUN_ID` to name a run (`AIPERF_RUN_ID=cold`).
+

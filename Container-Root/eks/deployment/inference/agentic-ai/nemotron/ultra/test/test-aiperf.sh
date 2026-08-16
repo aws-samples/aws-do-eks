@@ -34,10 +34,23 @@ if [ "${_WARMUP_COUNT}" -gt 0 ] 2>/dev/null; then
   echo "NVFP4 model detected: adding ${_WARMUP_ARG} (excluded from the report)"
 fi
 
+# Artifact directory. ${MODEL_PATH}/aiperf/${DEPLOYMENT_TYPE} alone is not unique per run:
+# every topology in a folder shares one DEPLOYMENT_TYPE, so a lws-2pp run and the lws-pp2 run
+# after it land in the same directory and aiperf truncates profile_export.jsonl on start. The
+# per-request records of the earlier run are gone before its summary is read, and a repeat of
+# the SAME topology (a cold run then a warm rerun) overwrites the summary too. Observed on
+# p6-b200 2026-08-16: a completed disagg/lws-2pp report sat next to a zero-length
+# profile_export.jsonl written by the disagg/lws-pp2 run started 97 minutes later.
+# Scoping by MANIFEST_TYPE and run id keeps every run readable and comparable.
+# AIPERF_RUN_ID can be set to any label (a ticket id, "cold", "warm") to name a run.
+export AIPERF_RUN_ID="${AIPERF_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
+export ARTIFACT_DIR="${MODEL_PATH}/aiperf/${DEPLOYMENT_TYPE}/${MANIFEST_TYPE}/${AIPERF_RUN_ID}"
+echo "Artifacts: ${ARTIFACT_DIR}"
+
 # Execute the aiperf command interactively
 echo "Executing aiperf command in do-aiperf pod ..."
 
-export CMD="kubectl exec -it do-aiperf -- aiperf profile --model \"${MODEL_NAME}\" --tokenizer \"${MODEL_PATH}\" --artifact-dir \"${MODEL_PATH}/aiperf/${DEPLOYMENT_TYPE}\" --url \"${SERVICE_URL}\" --transport http --endpoint-type chat --streaming --concurrency 10 --request-count 100 ${_WARMUP_ARG} --synthetic-input-tokens-mean 1024 --synthetic-input-tokens-stddev 0 --output-tokens-mean 512 --extra-inputs \"ignore_eos:true\" --random-seed 42"
+export CMD="kubectl exec -it do-aiperf -- aiperf profile --model \"${MODEL_NAME}\" --tokenizer \"${MODEL_PATH}\" --artifact-dir \"${ARTIFACT_DIR}\" --url \"${SERVICE_URL}\" --transport http --endpoint-type chat --streaming --concurrency 10 --request-count 100 ${_WARMUP_ARG} --synthetic-input-tokens-mean 1024 --synthetic-input-tokens-stddev 0 --output-tokens-mean 512 --extra-inputs \"ignore_eos:true\" --random-seed 42"
 
 if [ ! "$VERBOSE" == "false" ]; then echo -e "\n${CMD}\n"; fi
 
