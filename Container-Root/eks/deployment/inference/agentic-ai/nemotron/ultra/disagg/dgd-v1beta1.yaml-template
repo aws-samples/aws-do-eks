@@ -7,8 +7,9 @@
 # This is dgd.yaml-template ported to the v1beta1 API, nothing else. Every value
 # (image, flags, env, resources, probes, node placement, KV transfer config) is
 # byte-identical to the v1alpha1 file; the only differences are the ones the new
-# schema forces. That is deliberate: it makes a single A/B run against
-# MANIFEST_TYPE=dgd a clean test of the API port, with no second variable.
+# schema forces, plus the one documented /dev/shm correction below. That is
+# deliberate: it makes a single A/B run against MANIFEST_TYPE=dgd a clean test of
+# the API port, with no second variable.
 #
 #   MANIFEST_TYPE=dgd-v1beta1 ./run.sh
 #
@@ -50,9 +51,29 @@
 #   kubectl -n dynamo-system get pods
 #   kubectl -n dynamo-system get endpoints dynamo-platform-dynamo-operator-webhook-service
 #
+# /dev/shm — the operator owns this mount, so the `dshm` emptyDir that
+# dgd.yaml-template declares is NOT carried over, and sharedMemorySize is left
+# unset. Read from the 1.3.1 operator source, which is the version this cluster's
+# CRD reports in nvidia.com/dynamo-operator-origin-version:
+#   - GenerateBasePodSpec calls ApplySharedMemoryVolumeAndMount UNCONDITIONALLY
+#     (internal/dynamo/graph.go:1578) — there is no "user opted out" path.
+#   - A nil sharedMemorySize means the operator's own default, not "no volume":
+#     it injects an 8Gi emptyDir named `shared-memory` mounted at /dev/shm
+#     (internal/dynamo/shared_memory.go:28-48). Only the literal "0" suppresses it.
+#   - It then keeps a mount the pod template already had ONLY when the name AND the
+#     mountPath both differ from its own (shared_memory.go:69). A `dshm` mount at
+#     /dev/shm collides on path, so it is silently DROPPED — not rejected. Volumes
+#     are deduplicated by name alone (:61), so the `dshm` volume itself survives,
+#     declared but mounted nowhere.
+# So the 64Gi in dgd.yaml-template has never been in effect: every dgd run in
+# ../test/results/ got 8Gi at /dev/shm. Leaving sharedMemorySize unset here keeps
+# that value; writing 64Gi would be the first time it actually applied, i.e. a real
+# change to a knob none of those runs used. Confirm on a running pod — NOT with
+# --dry-run, since the injection happens at reconcile, not at admission:
+#   kubectl get pod <worker> -o jsonpath='{.spec.containers[?(@.name=="main")].volumeMounts}'
+#   kubectl get pod <worker> -o jsonpath='{.spec.volumes}'
+#
 # NOT ported on purpose (each would add a second variable to the A/B):
-#   - sharedMemorySize: 64Gi would replace the dshm emptyDir + /dev/shm mount below
-#     (v1beta1 default is 8Gi, so it cannot simply be dropped).
 #   - compilationCache: a PVC-backed cache the operator wires up itself.
 #   - multinode: nodeCount, which is how a PP>1 role would be expressed here instead
 #     of a LeaderWorkerSet.
@@ -152,8 +173,7 @@ spec:
                   topologyKey: kubernetes.io/hostname
           volumes:
             - { name: fsx-pvc, persistentVolumeClaim: { claimName: fsx-pvc } }
-            - { name: dshm,       emptyDir: { medium: Memory, sizeLimit: 64Gi } }
-            - { name: gdrdrv,     hostPath: { path: /dev/gdrdrv, type: CharDevice } }
+            - { name: gdrdrv, hostPath: { path: /dev/gdrdrv, type: CharDevice } }
           containers:
             - name: main
               image: ${REGISTRY}${IMAGE}${TAG}
@@ -223,8 +243,7 @@ spec:
                 failureThreshold: 240
               volumeMounts:
                 - { name: fsx-pvc, mountPath: /shared }
-                - { name: dshm,       mountPath: /dev/shm }
-                - { name: gdrdrv,     mountPath: /dev/gdrdrv }
+                - { name: gdrdrv, mountPath: /dev/gdrdrv }
               resources:
                 requests: { cpu: "${CPU_PER_WORKER}", memory: 1000Gi, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
                 limits:   { cpu: "${CPU_PER_WORKER}", memory: 1000Gi, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
@@ -247,8 +266,7 @@ spec:
                   topologyKey: kubernetes.io/hostname
           volumes:
             - { name: fsx-pvc, persistentVolumeClaim: { claimName: fsx-pvc } }
-            - { name: dshm,       emptyDir: { medium: Memory, sizeLimit: 64Gi } }
-            - { name: gdrdrv,     hostPath: { path: /dev/gdrdrv, type: CharDevice } }
+            - { name: gdrdrv, hostPath: { path: /dev/gdrdrv, type: CharDevice } }
           containers:
             - name: main
               image: ${REGISTRY}${IMAGE}${TAG}
@@ -393,8 +411,7 @@ spec:
                 failureThreshold: 240
               volumeMounts:
                 - { name: fsx-pvc, mountPath: /shared }
-                - { name: dshm,       mountPath: /dev/shm }
-                - { name: gdrdrv,     mountPath: /dev/gdrdrv }
+                - { name: gdrdrv, mountPath: /dev/gdrdrv }
               resources:
                 requests: { cpu: "${CPU_PER_WORKER}", memory: 1000Gi, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
                 limits:   { cpu: "${CPU_PER_WORKER}", memory: 1000Gi, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
