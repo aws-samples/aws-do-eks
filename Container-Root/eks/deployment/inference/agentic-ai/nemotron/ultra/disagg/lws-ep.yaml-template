@@ -120,7 +120,13 @@ spec:
                 # back to /tmp rather than losing every log line to EACCES.
                 LOG_DIR=/shared
                 if ! ( : > "${DOLLAR}LOG_DIR/.wtest-${DOLLAR}HOSTNAME" ) 2>/dev/null; then
-                  echo "[prefill-dp0] ${DOLLAR}LOG_DIR not writable; logging to /tmp instead"
+                  echo "[prefill-dp0] ${DOLLAR}LOG_DIR is not writable by uid ${DOLLAR}(id -u); logging to /tmp instead."
+                  echo "[prefill-dp0]   That log dies WITH THE POD, and this LWS sets restartPolicy"
+                  echo "[prefill-dp0]   RecreateGroupOnPodRestart, so a crash deletes the pod outright - kubectl logs"
+                  echo "[prefill-dp0]   --previous will not exist either, and the crash is unrecoverable after the"
+                  echo "[prefill-dp0]   fact. To keep crash logs, make the shared volume writable for uid"
+                  echo "[prefill-dp0]   ${DOLLAR}(id -u) (chown or chmod g+w on ${DOLLAR}LOG_DIR from a root pod), or follow the"
+                  echo "[prefill-dp0]   live log with: kubectl -n ${NAMESPACE} logs -f ${DOLLAR}HOSTNAME"
                   LOG_DIR=/tmp
                 else
                   rm -f "${DOLLAR}LOG_DIR/.wtest-${DOLLAR}HOSTNAME"
@@ -442,7 +448,13 @@ spec:
                 if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
                 LOG_DIR=/shared
                 if ! ( : > "${DOLLAR}LOG_DIR/.wtest-${DOLLAR}HOSTNAME" ) 2>/dev/null; then
-                  echo "[decode-dp0] ${DOLLAR}LOG_DIR not writable; logging to /tmp instead"
+                  echo "[decode-dp0] ${DOLLAR}LOG_DIR is not writable by uid ${DOLLAR}(id -u); logging to /tmp instead."
+                  echo "[decode-dp0]   That log dies WITH THE POD, and this LWS sets restartPolicy"
+                  echo "[decode-dp0]   RecreateGroupOnPodRestart, so a crash deletes the pod outright - kubectl logs"
+                  echo "[decode-dp0]   --previous will not exist either, and the crash is unrecoverable after the"
+                  echo "[decode-dp0]   fact. To keep crash logs, make the shared volume writable for uid"
+                  echo "[decode-dp0]   ${DOLLAR}(id -u) (chown or chmod g+w on ${DOLLAR}LOG_DIR from a root pod), or follow the"
+                  echo "[decode-dp0]   live log with: kubectl -n ${NAMESPACE} logs -f ${DOLLAR}HOSTNAME"
                   LOG_DIR=/tmp
                 else
                   rm -f "${DOLLAR}LOG_DIR/.wtest-${DOLLAR}HOSTNAME"
@@ -560,6 +572,28 @@ spec:
                     [ "${DOLLAR}warmed" = 1 ] || echo "[warmup] gave up after 30min waiting for ${DOLLAR}LH 200 + ${MODEL_NAME} in ${DOLLAR}FE/v1/models; the FIRST benchmark requests will pay the Mamba JIT (non-fatal)"
                   fi
                 ) &
+                # --gpu-memory-utilization is 0.92 here, NOT the 0.98 the single-node decode blocks in
+                # disagg/lws-2pp and disagg/lws-pp2 use. vLLM 0.23's gpu_worker.init_device ->
+                # worker/utils.request_memory demands that utilization * total ALREADY BE FREE when the
+                # rank initialises, and by then a DP${EP_DP_SIZE} x TP${GPU_PER_WORKER} = EP$((${EP_DP_SIZE}*${GPU_PER_WORKER}))
+                # group already has 4.11-4.57 GiB resident on every B200 - CUDA context, the NCCL
+                # communicators (the node-local TP${GPU_PER_WORKER} one plus the CROSS-NODE DP/EP one) and the
+                # EFA rails. That total is what is measured; the per-component split is not. Measured on
+                # this template 2026-08-16: free was 173.78-174.24 of 178.35 GiB on all 16 GPUs (2 decode
+                # pods x 8) while 0.98 asks for 174.78, so all 16
+                # ranks raised "Free memory on device cuda:N (173.8/178.35 GiB) on startup is less than
+                # desired GPU memory utilization (0.98, 174.78 GiB)" 88s after the DP group leader
+                # announced itself (05:40:26 -> 05:41:54), inside a 3m28s pod lifetime, and the decode
+                # group crash-looped at that period indefinitely. The footprint is structural, not the
+                # loop measuring its own teardown: three pod generations on two nodes 25min apart gave
+                # byte-identical per-device figures, down to the cuda:7 outlier 0.46 GiB above its
+                # siblings, and no generation ever reached memory profiling or weight load. RecreateGroupOnPodRestart disguises that as
+                # a FRESH pod with restartCount=0, so it does not look like a crash loop in `get pods`.
+                # 0.92 is what the prefill blocks in this file and both agg/lws-ep blocks already use, and
+                # it leaves room for what allocates OUTSIDE this budget after the check - the flashinfer
+                # autotune workspace and the NIXL/EFA KV registration. 0.95/0.97 clear the init check but
+                # leave those only 4.4/0.8 GiB to share, which is not measured; do not raise this without
+                # re-measuring free memory at init on the EP topology.
                 exec python3 -m dynamo.vllm \
                   --model ${MODEL_PATH} \
                   --served-model-name ${MODEL_NAME} \
@@ -571,7 +605,7 @@ spec:
                   --enable-expert-parallel \
                   --pipeline-parallel-size 1 \
                   --max-model-len 8192 \
-                  --gpu-memory-utilization 0.98 \
+                  --gpu-memory-utilization 0.92 \
                   --enforce-eager \
                   --trust-remote-code \
                   ${MAMBA_FLAGS} \
@@ -708,6 +742,28 @@ spec:
                   if (echo > /dev/tcp/${DOLLAR}LEADER_IP/29551) 2>/dev/null; then break; fi
                   sleep 5
                 done
+                # --gpu-memory-utilization is 0.92 here, NOT the 0.98 the single-node decode blocks in
+                # disagg/lws-2pp and disagg/lws-pp2 use. vLLM 0.23's gpu_worker.init_device ->
+                # worker/utils.request_memory demands that utilization * total ALREADY BE FREE when the
+                # rank initialises, and by then a DP${EP_DP_SIZE} x TP${GPU_PER_WORKER} = EP$((${EP_DP_SIZE}*${GPU_PER_WORKER}))
+                # group already has 4.11-4.57 GiB resident on every B200 - CUDA context, the NCCL
+                # communicators (the node-local TP${GPU_PER_WORKER} one plus the CROSS-NODE DP/EP one) and the
+                # EFA rails. That total is what is measured; the per-component split is not. Measured on
+                # this template 2026-08-16: free was 173.78-174.24 of 178.35 GiB on all 16 GPUs (2 decode
+                # pods x 8) while 0.98 asks for 174.78, so all 16
+                # ranks raised "Free memory on device cuda:N (173.8/178.35 GiB) on startup is less than
+                # desired GPU memory utilization (0.98, 174.78 GiB)" 88s after the DP group leader
+                # announced itself (05:40:26 -> 05:41:54), inside a 3m28s pod lifetime, and the decode
+                # group crash-looped at that period indefinitely. The footprint is structural, not the
+                # loop measuring its own teardown: three pod generations on two nodes 25min apart gave
+                # byte-identical per-device figures, down to the cuda:7 outlier 0.46 GiB above its
+                # siblings, and no generation ever reached memory profiling or weight load. RecreateGroupOnPodRestart disguises that as
+                # a FRESH pod with restartCount=0, so it does not look like a crash loop in `get pods`.
+                # 0.92 is what the prefill blocks in this file and both agg/lws-ep blocks already use, and
+                # it leaves room for what allocates OUTSIDE this budget after the check - the flashinfer
+                # autotune workspace and the NIXL/EFA KV registration. 0.95/0.97 clear the init check but
+                # leave those only 4.4/0.8 GiB to share, which is not measured; do not raise this without
+                # re-measuring free memory at init on the EP topology.
                 exec python3 -m dynamo.vllm \
                   --model ${MODEL_PATH} \
                   --served-model-name ${MODEL_NAME} \
@@ -721,7 +777,7 @@ spec:
                   --enable-expert-parallel \
                   --pipeline-parallel-size 1 \
                   --max-model-len 8192 \
-                  --gpu-memory-utilization 0.98 \
+                  --gpu-memory-utilization 0.92 \
                   --enforce-eager \
                   --trust-remote-code \
                   ${MAMBA_FLAGS} \
