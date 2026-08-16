@@ -94,6 +94,11 @@ spec:
       metadata:
         labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}, app.kubernetes.io/component: agg-ep, dp-role: leader }
       spec:
+        # hostNetwork: true -> status.podIP IS status.hostIP for this pod, by definition. The
+        # duplicate-address preflight the hostNetwork:false pods in this tree carry (see
+        # disagg/lws-2pp.yaml-template) is therefore NOT applicable here and must not be
+        # copied in: it would fire on EVERY start. The fault it detects cannot occur under host
+        # networking either - there is no separate sandbox address to collide with the node's.
         hostNetwork: true
         dnsPolicy: ClusterFirstWithHostNet
         nodeSelector: { node.kubernetes.io/instance-type: ${INSTANCE_TYPE_WORKER} }
@@ -251,6 +256,11 @@ spec:
       metadata:
         labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}, app.kubernetes.io/component: agg-ep, dp-role: worker }
       spec:
+        # hostNetwork: true -> status.podIP IS status.hostIP for this pod, by definition. The
+        # duplicate-address preflight the hostNetwork:false pods in this tree carry (see
+        # disagg/lws-2pp.yaml-template) is therefore NOT applicable here and must not be
+        # copied in: it would fire on EVERY start. The fault it detects cannot occur under host
+        # networking either - there is no separate sandbox address to collide with the node's.
         hostNetwork: true
         dnsPolicy: ClusterFirstWithHostNet
         nodeSelector: { node.kubernetes.io/instance-type: ${INSTANCE_TYPE_WORKER} }

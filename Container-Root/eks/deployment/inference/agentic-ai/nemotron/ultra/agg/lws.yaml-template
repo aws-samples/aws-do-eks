@@ -27,6 +27,11 @@ spec:
           app.kubernetes.io/component: worker
           dynamo-role: leader
       spec:
+        # hostNetwork: true -> status.podIP IS status.hostIP for this pod, by definition. The
+        # duplicate-address preflight the hostNetwork:false pods in this tree carry (see
+        # disagg/lws-2pp.yaml-template) is therefore NOT applicable here and must not be
+        # copied in: it would fire on EVERY start. The fault it detects cannot occur under host
+        # networking either - there is no separate sandbox address to collide with the node's.
         hostNetwork: true
         dnsPolicy: ClusterFirstWithHostNet
         nodeSelector:
@@ -263,6 +268,11 @@ spec:
           app.kubernetes.io/component: worker
           dynamo-role: worker
       spec:
+        # hostNetwork: true -> status.podIP IS status.hostIP for this pod, by definition. The
+        # duplicate-address preflight the hostNetwork:false pods in this tree carry (see
+        # disagg/lws-2pp.yaml-template) is therefore NOT applicable here and must not be
+        # copied in: it would fire on EVERY start. The fault it detects cannot occur under host
+        # networking either - there is no separate sandbox address to collide with the node's.
         hostNetwork: true
         dnsPolicy: ClusterFirstWithHostNet
         nodeSelector:
@@ -417,6 +427,26 @@ spec:
           args:
             - |-
               set -eu
+              # ---- Node-fault preflight: duplicate pod address (mechanism: disagg/lws-2pp.yaml-template) ----
+              # When the CNI hands this sandbox the node's own kubelet InternalIP (status.podIP ==
+              # status.hostIP while hostNetwork is false), kube-proxy DNAT replies land in the host
+              # netns, cluster DNS never answers, and DistributedRuntime() dies with "Failed to
+              # connect to NATS: DNS error ... Temporary failure in name resolution". A container
+              # RESTART CANNOT CLEAR IT: restarts reuse the pod sandbox, so CNI ADD is not re-invoked
+              # and the address is pinned for the pod's lifetime - the pod object has to be deleted.
+              # Measured on a 4-node ml.p6-b200.48xlarge cluster (2026-08-15): ALL FOUR nodes carry
+              # their own InternalIP inside their ipamd assignable pool, so any hostNetwork:false pod
+              # in this file can draw it - not just the GPU workers. Fail in ~1s naming the remedy
+              # instead of CrashLooping on an opaque DNS error. No `say`/fd-3 indirection is needed
+              # here (unlike the worker templates): this container does not redirect its stdout into a
+              # `tee` process substitution, so a plain echo reaches `kubectl logs` before the exit.
+              if [ -n "${DOLLAR}{POD_IP:-}" ] && [ "${DOLLAR}{POD_IP:-}" = "${DOLLAR}{NODE_IP:-}" ]; then
+                echo "[frontend] FATAL: pod IP ${DOLLAR}POD_IP == node IP ${DOLLAR}NODE_IP with hostNetwork=false."
+                echo "[frontend]        Cluster DNS cannot answer for this pod, so NATS/etcd are unreachable."
+                echo "[frontend]        RESTARTING WILL NOT HELP - the sandbox keeps the address. Remedy:"
+                echo "[frontend]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
+                exit 1
+              fi
               # dynamo.frontend calls DistributedRuntime() which connects to NATS immediately
               # with NO retry, so a transient cold-start DNS miss (EAI_AGAIN, "Temporary failure
               # in name resolution") is fatal and CrashLoops the pod even though NATS is healthy.
@@ -433,6 +463,11 @@ spec:
             - { name: DYNAMO_BACKEND, value: vllm }
             - { name: DYN_NAMESPACE, value: dynamo }
             - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }
+            # Read only by the duplicate-address preflight in args above. The worker templates
+            # call the same value MY_IP because vLLM/ray also consume it; nothing else reads it
+            # here, so it keeps the field's own name.
+            - { name: POD_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
+            - { name: NODE_IP, valueFrom: { fieldRef: { fieldPath: status.hostIP } } }
             - { name: NATS_SERVER, value: "${NATS_URL}" }
           ports:
             - { containerPort: 8000, name: http }

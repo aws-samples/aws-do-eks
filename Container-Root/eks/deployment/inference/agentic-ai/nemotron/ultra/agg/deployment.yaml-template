@@ -41,12 +41,48 @@ spec:
           # 1.3.x images ship plain python3 and have NO /opt/dynamo/venv - activate only when present.
           args:
             - |-
+              # ---- Node-fault preflight: duplicate pod address (mechanism: disagg/lws-2pp.yaml-template) ----
+              # When the CNI hands this sandbox the node's own kubelet InternalIP (status.podIP ==
+              # status.hostIP while hostNetwork is false), kube-proxy DNAT replies land in the host
+              # netns, cluster DNS never answers, and DistributedRuntime() dies with "Failed to
+              # connect to NATS: DNS error ... Temporary failure in name resolution". A container
+              # RESTART CANNOT CLEAR IT: restarts reuse the pod sandbox, so CNI ADD is not re-invoked
+              # and the address is pinned for the pod's lifetime - the pod object has to be deleted.
+              # Measured on a 4-node ml.p6-b200.48xlarge cluster (2026-08-15): ALL FOUR nodes carry
+              # their own InternalIP inside their ipamd assignable pool, so any hostNetwork:false pod
+              # in this file can draw it - not just the GPU workers. Fail in ~1s naming the remedy
+              # instead of CrashLooping on an opaque DNS error. No `say`/fd-3 indirection is needed
+              # here (unlike the worker templates): this container does not redirect its stdout into a
+              # `tee` process substitution, so a plain echo reaches `kubectl logs` before the exit.
+              if [ -n "${DOLLAR}{POD_IP:-}" ] && [ "${DOLLAR}{POD_IP:-}" = "${DOLLAR}{NODE_IP:-}" ]; then
+                echo "[frontend] FATAL: pod IP ${DOLLAR}POD_IP == node IP ${DOLLAR}NODE_IP with hostNetwork=false."
+                echo "[frontend]        Cluster DNS cannot answer for this pod, so NATS/etcd are unreachable."
+                echo "[frontend]        RESTARTING WILL NOT HELP - the sandbox keeps the address. Remedy:"
+                echo "[frontend]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
+                exit 1
+              fi
+              # dynamo.frontend calls DistributedRuntime() which connects to NATS immediately with NO
+              # retry, so a transient cold-start DNS miss (EAI_AGAIN, "Temporary failure in name
+              # resolution") is fatal and CrashLoops the pod even though NATS is healthy. The worker
+              # templates already guard their startup with a getent loop; agg/lws.yaml-template's
+              # frontend already carries this block - mirror it here so every frontend behaves the same.
+              NATS_HOST=${DOLLAR}{NATS_SERVER#*://}; NATS_HOST=${DOLLAR}{NATS_HOST%%:*}
+              for i in ${DOLLAR}(seq 1 60); do
+                if getent hosts "${DOLLAR}NATS_HOST" >/dev/null 2>&1; then break; fi
+                echo "[frontend] waiting for DNS NATS_HOST=${DOLLAR}NATS_HOST (${DOLLAR}i)"
+                sleep 2
+              done
               if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
               exec python3 -m dynamo.frontend --http-port 8000 --http-host 0.0.0.0
           env:
             - { name: DYNAMO_BACKEND, value: vllm }
             - { name: DYN_NAMESPACE, value: dynamo-agg }
             - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }
+            # Read only by the duplicate-address preflight in args above. The worker templates
+            # call the same value MY_IP because vLLM/ray also consume it; nothing else reads it
+            # here, so it keeps the field's own name.
+            - { name: POD_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
+            - { name: NODE_IP, valueFrom: { fieldRef: { fieldPath: status.hostIP } } }
             - { name: NATS_SERVER, value: "${NATS_URL}" }
           ports: [ { containerPort: 8000, name: http } ]
           readinessProbe: { tcpSocket: { port: 8000 }, periodSeconds: 10, failureThreshold: 30 }
@@ -97,6 +133,41 @@ spec:
               set -eu
               unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
                     HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
+              # ---- Node-fault preflight: duplicate pod address (mechanism: disagg/lws-2pp.yaml-template) ----
+              # When the CNI hands this sandbox the node's own kubelet InternalIP (status.podIP ==
+              # status.hostIP while hostNetwork is false), kube-proxy DNAT replies land in the host
+              # netns, cluster DNS never answers, and DistributedRuntime() dies with "Failed to
+              # connect to NATS: DNS error ... Temporary failure in name resolution". A container
+              # RESTART CANNOT CLEAR IT: restarts reuse the pod sandbox, so CNI ADD is not re-invoked
+              # and the address is pinned for the pod's lifetime - the pod object has to be deleted.
+              # Measured on a 4-node ml.p6-b200.48xlarge cluster (2026-08-15): ALL FOUR nodes carry
+              # their own InternalIP inside their ipamd assignable pool, so any hostNetwork:false pod
+              # in this file can draw it - not just the GPU workers. Fail in ~1s naming the remedy
+              # instead of CrashLooping on an opaque DNS error. No `say`/fd-3 indirection is needed
+              # here (unlike the worker templates): this container does not redirect its stdout into a
+              # `tee` process substitution, so a plain echo reaches `kubectl logs` before the exit.
+              if [ -n "${DOLLAR}{POD_IP:-}" ] && [ "${DOLLAR}{POD_IP:-}" = "${DOLLAR}{NODE_IP:-}" ]; then
+                echo "[worker] FATAL: pod IP ${DOLLAR}POD_IP == node IP ${DOLLAR}NODE_IP with hostNetwork=false."
+                echo "[worker]        Cluster DNS cannot answer for this pod, so NATS/etcd are unreachable."
+                echo "[worker]        RESTARTING WILL NOT HELP - the sandbox keeps the address. Remedy:"
+                echo "[worker]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
+                exit 1
+              fi
+              # dynamo.vllm also builds a DistributedRuntime() with no retry, so give cluster DNS
+              # a bounded chance on a cold node instead of CrashLooping on the first miss.
+              if command -v getent >/dev/null 2>&1; then
+                NATS_HOST=${DOLLAR}{NATS_SERVER#*://}; NATS_HOST=${DOLLAR}{NATS_HOST%%:*}
+                for i in ${DOLLAR}(seq 1 30); do
+                  if getent hosts "${DOLLAR}NATS_HOST" >/dev/null 2>&1; then break; fi
+                  if [ "${DOLLAR}i" = 30 ]; then
+                    echo "[worker] FATAL: cannot resolve ${DOLLAR}NATS_HOST after 60s - cluster DNS is broken"
+                    echo "[worker]        for this pod. Check CoreDNS and the CNI, then:"
+                    echo "[worker]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
+                    exit 1
+                  fi
+                  sleep 2
+                done
+              fi
               if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
               # Cold-start warmup (detached), same block and same knobs as the disagg templates -
               # aggregated pays the identical tax because it runs the same decode kernels. A fresh
@@ -178,6 +249,11 @@ spec:
             - { name: DYNAMO_BACKEND, value: vllm }
             - { name: DYN_NAMESPACE, value: dynamo-agg }
             - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }
+            # Read only by the duplicate-address preflight in args above. The worker templates
+            # call the same value MY_IP because vLLM/ray also consume it; nothing else reads it
+            # here, so it keeps the field's own name.
+            - { name: POD_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
+            - { name: NODE_IP, valueFrom: { fieldRef: { fieldPath: status.hostIP } } }
             - { name: NATS_SERVER, value: "${NATS_URL}" }
             - { name: DYN_SYSTEM_ENABLED, value: "true" }
             - { name: DYN_SYSTEM_PORT, value: "9090" }

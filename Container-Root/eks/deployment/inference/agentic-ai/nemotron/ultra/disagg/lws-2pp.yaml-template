@@ -256,6 +256,20 @@ spec:
                 unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
                       HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
                 if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
+                # ---- Node-fault preflight: duplicate pod address (podIP == hostIP) ----
+                # The CNI can hand this sandbox the node's own kubelet InternalIP; cluster DNS then
+                # never answers for the pod, so NATS/etcd are unreachable. A container RESTART CANNOT
+                # CLEAR IT (restarts reuse the sandbox, CNI ADD is not re-invoked) - the pod object has
+                # to be deleted. Measured 2026-08-15 on a 4-node ml.p6-b200.48xlarge cluster: all four
+                # nodes carry their own InternalIP inside their ipamd assignable pool, so ANY
+                # hostNetwork:false pod here can draw it. Mechanism + incident: the decode-worker block in this file.
+                if [ -n "${DOLLAR}{MY_IP:-}" ] && [ "${DOLLAR}{MY_IP:-}" = "${DOLLAR}{NODE_IP:-}" ]; then
+                  echo "[pp-worker] FATAL: pod IP ${DOLLAR}MY_IP == node IP ${DOLLAR}NODE_IP with hostNetwork=false."
+                  echo "[pp-worker]        Cluster DNS cannot answer for this pod, so NATS/etcd are unreachable."
+                  echo "[pp-worker]        RESTARTING WILL NOT HELP - the sandbox keeps the address. Remedy:"
+                  echo "[pp-worker]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
+                  exit 1
+                fi
                 # Resolve in ONE getent per attempt and break only on a NON-EMPTY address. The previous
                 # shape probed with one getent and captured the address with a second one, so a single
                 # empty capture immediately after a successful probe killed the pod ~2s in while printing
@@ -277,6 +291,7 @@ spec:
                 exec ray start --address="${DOLLAR}LEADER_IP:6379" --node-ip-address="${DOLLAR}MY_IP" --num-gpus=${GPU_PER_WORKER} --block
             env:
               - { name: MY_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
+              - { name: NODE_IP, valueFrom: { fieldRef: { fieldPath: status.hostIP } } }
               - { name: HF_HOME, value: /shared/hf_cache }
               - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
               - { name: FLASHINFER_DISABLE_VERSION_CHECK, value: "1" }
@@ -401,15 +416,27 @@ spec:
                 #     be deleted. Measured on a 4-node ml.p6-b200.48xlarge disagg run (2026-08-15): one decode
                 #     pod looped 6x on a byte-identical failure, 47s per attempt, while its sibling on another
                 #     node loaded normally. Fail in 1s and name the remedy instead of loading for 47s first.
-                #     FOLLOW-UP, measured 2026-08-15 22:14-22:40Z on that same cluster: this is a RECURRING node
-                #     fault, not a one-off. ipamd's reconciler re-adds the node's OWN kubelet InternalIP to the
-                #     pod-assignable datastore once a minute ("Trying to add <nodeIP>" then "Adding <nodeIP>/32 to
-                #     DS for eni-..."), because on a SageMaker HyperPod EKS node the device-number-0 ENI sits in
-                #     the SageMaker-managed VPC (172.16/16), so the customer-VPC ENI that carries the node IP is
-                #     treated as a secondary ENI and its primary address becomes assignable to pods. Verified on
-                #     2 of 4 nodes (3,527 re-adds on the second). So a FRESH pod object can draw the node IP
-                #     again: deleting the pod is the correct remedy and it worked here (the replacement drew a
-                #     clean address and loaded), but it is a retry, not a cure - hence the extra lines below.
+                #     FOLLOW-UP, measured 2026-08-15 22:14-23:30Z on that same cluster: this is a RECURRING
+                #     node fault, not a one-off, and it is present on ALL FOUR nodes - each node's ipamd
+                #     re-adds that node's OWN kubelet InternalIP to its pod-assignable datastore once a
+                #     minute ("Trying to add <nodeIP>" then "Adding <nodeIP>/32 to DS for eni-...").
+                #     The datastore itself is the evidence: 127.0.0.1:61679/v1/enis lists that address
+                #     under the node's PRIMARY ENI with an empty IPAddresses map - i.e. free to hand to a
+                #     pod - and "Reconcile skipping primary IP" never appears in ipamd.log (aws-node
+                #     v1.22.3-eksbuild.1, CUSTOM_NETWORK_CFG=false, PREFIX_DELEGATION=false). An earlier
+                #     revision of this comment blamed the SageMaker device-0 ENI for making the
+                #     customer-VPC ENI look like a secondary; ipamd refutes that - it flags the ENI
+                #     primary and hands the address out anyway. So a FRESH pod object can draw the node
+                #     IP again, and not rarely: 3 of the last 5 sandboxes on one node drew exactly it.
+                #     Deleting the pod is the correct remedy and it worked here (the replacement drew a
+                #     clean address and loaded), but it is a retry, not a cure - the cure is CNI-level.
+                #     Node-side confirmation is presence, NOT rank: every address in an ENI's pool shares
+                #     the same "Trying to add" count (it is one reconciler pass, not a per-address event),
+                #     so `... | sort -rn | head` ranks nothing and hides the node IP behind the tie-break
+                #     order. Use `grep -c "Trying to add <nodeIP>"`, or this, which needs no node access:
+                #       kubectl get pods -A -o json | jq -r '.items[]
+                #         | select(.spec.hostNetwork != true) | select(.status.podIP == .status.hostIP)
+                #         | "\(.metadata.namespace)/\(.metadata.name) \(.status.podIP) \(.spec.nodeName)"'
                 # (b) Cluster DNS not answering for this pod YET, which is transient on a fresh node - so retry
                 #     for 60s before giving up. That converts a crash-loop into a normal start.
                 if [ -n "${DOLLAR}{MY_IP:-}" ] && [ "${DOLLAR}{MY_IP:-}" = "${DOLLAR}{NODE_IP:-}" ]; then
@@ -623,12 +650,48 @@ spec:
           # 1.3.0-era images have no /opt/dynamo/venv - activate only when present.
           args:
             - |-
+              # ---- Node-fault preflight: duplicate pod address (mechanism: the decode block below) ----
+              # When the CNI hands this sandbox the node's own kubelet InternalIP (status.podIP ==
+              # status.hostIP while hostNetwork is false), kube-proxy DNAT replies land in the host
+              # netns, cluster DNS never answers, and DistributedRuntime() dies with "Failed to
+              # connect to NATS: DNS error ... Temporary failure in name resolution". A container
+              # RESTART CANNOT CLEAR IT: restarts reuse the pod sandbox, so CNI ADD is not re-invoked
+              # and the address is pinned for the pod's lifetime - the pod object has to be deleted.
+              # Measured on a 4-node ml.p6-b200.48xlarge cluster (2026-08-15): ALL FOUR nodes carry
+              # their own InternalIP inside their ipamd assignable pool, so any hostNetwork:false pod
+              # in this file can draw it - not just the GPU workers. Fail in ~1s naming the remedy
+              # instead of CrashLooping on an opaque DNS error. No `say`/fd-3 indirection is needed
+              # here (unlike the worker templates): this container does not redirect its stdout into a
+              # `tee` process substitution, so a plain echo reaches `kubectl logs` before the exit.
+              if [ -n "${DOLLAR}{POD_IP:-}" ] && [ "${DOLLAR}{POD_IP:-}" = "${DOLLAR}{NODE_IP:-}" ]; then
+                echo "[frontend] FATAL: pod IP ${DOLLAR}POD_IP == node IP ${DOLLAR}NODE_IP with hostNetwork=false."
+                echo "[frontend]        Cluster DNS cannot answer for this pod, so NATS/etcd are unreachable."
+                echo "[frontend]        RESTARTING WILL NOT HELP - the sandbox keeps the address. Remedy:"
+                echo "[frontend]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
+                exit 1
+              fi
+              # dynamo.frontend calls DistributedRuntime() which connects to NATS immediately with NO
+              # retry, so a transient cold-start DNS miss (EAI_AGAIN, "Temporary failure in name
+              # resolution") is fatal and CrashLoops the pod even though NATS is healthy. The worker
+              # templates already guard their startup with a getent loop; agg/lws.yaml-template's
+              # frontend already carries this block - mirror it here so every frontend behaves the same.
+              NATS_HOST=${DOLLAR}{NATS_SERVER#*://}; NATS_HOST=${DOLLAR}{NATS_HOST%%:*}
+              for i in ${DOLLAR}(seq 1 60); do
+                if getent hosts "${DOLLAR}NATS_HOST" >/dev/null 2>&1; then break; fi
+                echo "[frontend] waiting for DNS NATS_HOST=${DOLLAR}NATS_HOST (${DOLLAR}i)"
+                sleep 2
+              done
               if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
               exec python3 -m dynamo.frontend --http-port 8000 --http-host 0.0.0.0
           env:
             - { name: DYNAMO_BACKEND, value: vllm }
             - { name: DYN_NAMESPACE, value: dynamo-disagg }
             - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }
+            # Read only by the duplicate-address preflight in args above. The worker templates
+            # call the same value MY_IP because vLLM/ray also consume it; nothing else reads it
+            # here, so it keeps the field's own name.
+            - { name: POD_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
+            - { name: NODE_IP, valueFrom: { fieldRef: { fieldPath: status.hostIP } } }
             - { name: NATS_SERVER, value: "${NATS_URL}" }
             - { name: HF_HOME, value: /tmp/hf_cache }
           ports: [{ containerPort: 8000, name: http }]
