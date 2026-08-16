@@ -63,13 +63,48 @@ The folder decides whether prefill and decode are split; `MANIFEST_TYPE` decides
 | `agg/` | `lws` | one worker, TP8/PP2 across 2 nodes | 2 | no |
 | `agg/` | `lws-ep` | wide expert parallelism, DP`EP_DP_SIZE` x TP8 (EP16 by default) | 2 | no |
 | `agg/` | `dgd` | `DynamoGraphDeployment`, one worker (needs the Dynamo operator) | 1 | no |
+| `agg/` | `dgd-v1beta1` | the same deployment on the `nvidia.com/v1beta1` API instead of the deprecated `v1alpha1` | 1 | no |
 | `disagg/` | `deployment` | 1 prefill + 1 decode, TP8/PP1 each | 2 | yes |
 | `disagg/` | `lws-2pp` | prefill TP8/PP2 + 2x decode TP8/PP1 | 4 | yes |
 | `disagg/` | `lws-pp2` | symmetrical PP2: prefill AND decode each TP8/PP2 | 4 | yes |
 | `disagg/` | `lws-ep` | wide expert parallelism **per role**: prefill DP`EP_DP_SIZE` x TP8 + decode DP`EP_DP_SIZE` x TP8 (EP16 each by default) | 2 x `EP_DP_SIZE` (4) | yes |
 | `disagg/` | `dgd` | `DynamoGraphDeployment` prefill + decode (needs the Dynamo operator) | 2 | yes |
+| `disagg/` | `dgd-v1beta1` | the same deployment on the `nvidia.com/v1beta1` API instead of the deprecated `v1alpha1` | 2 | yes |
 
 `MANIFEST_TYPE` names the template file directly -- `run.sh` and `stop.sh` render `$MANIFEST_TYPE.yaml-template`, so a value that is not in this table does not render and nothing is applied. A stale value in `stop.sh` still tears down: step 2 there sweeps every resource labelled `app.kubernetes.io/part-of=${DEPLOYMENT_NAME}` regardless of manifest type.
+
+#### The `DynamoGraphDeployment` deprecation warning
+
+Applying either `dgd` template on a Dynamo platform 1.3.x operator prints:
+
+```
+Warning: nvidia.com/v1alpha1 DynamoGraphDeployment is deprecated; use nvidia.com/v1beta1 DynamoGraphDeployment
+```
+
+Nothing is wrong and nothing is lost. `v1alpha1` is still the CRD's **storage** version on 1.3.x, so the object is stored exactly as written; the warning is the API server reading the CRD's `deprecationWarning` field. Confirm on your own cluster with:
+
+```bash
+kubectl get crd dynamographdeployments.nvidia.com \
+  -o jsonpath='{range .spec.versions[*]}{.name}{" served="}{.served}{" storage="}{.storage}{"\n"}{end}'
+```
+
+`agg/dgd-v1beta1` and `disagg/dgd-v1beta1` are the same two deployments expressed on the new API, for when you want the warning gone or want to be ready for the release that flips the storage version. Each is a pure API port -- image, flags, env, resources, probes, node placement and (for disagg) `--kv-transfer-config` are byte-identical to its `dgd` sibling. What the new schema changes: `spec.services{}` becomes `spec.components[]`, `spec.envs` becomes `spec.env`, `componentType: worker` + `subComponentType: prefill|decode` becomes `type: prefill|decode`, `extraPodSpec.mainContainer` becomes a normal pod template whose container is named `main`, and `spec.pvcs` is gone in favour of an ordinary `persistentVolumeClaim` volume.
+
+The `dgd` templates are the default and stay on `v1alpha1` deliberately: nothing about the warning requires action, and switching API version mid-results-table would put a second variable into the comparison. Deploy `dgd-v1beta1` once, confirm the pods come up, and flip your default after that.
+
+One real difference the port exposes: **the `64Gi` `dshm` emptyDir in the `dgd` templates has never taken effect**, so the `dgd-v1beta1` files omit it and leave `sharedMemorySize` unset. The operator owns `/dev/shm` -- `GenerateBasePodSpec` calls `ApplySharedMemoryVolumeAndMount` unconditionally, a nil `sharedMemorySize` means its own **8Gi** default rather than "no volume", and a mount the pod template already declares is kept only when both its name *and* its `mountPath` differ from the operator's, so a `dshm` mount at `/dev/shm` is silently dropped (the volume survives, mounted nowhere). Every `dgd` run under `test/results/` therefore had 8Gi of shared memory, which is also why writing `64Gi` into the new files would be a change rather than a port. This is admission-invisible -- the injection happens at reconcile -- so check a running pod, not a dry run:
+
+```bash
+kubectl get pod <worker> -o jsonpath='{.spec.containers[?(@.name=="main")].volumeMounts}'
+kubectl get pod <worker> -o jsonpath='{.spec.volumes}'
+```
+
+Both API versions depend on the operator pod being healthy, so check it before blaming a manifest. The `DynamoGraphDeployment` admission webhooks are registered with `failurePolicy: Fail` and the CRD's conversion strategy is `Webhook`: with the controller-manager not Ready, a `v1alpha1` apply is rejected by admission, and a `v1beta1` apply or even `kubectl get dgd` additionally fails conversion with `conversion webhook ... no endpoints available`.
+
+```bash
+kubectl -n dynamo-system get pods
+kubectl -n dynamo-system get endpoints dynamo-platform-dynamo-operator-webhook-service
+```
 
 Every `disagg/` template carries `--kv-transfer-config` with `NixlConnector` and moves the KV cache over EFA; no `agg/` template does. **`lws-ep` exists in both folders under the same name, and they are different topologies** -- the folder is the discriminator, so read it as "wide expert parallelism, in this folder's mode". `agg/lws-ep` is **aggregated** wide-EP: it exercises EFA heavily (the MoE all-to-all is NCCL across nodes on every token) but it does not disaggregate, so label its benchmark numbers aggregated and compare them against a P/D run only at equal GPU count. `disagg/lws-ep` is the disaggregated one, at twice the node count.
 
