@@ -571,7 +571,7 @@ spec:
                   --enable-expert-parallel \
                   --pipeline-parallel-size 1 \
                   --max-model-len 8192 \
-                  --gpu-memory-utilization 0.98 \
+                  --gpu-memory-utilization 0.92 \
                   --enforce-eager \
                   --trust-remote-code \
                   ${MAMBA_FLAGS} \
@@ -721,7 +721,7 @@ spec:
                   --enable-expert-parallel \
                   --pipeline-parallel-size 1 \
                   --max-model-len 8192 \
-                  --gpu-memory-utilization 0.98 \
+                  --gpu-memory-utilization 0.92 \
                   --enforce-eager \
                   --trust-remote-code \
                   ${MAMBA_FLAGS} \
