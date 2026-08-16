@@ -115,6 +115,7 @@ Then run any or all of the following tests:
 ./test-chat-completions.sh
 ./test-aiperf.sh
 ./aiperf-sweep-run.sh
+./kv-lease-check.sh
 ```
 
 * `./models-list.sh` - shows the names of the hosted models
@@ -123,6 +124,7 @@ Then run any or all of the following tests:
 * `./test-chat-completions.sh` - tests a single request to the /v1/chat/completions API
 * `./test-aiperf.sh` - runs aiperf against the model endpoint, reports benchmark results
 * `./aiperf-sweep-run.sh` - runs a sweep of aiperf tests with concurrency 1,4,8,16,32,64 to explore scalability
+* `./kv-lease-check.sh` - checks a disagg run for requests served on KV blocks the prefill side had already freed
 
 `test-aiperf.sh` writes its artifacts to
 `${MODEL_PATH}/aiperf/${DEPLOYMENT_TYPE}/${MANIFEST_TYPE}/${AIPERF_RUN_ID}` and prints the path
@@ -130,3 +132,10 @@ before it starts. `AIPERF_RUN_ID` defaults to a UTC timestamp, so comparing topo
 one of them keeps every report -- set `MANIFEST_TYPE` in `test/.env` to match the deployed topology
 so the folder is labelled correctly, and set `AIPERF_RUN_ID` to name a run (`AIPERF_RUN_ID=cold`).
 
+Run `./kv-lease-check.sh` after any disagg benchmark. In vLLM's NixlConnector the prefill side holds
+each request's KV blocks under a lease and frees them when it elapses; a later read by the decode
+worker is then only logged, never failed, so the request still returns 200 on blocks that are gone.
+A live 3-Pod `disagg/dgd` run on 2026-08-16 did exactly that on 8 of 42 completed requests, 21-32s
+after the stock 30s lease expired with zero reads. `KV_LEASE_DURATION` in `disagg/.env` raises the
+lease (default 300s here) and the script exits non-zero when a lease expires unread, so it can gate
+a benchmark.
