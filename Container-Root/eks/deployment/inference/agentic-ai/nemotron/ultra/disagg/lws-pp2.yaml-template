@@ -9,7 +9,9 @@
 #
 #   - kv_role: kv_both             (BOTH sides; producer/consumer split broken in 1.1.0)
 #   - kv_connector_extra_config:
-#       backends: ["LIBFABRIC"]    (NIXL on EFA, NOT UCX)
+#       backends: ["LIBFABRIC"]         (NIXL on EFA, NOT UCX)
+#       kv_lease_duration: ${KV_LEASE_DURATION}  (seconds P holds KV for D to pull; vLLM default 30
+#                                       is too short for this model - see .env)
 #   - ${MAMBA_FLAGS} (hybrid-Mamba only; derived from MODEL_NAME in .env - empty on pure transformers)
 #
 # -----------------------------------------------------------------------------
@@ -242,7 +244,7 @@ spec:
                   ${MAMBA_FLAGS} \
                   --load-format runai_streamer \
                   --disaggregation-mode prefill \
-                  --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_connector_extra_config":{"backends":["LIBFABRIC"]}}'
+                  --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_connector_extra_config":{"backends":["LIBFABRIC"],"kv_lease_duration":${KV_LEASE_DURATION}}}'
             env:
               - { name: MY_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
               - { name: DYNAMO_BACKEND, value: vllm }
@@ -626,7 +628,7 @@ spec:
                   ${MAMBA_FLAGS} \
                   --load-format runai_streamer \
                   --disaggregation-mode decode \
-                  --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_connector_extra_config":{"backends":["LIBFABRIC"]}}'
+                  --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_connector_extra_config":{"backends":["LIBFABRIC"],"kv_lease_duration":${KV_LEASE_DURATION}}}'
             env:
               - { name: MY_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
               - { name: DYNAMO_BACKEND, value: vllm }

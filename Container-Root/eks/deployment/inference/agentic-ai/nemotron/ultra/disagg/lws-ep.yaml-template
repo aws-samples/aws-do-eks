@@ -198,7 +198,7 @@ spec:
                   ${MAMBA_FLAGS} \
                   --load-format runai_streamer \
                   --disaggregation-mode prefill \
-                  --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_connector_extra_config":{"backends":["LIBFABRIC"]}}'
+                  --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_connector_extra_config":{"backends":["LIBFABRIC"],"kv_lease_duration":${KV_LEASE_DURATION}}}'
             env:
               - { name: MY_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
               # NODE_IP is read only by the node-fault preflight in args above (podIP == hostIP).
@@ -356,7 +356,7 @@ spec:
                   ${MAMBA_FLAGS} \
                   --load-format runai_streamer \
                   --disaggregation-mode prefill \
-                  --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_connector_extra_config":{"backends":["LIBFABRIC"]}}'
+                  --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_connector_extra_config":{"backends":["LIBFABRIC"],"kv_lease_duration":${KV_LEASE_DURATION}}}'
             env:
               - { name: MY_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
               # NODE_IP is read only by the node-fault preflight in args above (podIP == hostIP).
@@ -615,7 +615,7 @@ spec:
                   ${MAMBA_FLAGS} \
                   --load-format runai_streamer \
                   --disaggregation-mode decode \
-                  --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_connector_extra_config":{"backends":["LIBFABRIC"]}}'
+                  --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_connector_extra_config":{"backends":["LIBFABRIC"],"kv_lease_duration":${KV_LEASE_DURATION}}}'
             env:
               - { name: MY_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
               # NODE_IP is read only by the node-fault preflight in args above (podIP == hostIP).
@@ -789,7 +789,7 @@ spec:
                   ${MAMBA_FLAGS} \
                   --load-format runai_streamer \
                   --disaggregation-mode decode \
-                  --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_connector_extra_config":{"backends":["LIBFABRIC"]}}'
+                  --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_connector_extra_config":{"backends":["LIBFABRIC"],"kv_lease_duration":${KV_LEASE_DURATION}}}'
             env:
               - { name: MY_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
               # NODE_IP is read only by the node-fault preflight in args above (podIP == hostIP).
