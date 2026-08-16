@@ -120,7 +120,14 @@ spec:
                 # back to /tmp rather than losing every log line to EACCES.
                 LOG_DIR=/shared
                 if ! ( : > "${DOLLAR}LOG_DIR/.wtest-${DOLLAR}HOSTNAME" ) 2>/dev/null; then
-                  echo "[prefill-dp0] ${DOLLAR}LOG_DIR not writable; logging to /tmp instead"
+                  echo "[prefill-dp0] ${DOLLAR}LOG_DIR is not writable by uid ${DOLLAR}(id -u); logging to /tmp instead."
+                  echo "[prefill-dp0]   /tmp dies WITH THE POD, and this LeaderWorkerSet sets restartPolicy:"
+                  echo "[prefill-dp0]   RecreateGroupOnPodRestart, so a crash DELETES the pod rather than restarting the"
+                  echo "[prefill-dp0]   container - 'kubectl logs --previous' has nothing to return either, and the"
+                  echo "[prefill-dp0]   traceback is unrecoverable after the fact."
+                  echo "[prefill-dp0]   To keep the log: make ${DOLLAR}LOG_DIR writable for uid ${DOLLAR}(id -u) (chown, or"
+                  echo "[prefill-dp0]   chmod g+w, from a root pod). To read a crash happening now, follow it live:"
+                  echo "[prefill-dp0]   kubectl -n ${NAMESPACE} logs -f ${DOLLAR}HOSTNAME"
                   LOG_DIR=/tmp
                 else
                   rm -f "${DOLLAR}LOG_DIR/.wtest-${DOLLAR}HOSTNAME"
@@ -442,7 +449,14 @@ spec:
                 if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
                 LOG_DIR=/shared
                 if ! ( : > "${DOLLAR}LOG_DIR/.wtest-${DOLLAR}HOSTNAME" ) 2>/dev/null; then
-                  echo "[decode-dp0] ${DOLLAR}LOG_DIR not writable; logging to /tmp instead"
+                  echo "[decode-dp0] ${DOLLAR}LOG_DIR is not writable by uid ${DOLLAR}(id -u); logging to /tmp instead."
+                  echo "[decode-dp0]   /tmp dies WITH THE POD, and this LeaderWorkerSet sets restartPolicy:"
+                  echo "[decode-dp0]   RecreateGroupOnPodRestart, so a crash DELETES the pod rather than restarting the"
+                  echo "[decode-dp0]   container - 'kubectl logs --previous' has nothing to return either, and the"
+                  echo "[decode-dp0]   traceback is unrecoverable after the fact."
+                  echo "[decode-dp0]   To keep the log: make ${DOLLAR}LOG_DIR writable for uid ${DOLLAR}(id -u) (chown, or"
+                  echo "[decode-dp0]   chmod g+w, from a root pod). To read a crash happening now, follow it live:"
+                  echo "[decode-dp0]   kubectl -n ${NAMESPACE} logs -f ${DOLLAR}HOSTNAME"
                   LOG_DIR=/tmp
                 else
                   rm -f "${DOLLAR}LOG_DIR/.wtest-${DOLLAR}HOSTNAME"
@@ -560,6 +574,30 @@ spec:
                     [ "${DOLLAR}warmed" = 1 ] || echo "[warmup] gave up after 30min waiting for ${DOLLAR}LH 200 + ${MODEL_NAME} in ${DOLLAR}FE/v1/models; the FIRST benchmark requests will pay the Mamba JIT (non-fatal)"
                   fi
                 ) &
+                # --gpu-memory-utilization must stay at 0.92 on the EP decode blocks. It is NOT
+                # interchangeable with the 0.98 that the single-node decode groups in disagg/lws-2pp and
+                # disagg/lws-pp2 use. vLLM 0.23's gpu_worker.init_device -> worker/utils.request_memory
+                # demands that utilization * total ALREADY BE FREE when the rank initialises, and by then a
+                # DP x TP = EP group already holds 4.11-4.57 GiB on every B200: the CUDA context, the NCCL
+                # communicators (the node-local TP one PLUS the cross-node DP/EP one) and the EFA rails.
+                # That total is what was measured; the per-component split was not.
+                # At 0.98 decode could never start. Measured 2026-08-16 on a 4-node ml.p6-b200.48xlarge run:
+                # free was 173.78-174.24 of 178.35 GiB on all 16 GPUs (2 decode pods x 8) while 0.98 asks for
+                # 174.78, so all 16 ranks raised "Free memory on device cuda:N (173.8/178.35 GiB) on startup
+                # is less than desired GPU memory utilization (0.98, 174.78 GiB)" 88s after the DP group
+                # leader announced itself, inside a 3m28s pod lifetime, and the group crash-looped at that
+                # period indefinitely, never reaching weight load. Structural, not the loop measuring its own
+                # teardown: three pod generations on two nodes 25min apart gave byte-identical per-device
+                # figures, down to the cuda:7 outlier sitting 0.46 GiB above its siblings.
+                # 0.92 is then CONFIRMED end-to-end on that same cluster (06:13-06:34Z): all 5 disagg pods
+                # 1/1 with 0 restarts, "Free memory on device" absent from all 4 engine pods, and decode
+                # through the whole chain it had never reached - weights 31.11 GiB in 348.8s, "Available KV
+                # cache memory: 128.37 GiB", "GPU KV cache size: 8,808,857 tokens", NIXL worker up,
+                # "init engine (profile, create kv cache, warmup model) took 684.33 s", Ready 21m after start.
+                # The ask (0.92 x 178.35 = 164.08 GiB) against the actual use (31.11 weights + 128.37 KV =
+                # 159.48 GiB) is why raising this buys no capability here, only more KV on top of an already
+                # 8.8M-token cache. Do not raise it without re-measuring free memory at init ON THE EP
+                # TOPOLOGY - and note vLLM only prints a free-memory figure when the check FAILS.
                 exec python3 -m dynamo.vllm \
                   --model ${MODEL_PATH} \
                   --served-model-name ${MODEL_NAME} \
@@ -708,6 +746,30 @@ spec:
                   if (echo > /dev/tcp/${DOLLAR}LEADER_IP/29551) 2>/dev/null; then break; fi
                   sleep 5
                 done
+                # --gpu-memory-utilization must stay at 0.92 on the EP decode blocks. It is NOT
+                # interchangeable with the 0.98 that the single-node decode groups in disagg/lws-2pp and
+                # disagg/lws-pp2 use. vLLM 0.23's gpu_worker.init_device -> worker/utils.request_memory
+                # demands that utilization * total ALREADY BE FREE when the rank initialises, and by then a
+                # DP x TP = EP group already holds 4.11-4.57 GiB on every B200: the CUDA context, the NCCL
+                # communicators (the node-local TP one PLUS the cross-node DP/EP one) and the EFA rails.
+                # That total is what was measured; the per-component split was not.
+                # At 0.98 decode could never start. Measured 2026-08-16 on a 4-node ml.p6-b200.48xlarge run:
+                # free was 173.78-174.24 of 178.35 GiB on all 16 GPUs (2 decode pods x 8) while 0.98 asks for
+                # 174.78, so all 16 ranks raised "Free memory on device cuda:N (173.8/178.35 GiB) on startup
+                # is less than desired GPU memory utilization (0.98, 174.78 GiB)" 88s after the DP group
+                # leader announced itself, inside a 3m28s pod lifetime, and the group crash-looped at that
+                # period indefinitely, never reaching weight load. Structural, not the loop measuring its own
+                # teardown: three pod generations on two nodes 25min apart gave byte-identical per-device
+                # figures, down to the cuda:7 outlier sitting 0.46 GiB above its siblings.
+                # 0.92 is then CONFIRMED end-to-end on that same cluster (06:13-06:34Z): all 5 disagg pods
+                # 1/1 with 0 restarts, "Free memory on device" absent from all 4 engine pods, and decode
+                # through the whole chain it had never reached - weights 31.11 GiB in 348.8s, "Available KV
+                # cache memory: 128.37 GiB", "GPU KV cache size: 8,808,857 tokens", NIXL worker up,
+                # "init engine (profile, create kv cache, warmup model) took 684.33 s", Ready 21m after start.
+                # The ask (0.92 x 178.35 = 164.08 GiB) against the actual use (31.11 weights + 128.37 KV =
+                # 159.48 GiB) is why raising this buys no capability here, only more KV on top of an already
+                # 8.8M-token cache. Do not raise it without re-measuring free memory at init ON THE EP
+                # TOPOLOGY - and note vLLM only prints a free-memory figure when the check FAILS.
                 exec python3 -m dynamo.vllm \
                   --model ${MODEL_PATH} \
                   --served-model-name ${MODEL_NAME} \
