@@ -37,7 +37,12 @@ kubectl wait --for=condition=Ready pod/do-aiperf --timeout=120s
 # already validated on NVFP4 and one constant is easier to reason about than two.
 # Cost is wall-clock only: 30 excluded requests at --concurrency 10 add ~3 waves, ~180s
 # on that ~650s run. What it does NOT fix is a hold that RECURS mid-run: the NVFP4
-# lws-ep run of 2026-08-16 had 8 slow requests at t=224-261s, well past any warmup.
+# lws-ep run of 2026-08-16 had 8 slow requests (TTFT > 2s) at t=224-261s, well past any
+# warmup, and its worker logs carry no Triton JIT warning anywhere in that window - those
+# requests were held on the prefill side. Always state the cutoff a slow-request count was
+# taken at; the count is a function of the cut. Read that class with ./aiperf-clean-tail.sh
+# over the export before quoting a TTFT mean or an upper percentile - its header carries
+# the evidence and the prefill-side localisation.
 # AIPERF_WARMUP_REQUESTS=0 disables, any integer overrides. Same idiom as WARMUP_ENABLED
 # in the manifests -- note that one is still precision-gated, and gates the in-pod warmer,
 # not the report.
