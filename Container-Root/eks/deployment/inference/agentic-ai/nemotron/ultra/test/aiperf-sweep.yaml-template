@@ -9,8 +9,17 @@ metadata:
     model: nemotron3-ultra-550b
   annotations:
     awesome-inferencing/benchmark: aiperf-nemo3-1.2.0-agg
-    awesome-inferencing/aiperf-version: "0.7.0"
-    awesome-inferencing/target: nemotron3-ultra-550b-vllm 2 replicas (TP=8 PP=2 each)
+    # 0.9.0, not the newest on PyPI (0.12.0 as of 2026-08-17), and not the 0.7.0 this template
+    # used to pin. It matches the version that produced every fixed-concurrency report we would
+    # compare a sweep against -- read out of their exports' own aiperf_version field, not assumed.
+    # A sweep on a different aiperf than the single-point runs is a second variable.
+    awesome-inferencing/aiperf-version: "0.9.0"
+    # What this pod is pointed at, taken from test/.env rather than asserted. The previous value
+    # here named a topology ("2 replicas (TP=8 PP=2 each)") and the run-metadata below named
+    # hardware ("2 x p5en ... 32x H200") that this pod cannot see and that no longer matched the
+    # cluster it runs on. Same discipline as run-meta.json in test-aiperf.sh: record what was
+    # asserted, and do not dress up an assertion as an observation.
+    awesome-inferencing/target: ${DEPLOYMENT_TYPE}/${MANIFEST_TYPE} ${MODEL_VARIANT} via ${SERVICE_NAME}
 spec:
   restartPolicy: Never
   #nodeSelector:
@@ -25,15 +34,29 @@ spec:
           B=/tmp/run-bundle
           mkdir -p ${DOLLAR}B/aiperf-args
 
-          echo "=== installing aiperf 0.7.0 ==="
+          echo "=== installing aiperf 0.9.0 ==="
           pip install -q --upgrade pip
-          pip install -q aiperf==0.7.0 httpx
+          pip install -q aiperf==0.9.0 httpx
           AIPERF_VERSION=${DOLLAR}(aiperf --version 2>&1 | tr -d '\n')
           echo "aiperf=${DOLLAR}AIPERF_VERSION"
 
           URL="${SERVICE_URL}"
           MODEL="${MODEL_NAME}"
           TOKENIZER="${MODEL_PATH}"
+
+          # Where the bundle is published when the sweep finishes. Same path convention as
+          # test-aiperf.sh -- ${DOLLAR}{MODEL_PATH}/aiperf/${DOLLAR}{DEPLOYMENT_TYPE}/${DOLLAR}{MANIFEST_TYPE}/${DOLLAR}{RUN_ID} -- so a
+          # sweep lands next to the fixed-concurrency reports of the same topology and is read
+          # back the same way. Until this change the bundle existed only in the emptyDir below,
+          # so every phase of a multi-hour sweep was lost when the pod was deleted.
+          # RUN_ID is generated in-container on purpose: test-aiperf.sh defaults AIPERF_RUN_ID in
+          # the shell, .env does not export it, and this file is rendered by `envsubst` with no
+          # variable allowlist -- an unset ${DOLLAR}{...} renders to the empty string, which would
+          # silently collapse the path rather than fail.
+          RUN_ID="${DOLLAR}(date -u +%Y%m%dT%H%M%SZ)"
+          DT="${DEPLOYMENT_TYPE}"; MT="${MANIFEST_TYPE}"
+          PUBLISH_DIR="${MODEL_PATH}/aiperf/${DOLLAR}{DT:-unknown}/${DOLLAR}{MT:-unknown}/sweep-${DOLLAR}RUN_ID"
+          echo "publish target: ${DOLLAR}PUBLISH_DIR"
 
           for i in ${DOLLAR}(seq 1 30); do
             if python3 -c "import httpx,sys; r=httpx.get('${DOLLAR}URL/v1/models', timeout=4); sys.exit(0 if r.status_code==200 else 1)" 2>/dev/null; then
@@ -53,10 +76,19 @@ spec:
               "target_model": "${DOLLAR}MODEL",
               "tokenizer_path": "${DOLLAR}TOKENIZER",
               "aiperf_version": "${DOLLAR}AIPERF_VERSION",
-              "deployment": "nemotron3-ultra-550b-vllm LWS, 2 replicas x 2 p5en, TP=8 PP=2 each, 32x H200 total, --enforce-eager",
-              "input_tokens_mean": 512,
-              "input_tokens_stddev": 64,
-              "output_tokens_mean": 128,
+              "run_id": "${DOLLAR}RUN_ID",
+              # Asserted, from test/.env -- NOT observed. This pod has no kubectl, so it cannot
+              # see the workloads that served the sweep the way test-aiperf.sh's run-meta.json
+              # can. The string that used to sit here claimed a node type and GPU count outright.
+              "asserted_deployment_type": "${DOLLAR}{DT:-unknown}",
+              "asserted_manifest_type": "${DOLLAR}{MT:-unknown}",
+              "asserted_model_variant": "${MODEL_VARIANT}",
+              # ISL/OSL match test-aiperf.sh exactly (1024 stddev 0 / 512) so a sweep phase and a
+              # fixed-concurrency report are the same workload at different concurrency.
+              "input_tokens_mean": 1024,
+              "input_tokens_stddev": 0,
+              "output_tokens_mean": 512,
+              "ignore_eos": True,
               "random_seed": 42,
               "concurrencies": [1, 4, 8, 16, 32, 64],
               "request_counts": {"1": 20, "4": 80, "8": 160, "16": 320, "32": 640, "64": 1280},
@@ -69,9 +101,9 @@ spec:
           run_phase() {
             local C=${DOLLAR}1 N=${DOLLAR}2 W=${DOLLAR}3
             local args="--model ${DOLLAR}MODEL --tokenizer ${DOLLAR}TOKENIZER \
-              --endpoint-type chat --url ${DOLLAR}URL --streaming \
-              --synthetic-input-tokens-mean 512 --synthetic-input-tokens-stddev 64 \
-              --output-tokens-mean 128 \
+              --transport http --endpoint-type chat --url ${DOLLAR}URL --streaming \
+              --synthetic-input-tokens-mean 1024 --synthetic-input-tokens-stddev 0 \
+              --output-tokens-mean 512 --extra-inputs ignore_eos:true \
               --concurrency ${DOLLAR}C --request-count ${DOLLAR}N --warmup-request-count ${DOLLAR}W \
               --random-seed 42 --artifact-dir ${DOLLAR}B/c${DOLLAR}C"
             echo "${DOLLAR}args" > ${DOLLAR}B/aiperf-args/c${DOLLAR}C.args
@@ -80,12 +112,32 @@ spec:
             aiperf profile ${DOLLAR}args 2>&1 | tee ${DOLLAR}B/c${DOLLAR}C.log || true
           }
 
+          # Request counts are 20 waves per phase (N = 20 x C) and the warmup is 2 waves plus one
+          # request. Those counts were chosen when this template ran OSL 128; at the OSL 512 the
+          # table uses, every request generates 4x the tokens, so each phase costs ~4x the wall
+          # clock it used to. Order-of-magnitude, from ITL measured on this model at c=10
+          # (BF16 agg/dgd 91.95 ms p50, disagg rows 88-115 ms): a wave is ~0.5 s TTFT + 512 x ITL,
+          # i.e. ~47 s at 92 ms and worse as ITL degrades under load. 20 waves x 6 phases puts the
+          # low-concurrency phases near 16 min each and makes c=64 the long pole. Budget hours,
+          # not the ~50 min the OSL 128 ladder implied, and expect the total to be dominated by
+          # whatever ITL does at c=32/64 -- which is the unknown this sweep exists to measure, so
+          # it cannot be predicted here.
+          # To trade tail resolution for wall clock, comment the ladder below and uncomment the
+          # short one: 10 waves per phase, same concurrencies, ~half the time. p50s survive that
+          # cut; p90/p99 at c=1 do not (10 requests).
           run_phase 1   20  3
           run_phase 4   80  8
           run_phase 8  160 16
           run_phase 16 320 32
           run_phase 32 640 64
           run_phase 64 1280 128
+          # short ladder (10 waves/phase):
+          #run_phase 1   10  3
+          #run_phase 4   40  8
+          #run_phase 8   80 16
+          #run_phase 16 160 32
+          #run_phase 32 320 64
+          #run_phase 64 640 128
 
           echo ""
           echo "=== summary ==="
@@ -124,6 +176,22 @@ spec:
           PY
 
           echo ""
+          echo "=== publishing bundle to ${DOLLAR}PUBLISH_DIR ==="
+          # The sweep writes into the emptyDir while it runs -- aiperf's per-request jsonl on FSx
+          # would put the benchmark's own I/O on the same filesystem the weights load from -- and
+          # copies once at the end. Fail-soft on purpose: a failed copy must not discard a sweep
+          # that already completed, so it warns and still holds the pod open for a manual copy.
+          if cp -r /tmp/run-bundle "${DOLLAR}PUBLISH_DIR" 2>/dev/null || \
+             ( mkdir -p "${DOLLAR}PUBLISH_DIR" && cp -r /tmp/run-bundle/. "${DOLLAR}PUBLISH_DIR"/ ); then
+            echo "published: ${DOLLAR}PUBLISH_DIR"
+            ls -la "${DOLLAR}PUBLISH_DIR"
+          else
+            echo "WARNING: could not publish to ${DOLLAR}PUBLISH_DIR -- the bundle is intact in the"
+            echo "         pod at /tmp/run-bundle; copy it out before deleting the pod:"
+            echo "         kubectl cp aiperf-sweep-${DEPLOYMENT_NAME}:/tmp/run-bundle ./run-bundle"
+          fi
+
+          echo ""
           echo "=== BENCH DONE - bundle at /tmp/run-bundle ==="
           ls -la /tmp/run-bundle/
           sleep 3600
@@ -134,7 +202,11 @@ spec:
         limits:   { cpu: "4", memory: 8Gi }
         requests: { cpu: "2", memory: 4Gi }
       volumeMounts:
-        - { name: shared, mountPath: /shared, readOnly: true }
+        # Writable, so the publish step at the end of the sweep can land the bundle next to the
+        # fixed-concurrency reports. It was readOnly, which is why the bundle could only ever live
+        # in the emptyDir. The only path written is ${MODEL_PATH}/aiperf/... -- the same subtree
+        # test-aiperf.sh writes its artifact directory and run-meta.json into.
+        - { name: shared, mountPath: /shared }
         - { name: bundle, mountPath: /tmp/run-bundle }
   volumes:
     - name: shared
