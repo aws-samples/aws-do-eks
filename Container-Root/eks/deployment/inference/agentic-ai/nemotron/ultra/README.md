@@ -181,6 +181,23 @@ them. Note what the namespace can and cannot prove: `agg/dgd`, `agg/dgd-v1beta1`
 `dynamo`, so for those the check reports `not discriminating` and the `workloads` field is what
 identifies the run.
 
+`aiperf-sweep-run.sh` runs the same workload as `test-aiperf.sh` at six concurrencies instead of
+one, so its phases are comparable with the fixed-concurrency reports rather than being a separate
+experiment. Same aiperf (0.9.0), same ISL/OSL (`--synthetic-input-tokens-mean 1024
+--synthetic-input-tokens-stddev 0 --output-tokens-mean 512`), same `--extra-inputs ignore_eos:true`
+so the output length is pinned, same `--transport http` and `--random-seed 42`; only
+`--concurrency`, `--request-count` and `--warmup-request-count` change per phase. It publishes its
+bundle to `${MODEL_PATH}/aiperf/${DEPLOYMENT_TYPE}/${MANIFEST_TYPE}/sweep-<UTC timestamp>` on the
+shared volume when it finishes, and warns with a `kubectl cp` fallback rather than failing if that
+copy does not land -- before this the bundle existed only inside the Pod, so a multi-hour sweep was
+lost when the Pod was deleted. Two cautions. Its `run-metadata.json` records `asserted_*` fields
+from `test/.env` only: the sweep Pod has no `kubectl`, so unlike `test-aiperf.sh` it cannot observe
+what served it, and it no longer states a node type or GPU count it cannot see. And the request
+counts are 20 waves per phase, chosen when this template ran OSL 128; at OSL 512 each request
+generates four times the tokens, so budget hours rather than the ~50 minutes the old ladder implied
+-- a shorter 10-wave ladder sits commented in the template for trading tail resolution against wall
+clock.
+
 Read a disagg report through `./aiperf-clean-tail.sh <artifact-dir>/profile_export.jsonl` before
 quoting a TTFT mean or an upper percentile. Both 100-request NVFP4 disagg runs on 2026-08-16
 released batches of requests at single instants - at the script's default cutoff of TTFT > 5s that
