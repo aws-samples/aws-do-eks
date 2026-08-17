@@ -21,17 +21,35 @@ kubectl wait --for=condition=Ready pod/do-aiperf --timeout=120s
 # window on that run admitted ~31 requests = 3 full waves at --concurrency 10.
 # The manifest-side warmer already primes the engine at pod start, so this is normally a
 # no-op; it is what makes the benchmark reproducible when the pods ARE cold.
-# auto (default) follows the model's precision suffix. AIPERF_WARMUP_REQUESTS=0 disables,
-# any integer overrides. Same idiom as WARMUP_ENABLED in the manifests.
+#
+# This used to be precision-gated -- auto meant 30 for NVFP4 and 0 for everything else,
+# on the reasoning that only the NVFP4 checkpoint pulls in the extra JIT. A BF16 run
+# refutes that gate: BF16 disagg/lws-ep on p6-b200 (2026-08-17T06:01:40Z, 100 requests,
+# ISL 1024 / OSL 512, --concurrency 10) reported TTFT p95 57,264ms / p99 57,401ms /
+# max 57,627ms against a p50 of 704ms. Per-request records place the whole penalty in the
+# opening concurrency wave -- the 10 requests issued at t=0 took 40.1-57.6s to first token
+# and the remaining 90 took 0.60-1.38s -- so it is a cold-engine cost, and an EXCLUDED
+# warmup phase is exactly what keeps it out of the report. It is also TTFT-only: those 10
+# requests' ITL p50 was 114.89ms against 114.58ms for the other 90, which is why the
+# warmup changes what the tail columns mean without moving the p50s (measured: TTFT p50
+# 704.28 -> 703.28, ITL p50 114.58 -> 114.58, i.e. under 0.2%).
+# 30 is kept rather than 10 (one wave was enough on that run) because 30 is the count
+# already validated on NVFP4 and one constant is easier to reason about than two.
+# Cost is wall-clock only: 30 excluded requests at --concurrency 10 add ~3 waves, ~180s
+# on that ~650s run. What it does NOT fix is a hold that RECURS mid-run: the NVFP4
+# lws-ep run of 2026-08-16 had 8 slow requests at t=224-261s, well past any warmup.
+# AIPERF_WARMUP_REQUESTS=0 disables, any integer overrides. Same idiom as WARMUP_ENABLED
+# in the manifests -- note that one is still precision-gated, and gates the in-pod warmer,
+# not the report.
 export AIPERF_WARMUP_REQUESTS="${AIPERF_WARMUP_REQUESTS:-auto}"
 case "${AIPERF_WARMUP_REQUESTS}" in
-  auto) case "${MODEL_NAME}" in *NVFP4*|*nvfp4*) _WARMUP_COUNT=30 ;; *) _WARMUP_COUNT=0 ;; esac ;;
+  auto) _WARMUP_COUNT=30 ;;
   *)    _WARMUP_COUNT="${AIPERF_WARMUP_REQUESTS}" ;;
 esac
 _WARMUP_ARG=""
 if [ "${_WARMUP_COUNT}" -gt 0 ] 2>/dev/null; then
   _WARMUP_ARG="--warmup-request-count ${_WARMUP_COUNT}"
-  echo "NVFP4 model detected: adding ${_WARMUP_ARG} (excluded from the report)"
+  echo "Adding ${_WARMUP_ARG} (a separate phase, excluded from the report)"
 fi
 
 # Artifact directory. ${MODEL_PATH}/aiperf/${DEPLOYMENT_TYPE} alone is not unique per run:
