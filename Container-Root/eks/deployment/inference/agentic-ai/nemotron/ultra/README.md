@@ -150,6 +150,7 @@ Then run any or all of the following tests:
 ./test-chat-completions.sh
 ./test-aiperf.sh
 ./aiperf-sweep-run.sh
+./aiperf-clean-tail.sh
 ./kv-lease-check.sh
 ```
 
@@ -159,6 +160,7 @@ Then run any or all of the following tests:
 * `./test-chat-completions.sh` - tests a single request to the /v1/chat/completions API
 * `./test-aiperf.sh` - runs aiperf against the model endpoint, reports benchmark results
 * `./aiperf-sweep-run.sh` - runs a sweep of aiperf tests with concurrency 1,4,8,16,32,64 to explore scalability
+* `./aiperf-clean-tail.sh` - splits an aiperf export into its stalled tail and its steady state
 * `./kv-lease-check.sh` - checks a disagg run for requests served on KV blocks the prefill side had already freed
 
 `test-aiperf.sh` writes its artifacts to
@@ -178,6 +180,17 @@ them. Note what the namespace can and cannot prove: `agg/dgd`, `agg/dgd-v1beta1`
 `disagg/dgd` and `disagg/dgd-v1beta1` set no `DYN_NAMESPACE` and dynamo defaults it to the literal
 `dynamo`, so for those the check reports `not discriminating` and the `workloads` field is what
 identifies the run.
+
+Read a disagg report through `./aiperf-clean-tail.sh <artifact-dir>/profile_export.jsonl` before
+quoting a TTFT mean or an upper percentile. Both 100-request NVFP4 disagg runs on 2026-08-16
+released batches of requests at single instants - at the script's default cutoff of TTFT > 5s that
+is 20 of 100 on `lws-pp2` and 16 of 100 on `lws-ep` - which puts the mean and every percentile above
+p50 an order of magnitude above the steady state and makes two runs that stalled a different number
+of times incomparable. Always state the cutoff a count was taken at; the count is a function of the
+cut, so two counts taken at different cuts are not a comparison. The script reports the two
+populations separately and how much wall clock the stall cost. The unconditional warmup phase in
+`test-aiperf.sh` prevents the class of stall that is confined to the opening concurrency wave; this
+script is for reading the class that recurs mid-run, which a warmup cannot remove.
 
 Run `./kv-lease-check.sh` after any disagg benchmark. In vLLM's NixlConnector the prefill side holds
 each request's KV blocks under a lease and frees them when it elapses; a later read by the decode
