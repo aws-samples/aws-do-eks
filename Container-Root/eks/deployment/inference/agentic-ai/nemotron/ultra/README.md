@@ -167,6 +167,18 @@ before it starts. `AIPERF_RUN_ID` defaults to a UTC timestamp, so comparing topo
 one of them keeps every report -- set `MANIFEST_TYPE` in `test/.env` to match the deployed topology
 so the folder is labelled correctly, and set `AIPERF_RUN_ID` to name a run (`AIPERF_RUN_ID=cold`).
 
+Because that label is asserted rather than checked, `test-aiperf.sh` also writes a `run-meta.json`
+next to the report recording what actually served it: the frontend Pod that `SERVICE_URL` resolved
+to, that Pod's `DYN_NAMESPACE`, its owner, every workload labelled
+`app.kubernetes.io/part-of=<deployment>`, and any `DynamoGraphDeployment` present. A `label_check`
+field compares the `DYN_NAMESPACE` the named template sets against the one observed, so a stale
+`MANIFEST_TYPE` shows up as `MISMATCH` in the report folder and on stdout instead of being
+reconstructed later. Three report folders written on 2026-08-16 named a topology that had not served
+them. Note what the namespace can and cannot prove: `agg/dgd`, `agg/dgd-v1beta1`, `agg/lws-ep`,
+`disagg/dgd` and `disagg/dgd-v1beta1` set no `DYN_NAMESPACE` and dynamo defaults it to the literal
+`dynamo`, so for those the check reports `not discriminating` and the `workloads` field is what
+identifies the run.
+
 Run `./kv-lease-check.sh` after any disagg benchmark. In vLLM's NixlConnector the prefill side holds
 each request's KV blocks under a lease and frees them when it elapses; a later read by the decode
 worker is then only logged, never failed, so the request still returns 200 on blocks that are gone.
