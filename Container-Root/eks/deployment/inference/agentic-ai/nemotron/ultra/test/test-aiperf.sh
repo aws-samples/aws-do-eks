@@ -137,11 +137,14 @@ _EXP_NS="$(grep -m1 -o 'name: DYN_NAMESPACE, value: [A-Za-z0-9_-]*' "${_TPL}" 2>
 if [ ! -f "${_TPL}" ]; then
   _CHECK="unverified: ${_TPL} not found from $(pwd), so the asserted topology could not be read"
 elif [ "${_EXP_NS}" == "" ]; then
-  _CHECK="not discriminating: ${MANIFEST_TYPE}.yaml-template sets no DYN_NAMESPACE, dynamo defaults it to \"dynamo\", observed \"${_OBS_NS}\" -- use the workloads field to identify this run"
+  # Single quotes around the values, not double: _CHECK lands inside a JSON string in the
+  # heredoc below, and a literal double quote there makes the whole run-meta.json unparsable.
+  # Both 2026-08-17 dgd runs shipped malformed run-meta.json through this branch.
+  _CHECK="not discriminating: ${MANIFEST_TYPE}.yaml-template sets no DYN_NAMESPACE, dynamo defaults it to 'dynamo', observed '${_OBS_NS}' -- use the workloads field to identify this run"
 elif [ "${_EXP_NS}" == "${_OBS_NS}" ]; then
   _CHECK="consistent: ${MANIFEST_TYPE} sets DYN_NAMESPACE=${_EXP_NS} and the serving frontend reports ${_OBS_NS}"
 else
-  _CHECK="MISMATCH: ${MANIFEST_TYPE} sets DYN_NAMESPACE=${_EXP_NS} but the serving frontend reports \"${_OBS_NS}\" -- this report is in the wrong folder"
+  _CHECK="MISMATCH: ${MANIFEST_TYPE} sets DYN_NAMESPACE=${_EXP_NS} but the serving frontend reports '${_OBS_NS}' -- this report is in the wrong folder"
 fi
 
 # Emit the warm-up count as a JSON number only when it is one. The gate above accepts any value
