@@ -14,7 +14,7 @@ Common to every fixed-concurrency row: ISL 1024 (stddev 0) / OSL 512 with `ignor
 | BF16 | `agg/dgd` | 8 | 504.94 | 45.02 | 88.44 | 11.31 | 112.21 | 14.03 | raw aiperf export |
 | BF16 | `disagg/deployment` | 16 | 559.31 | - | 89.50 | 11.15 | 109.90 | 6.87 | reported table (raw export not retained) |
 | BF16 | `disagg/dgd` | 16 | 552.83 | 90.34 | 88.68 | 11.28 | 110.62 | 6.91 | raw aiperf export |
-| BF16 | `disagg/lws-2pp` | 32 | 544.34 | - | - | 11.13 | 109.57 | 3.42 | reported table (raw export not retained) |
+| BF16 | `disagg/lws-2pp` | 32 | 546.13 | 88.22 | 88.32 | 11.32 | 110.94 | 3.47 | raw aiperf export |
 | BF16 | `disagg/lws-ep` | 32 | 704.28 | 114.58 | 114.58 | 8.73 | 78.98\* | 2.47\* | raw aiperf export |
 | BF16 | `disagg/lws-pp2` | 32 | 356.81 | 49.88 | 49.93 | 20.03 | 196.46 | 6.14 | raw aiperf export |
 | NVFP4 | `agg/deployment` | 8 | 431.14 | 152.26 | 122.81 | 8.14 | 46.25\* | 5.78\* | raw aiperf export |
@@ -82,11 +82,12 @@ Hybrid-Mamba models under pipeline parallelism are exposed to a class of KV-tran
 | `agg/lws` (TP8/PP2) | byte-identical |
 | `disagg/lws-pp2` (TP8/PP2 both roles) | byte-identical |
 | `disagg/deployment` (TP8+TP8, PP1) | byte-identical |
+| `disagg/lws-2pp` (prefill TP8/PP2 + 2× decode TP8/PP1) | byte-identical |
 | `agg/dgd` (TP8/PP1) | **diverges** |
 
-Both PP2 shapes pass, which is what makes their ~49 ms ITL rows quotable. Two open items: `agg/dgd` — a PP1 shape, so not the vllm#50494 exposure — produced a different (also coherent) continuation than the deployment control, which is unexplained and worth a look before treating dgd and deployment rows as interchangeable beyond their (measured, ~1%) latency agreement; and `disagg/lws-2pp` (PP2 on its prefill role) has not been gated yet. The NVFP4 stacks were torn down before their captures ran, so the gate is BF16-only.
+Every PP>1 shape in the grid now passes, which is what makes their ITL rows quotable (`disagg/lws-2pp` was gated 2026-08-18 on a fresh cold+warm pair; both completion texts were asserted non-empty before the compare). One open item: `agg/dgd` — a PP1 shape, so not the vllm#50494 exposure — produced a different (also coherent) continuation than the deployment control, which is unexplained and worth a look before treating dgd and deployment rows as interchangeable beyond their (measured, ~1%) latency agreement. The NVFP4 stacks were torn down before their captures ran, so the gate is BF16-only.
 
 ## Coverage
 
-17 of the 18 template × precision grid cells are filled; the one hole is NVFP4 `agg/lws-ep` (its deploy failed on the run day and was deprioritized). The fixed-concurrency table above lists the representative row per cell; where a cell was measured more than once the runs agree on ITL p50 to ~1% across days and stacks.
+17 of the 18 template × precision grid cells are filled; the one hole is NVFP4 `agg/lws-ep`. Three timed re-attempts on 2026-08-17/18 brought that stack up healthy (both LWS pods Ready, the model registered on `/v1/models`), but the run automation's readiness gate waited for a standalone frontend pod that the `lws-ep` template intentionally does not have (its frontend runs inside the LWS leader), so no benchmark was recorded — a harness-side gate bug, not a template or model failure. The fixed-concurrency table above lists the representative row per cell; where a cell was measured more than once the runs agree on ITL p50 to ~1% across days and stacks.
 
