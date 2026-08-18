@@ -2,7 +2,7 @@
 
 source .env
 
-export CMD="kubectl -n ${NAMESPACE} cp -f \$(kubectl get pods | grep aiperf-sweep | cut -d ' ' -f 1):/tmp/run-bundle/summary.json ./sweep-summary.json"
+export CMD="kubectl -n ${NAMESPACE} cp -f \$(kubectl -n ${NAMESPACE} get pods | grep aiperf-sweep | cut -d ' ' -f 1):/tmp/run-bundle/summary.json ./sweep-summary.json"
 
 if [ ! "$VERBOSE" == "false" ]; then echo -e "\n${CMD}\n"; fi
 

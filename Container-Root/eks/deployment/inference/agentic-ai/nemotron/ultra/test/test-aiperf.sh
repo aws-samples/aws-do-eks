@@ -5,12 +5,19 @@
 
 source .env
 
+# Every kubectl call that touches the do-aiperf pod passes the namespace explicitly, so a
+# kubeconfig context pinned to another namespace cannot strand the pod (or these lookups)
+# somewhere fsx-pvc and the model do not exist. Empty NAMESPACE keeps the old context-default
+# behaviour.
+_NS_ARG=""
+if [ "${NAMESPACE}" != "" ]; then _NS_ARG="-n ${NAMESPACE}"; fi
+
 # Start the do-aiperf pod
 source ./aiperf-pod-run.sh
 
 # Wait for pod to be running
 echo "Waiting for the do-aiperf pod to be ready..."
-kubectl wait --for=condition=Ready pod/do-aiperf --timeout=120s
+kubectl ${_NS_ARG} wait --for=condition=Ready pod/do-aiperf --timeout=120s
 
 # AIPerf runs a separate Warmup phase and EXCLUDES those records from the report, which is
 # what keeps a cold engine out of the published numbers. On NVFP4 the first requests pay a
@@ -73,7 +80,7 @@ echo "Artifacts: ${ARTIFACT_DIR}"
 # Execute the aiperf command interactively
 echo "Executing aiperf command in do-aiperf pod ..."
 
-export CMD="kubectl exec -it do-aiperf -- aiperf profile --model \"${MODEL_NAME}\" --tokenizer \"${MODEL_PATH}\" --artifact-dir \"${ARTIFACT_DIR}\" --url \"${SERVICE_URL}\" --transport http --endpoint-type chat --streaming --concurrency 10 --request-count 100 ${_WARMUP_ARG} --synthetic-input-tokens-mean 1024 --synthetic-input-tokens-stddev 0 --output-tokens-mean 512 --extra-inputs \"ignore_eos:true\" --random-seed 42"
+export CMD="kubectl ${_NS_ARG} exec -it do-aiperf -- aiperf profile --model \"${MODEL_NAME}\" --tokenizer \"${MODEL_PATH}\" --artifact-dir \"${ARTIFACT_DIR}\" --url \"${SERVICE_URL}\" --transport http --endpoint-type chat --streaming --concurrency 10 --request-count 100 ${_WARMUP_ARG} --synthetic-input-tokens-mean 1024 --synthetic-input-tokens-stddev 0 --output-tokens-mean 512 --extra-inputs \"ignore_eos:true\" --random-seed 42"
 
 if [ ! "$VERBOSE" == "false" ]; then echo -e "\n${CMD}\n"; fi
 
@@ -109,15 +116,12 @@ eval "${CMD}"
 # directory on start, and BEFORE aiperf-pod-stop.sh, because the write goes through the
 # do-aiperf pod -- the container that mounts the same /shared that ARTIFACT_DIR lives on.
 #
-# The model lives in ${NAMESPACE} (every template renders `namespace: ${NAMESPACE}`) while the
-# do-aiperf pod is created by aiperf-pod-run.sh without one, i.e. in whatever namespace the
-# current context points at. So the deployment-side lookups honour ${NAMESPACE} when .env sets
-# it and otherwise fall back to the context, exactly like the `kubectl wait` above; the write
-# into do-aiperf deliberately stays on the context default, where that pod actually is.
+# The model lives in ${NAMESPACE} (every template renders `namespace: ${NAMESPACE}`) and the
+# do-aiperf pod now does too (aiperf-pod-run.sh passes it explicitly), so the deployment-side
+# lookups and the write into do-aiperf below all use the same ${_NS_ARG} defined at the top of
+# this script; empty NAMESPACE falls back to the context everywhere, consistently.
 echo ""
 echo "Recording run-meta.json ..."
-_NS_ARG=""
-if [ "${NAMESPACE}" != "" ]; then _NS_ARG="-n ${NAMESPACE}"; fi
 _SVC="$(echo "${SERVICE_URL}" | sed -E 's#^[a-z]+://##; s#[:/].*$##; s#\..*$##')"
 _PART_OF="${_SVC%-frontend}"
 _FE_POD="$(kubectl ${_NS_ARG} get endpointslices -l "kubernetes.io/service-name=${_SVC}" -o jsonpath='{.items[0].endpoints[0].targetRef.name}' 2>/dev/null)"
@@ -133,11 +137,14 @@ _EXP_NS="$(grep -m1 -o 'name: DYN_NAMESPACE, value: [A-Za-z0-9_-]*' "${_TPL}" 2>
 if [ ! -f "${_TPL}" ]; then
   _CHECK="unverified: ${_TPL} not found from $(pwd), so the asserted topology could not be read"
 elif [ "${_EXP_NS}" == "" ]; then
-  _CHECK="not discriminating: ${MANIFEST_TYPE}.yaml-template sets no DYN_NAMESPACE, dynamo defaults it to \"dynamo\", observed \"${_OBS_NS}\" -- use the workloads field to identify this run"
+  # Single quotes around the values, not double: _CHECK lands inside a JSON string in the
+  # heredoc below, and a literal double quote there makes the whole run-meta.json unparsable.
+  # Both 2026-08-17 dgd runs shipped malformed run-meta.json through this branch.
+  _CHECK="not discriminating: ${MANIFEST_TYPE}.yaml-template sets no DYN_NAMESPACE, dynamo defaults it to 'dynamo', observed '${_OBS_NS}' -- use the workloads field to identify this run"
 elif [ "${_EXP_NS}" == "${_OBS_NS}" ]; then
   _CHECK="consistent: ${MANIFEST_TYPE} sets DYN_NAMESPACE=${_EXP_NS} and the serving frontend reports ${_OBS_NS}"
 else
-  _CHECK="MISMATCH: ${MANIFEST_TYPE} sets DYN_NAMESPACE=${_EXP_NS} but the serving frontend reports \"${_OBS_NS}\" -- this report is in the wrong folder"
+  _CHECK="MISMATCH: ${MANIFEST_TYPE} sets DYN_NAMESPACE=${_EXP_NS} but the serving frontend reports '${_OBS_NS}' -- this report is in the wrong folder"
 fi
 
 # Emit the warm-up count as a JSON number only when it is one. The gate above accepts any value
@@ -148,7 +155,7 @@ case "${_WARMUP_COUNT}" in
   *)           _WARMUP_JSON="${_WARMUP_COUNT}" ;;
 esac
 
-kubectl exec -i do-aiperf -- sh -c "mkdir -p '${ARTIFACT_DIR}' && cat > '${ARTIFACT_DIR}/run-meta.json'" <<EOF
+kubectl ${_NS_ARG} exec -i do-aiperf -- sh -c "mkdir -p '${ARTIFACT_DIR}' && cat > '${ARTIFACT_DIR}/run-meta.json'" <<EOF
 {
   "run_id": "${AIPERF_RUN_ID}",
   "recorded_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",

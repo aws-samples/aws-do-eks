@@ -163,6 +163,10 @@ Then run any or all of the following tests:
 * `./aiperf-clean-tail.sh` - splits an aiperf export into its stalled tail and its steady state
 * `./kv-lease-check.sh` - checks a disagg run for requests served on KV blocks the prefill side had already freed
 
+Measured results from these tests — a full template × precision matrix at fixed concurrency, two
+agg-vs-disagg concurrency sweeps at equal GPU count, and a PP>1 output-correctness gate, collected
+on a 4-node B200 cluster on 2026-08-14..17 — are recorded in [test/RESULTS.md](test/RESULTS.md).
+
 `test-aiperf.sh` writes its artifacts to
 `${MODEL_PATH}/aiperf/${DEPLOYMENT_TYPE}/${MANIFEST_TYPE}/${AIPERF_RUN_ID}` and prints the path
 before it starts. `AIPERF_RUN_ID` defaults to a UTC timestamp, so comparing topologies or rerunning
