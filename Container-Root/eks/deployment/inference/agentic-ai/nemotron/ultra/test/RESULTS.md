@@ -1,8 +1,8 @@
-# Nemotron 3 Ultra 550B — measured AIPerf results (B200, 2026-08-14..17)
+# Nemotron 3 Ultra 550B — measured AIPerf results (B200, 2026-08-14..18)
 
 Benchmark results for every deployment template in this folder's `agg/` and `disagg/` directories, at both published precisions of the model, measured with the harness in this directory (`test-aiperf.sh` for the fixed-concurrency rows, `aiperf-sweep-run.sh` for the sweeps). Numbers marked *raw aiperf export* are parsed from the `profile_export_aiperf.json` that aiperf 0.9.0 wrote for that run — none are transcribed by hand.
 
-Common to every fixed-concurrency row: ISL 1024 (stddev 0) / OSL 512 with `ignore_eos:true`, 100 requests, `--concurrency 10`, `--random-seed 42`, `--warmup-request-count 0`, on a SageMaker HyperPod EKS cluster with 4× p6-b200 nodes (8× B200 each). Each 2026-08-17 row was run twice on the same stack — cold right after the pods went Ready, then again ~30 minutes later — and the **warm run is the published row**; the cold companion is kept as provenance. Runs carry a `run-meta.json` that records what actually served them (the observed workload kinds and DYN_NAMESPACE), so the topology label of each row is evidence, not assertion.
+Common to every fixed-concurrency row: ISL 1024 (stddev 0) / OSL 512 with `ignore_eos:true`, 100 requests, `--concurrency 10`, `--random-seed 42`, `--warmup-request-count 0`, on a SageMaker HyperPod EKS cluster with 4× p6-b200 nodes (8× B200 each). Each 2026-08-17 row — and the two rows re-measured on 2026-08-18 (`disagg/lws-2pp`, `disagg/deployment`) — was run twice on the same stack: cold right after the pods went Ready, then again after a warm interval, and the **warm run is the published row**; the cold companion is kept as provenance. Runs carry a `run-meta.json` that records what actually served them (the observed workload kinds and DYN_NAMESPACE), so the topology label of each row is evidence, not assertion.
 
 ## Fixed-concurrency comparison (c=10)
 
@@ -12,7 +12,7 @@ Common to every fixed-concurrency row: ISL 1024 (stddev 0) / OSL 512 with `ignor
 | BF16 | `agg/lws` | 16 | 534.56 | 49.43 | 49.24 | 20.31 | 199.54 | 12.47 | raw aiperf export |
 | BF16 | `agg/lws-ep` | 16 | 451.29 | 206.00 | 113.44 | 8.80 | 87.06 | 5.44 | reported table (raw export not retained) |
 | BF16 | `agg/dgd` | 8 | 504.94 | 45.02 | 88.44 | 11.31 | 112.21 | 14.03 | raw aiperf export |
-| BF16 | `disagg/deployment` | 16 | 559.31 | - | 89.50 | 11.15 | 109.90 | 6.87 | reported table (raw export not retained) |
+| BF16 | `disagg/deployment` | 16 | 561.97 | 90.14 | 89.84 | 11.13 | 109.90 | 6.87 | raw aiperf export |
 | BF16 | `disagg/dgd` | 16 | 552.83 | 90.34 | 88.68 | 11.28 | 110.62 | 6.91 | raw aiperf export |
 | BF16 | `disagg/lws-2pp` | 32 | 546.13 | 88.22 | 88.32 | 11.32 | 110.94 | 3.47 | raw aiperf export |
 | BF16 | `disagg/lws-ep` | 32 | 704.28 | 114.58 | 114.58 | 8.73 | 78.98\* | 2.47\* | raw aiperf export |
@@ -32,13 +32,13 @@ Common to every fixed-concurrency row: ISL 1024 (stddev 0) / OSL 512 with `ignor
 
 1. **Compare on ITL p50 and TTFT p50.** At fixed concurrency and pinned output length there is essentially one independent latency number per row: tok/s/user ≈ 1000/ITL and total ≈ that × concurrency, so quoting all columns is quoting ITL several times.
 2. **No fixed-concurrency row is a throughput result.** c=10 is latency-bound, nowhere near saturation; the sweeps below are the throughput data.
-3. **Tails need repeats.** Most rows are n=1 at 100 requests; p90/p99/max on such a run can be a single request. Rows measured cold-then-warm on 2026-08-17 have their tail behaviour characterized in the caveats.
+3. **Tails need repeats.** Most rows are n=1 at 100 requests; p90/p99/max on such a run can be a single request. Rows measured cold-then-warm on 2026-08-17/18 have their tail behaviour characterized in the caveats.
 4. **Cross-precision comparisons must hold the template fixed.** The same-shape pairs measured here: `agg/dgd` BF16 88.44 vs NVFP4 127.01 ITL p50 (1.44x), `agg/deployment` 89.40 vs 122.81 (1.37x), `agg/lws` 49.24 vs 72.08 (1.46x) — BF16 is consistently faster per token on B200 for this model. (Two additional untagged 08-08 runs corroborate the direction: ITL 87.91 BF16 vs 128.90 NVFP4.)
 5. **PP2 is the latency lever.** The two TP8/PP2 shapes (`agg/lws`, `disagg/lws-pp2`) run ITL ~49-50 ms vs ~88-90 ms for every TP8/PP1 shape at BF16 — and the PP>1 correctness gate below is what makes those rows quotable.
 
-### Caveats measured on the 2026-08-17 cold+warm pairs
+### Caveats measured on the 2026-08-17/18 cold+warm pairs
 
-* **BF16 TTFT tails are a cold-engine effect and a warm run removes them** (3 of 3 pairs): `agg/deployment` p95 1,335.30 → 537.01, `agg/dgd` p95 1,256.81 → 520.57 (max within 16 ms of p50), `disagg/lws-pp2` p95 2,559.29 → 805.74 — while ITL p50 and total tok/s moved <1%. The cold tail is the opening concurrency wave paying JIT, not steady-state degradation.
+* **BF16 TTFT tails are a cold-engine effect and a warm run removes them** (5 of 5 pairs): `agg/deployment` p95 1,335.30 → 537.01, `agg/dgd` p95 1,256.81 → 520.57 (max within 16 ms of p50), `disagg/lws-pp2` p95 2,559.29 → 805.74, and on 2026-08-18 `disagg/lws-2pp` p95 6,213.13 → 980.03 and `disagg/deployment` p95 1,628.61 → 995.73 — while ITL p50 and total tok/s moved <1%. The cold tail is the opening concurrency wave paying JIT, not steady-state degradation. What the warm disagg rows keep is a confined top-decile TTFT step (p95≈max at ~1.8x p50), not a multi-second tail.
 * **NVFP4 aggregated TTFT tails are NOT cold-engine** (2 of 2 pairs got *worse* warm: `agg/lws` p95 315.3 s cold → 503.0 s warm; `agg/deployment` 116.4 s → 182.2 s). These are multi-minute holds that recur mid-run — the class `aiperf-clean-tail.sh` exists to separate — so on those two rows every column above p50 describes the holds, and the starred totals understate the warm rate. NVFP4 `disagg/dgd` did clean up warm (p95 321 s → 1.13 s).
 
 ## Concurrency sweeps: aggregated vs disaggregated at equal GPU count
