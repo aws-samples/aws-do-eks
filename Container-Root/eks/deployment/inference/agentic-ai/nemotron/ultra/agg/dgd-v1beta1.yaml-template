@@ -26,25 +26,6 @@
 # frontend + worker deployments and owns their lifecycle, so ./stop.sh removes
 # everything it created.
 #
-# Aggregated (prefill+decode co-located) single-node worker: TP=${GPU_PER_WORKER}/PP=1,
-# intra-node NVLink. NO P/D disaggregation, so NO NIXL / KV-transfer / EFA needed
-# for the model itself (contrast ../disagg/dgd-v1beta1.yaml-template). This is the
-# DGD equivalent of ./deployment.yaml-template — same serving shape, managed by the
-# operator as one CRD.
-#
-# /dev/shm — the operator owns this mount, so the `dshm` emptyDir that
-# dgd.yaml-template declares is NOT carried over, and sharedMemorySize is left
-# unset. Mechanism, read from the 1.3.1 operator source: GenerateBasePodSpec calls
-# ApplySharedMemoryVolumeAndMount unconditionally (internal/dynamo/graph.go:1578);
-# a nil sharedMemorySize injects an 8Gi emptyDir named `shared-memory` at /dev/shm
-# rather than nothing (shared_memory.go:28-48, only "0" suppresses it); and a mount
-# the pod template already had is kept ONLY if its name AND its mountPath both
-# differ from the operator's, so a `dshm` mount at /dev/shm is silently dropped,
-# not rejected (shared_memory.go:69). The 64Gi in dgd.yaml-template has therefore
-# never been in effect. Full write-up in ../disagg/dgd-v1beta1.yaml-template.
-#
-# Uses the golden image via ../.env (covers agg/EP16/PP>1 + the NVFP4 cubin fix);
-# MODEL_VARIANT=NVFP4 switches the checkpoint. Worker stays non-root (dynamo).
 # =============================================================================
 ---
 apiVersion: nvidia.com/v1beta1
@@ -97,9 +78,7 @@ spec:
                   # The CNI can hand this sandbox the node's own kubelet InternalIP; cluster DNS then
                   # never answers for the pod, so NATS/etcd are unreachable. A container RESTART CANNOT
                   # CLEAR IT (restarts reuse the sandbox, CNI ADD is not re-invoked) - the pod object has
-                  # to be deleted. Measured 2026-08-15 on a 4-node ml.p6-b200.48xlarge cluster: all four
-                  # nodes carry their own InternalIP inside their ipamd assignable pool, so ANY
-                  # hostNetwork:false pod here can draw it. Mechanism + incident: disagg/lws-2pp.yaml-template.
+                  # to be deleted. 
                   if [ -n "${DOLLAR}{POD_IP:-}" ] && [ "${DOLLAR}{POD_IP:-}" = "${DOLLAR}{NODE_IP:-}" ]; then
                     echo "[frontend] FATAL: pod IP ${DOLLAR}POD_IP == node IP ${DOLLAR}NODE_IP with hostNetwork=false."
                     echo "[frontend]        Cluster DNS cannot answer for this pod, so NATS/etcd are unreachable."
@@ -155,13 +134,6 @@ spec:
                   unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
                         HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
                   if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
-                  # ---- Node-fault preflight: duplicate pod address (podIP == hostIP) ----
-                  # The CNI can hand this sandbox the node's own kubelet InternalIP; cluster DNS then
-                  # never answers for the pod, so NATS/etcd are unreachable. A container RESTART CANNOT
-                  # CLEAR IT (restarts reuse the sandbox, CNI ADD is not re-invoked) - the pod object has
-                  # to be deleted. Measured 2026-08-15 on a 4-node ml.p6-b200.48xlarge cluster: all four
-                  # nodes carry their own InternalIP inside their ipamd assignable pool, so ANY
-                  # hostNetwork:false pod here can draw it. Mechanism + incident: disagg/lws-2pp.yaml-template.
                   if [ -n "${DOLLAR}{POD_IP:-}" ] && [ "${DOLLAR}{POD_IP:-}" = "${DOLLAR}{NODE_IP:-}" ]; then
                     echo "[worker] FATAL: pod IP ${DOLLAR}POD_IP == node IP ${DOLLAR}NODE_IP with hostNetwork=false."
                     echo "[worker]        Cluster DNS cannot answer for this pod, so NATS/etcd are unreachable."
@@ -169,25 +141,7 @@ spec:
                     echo "[worker]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
                     exit 1
                   fi
-                  # Cold-start warmup (detached), same block and same knobs as the disagg templates -
-                  # aggregated pays the identical tax because it runs the same decode kernels. A fresh
-                  # pod's FIRST request spends a one-time ~4min Triton JIT on the Mamba DECODE kernels
-                  # (_selective_scan_update, _causal_conv1d_update): startup only warms the PREFILL SSD
-                  # path and --enforce-eager skips cudagraph capture, not JIT. Measured on a 2-node
-                  # disagg pair with this block as the only variable: first request 7,782ms -> 1,172ms
-                  # (6.6x), total benchmark wall -24.7%, steady state within 2%. Concurrency is a
-                  # Triton compile key on the decode path (_causal_conv1d_update: seqlen / state_len /
-                  # NP2_STATELEN / strides are tl.constexpr; see ../disagg/lws-pp2.yaml-template),
-                  # hence bs=1 first then a concurrent burst of WARMUP_CONCURRENCY. NVFP4-only by default
-                  # (WARMUP_ENABLED=auto keys off the served model's precision suffix); see .env for
-                  # the knobs. Shares the pod, never blocks the engine launch, swallows every error so
-                  # it cannot crash the pod. FE is the operator-generated frontend Service, the same
-                  # name ../test/.env resolves for this manifest type.
-                  # ALSO measured UNWARMED on a live NVFP4 p6-b200 run (2026-08-15): first request 119.5s,
-                  # an 18-minute JIT window, and an AIPerf report with TTFT max 340,349ms / p90 128,579ms
-                  # against a p50 of 759ms - the aggregate columns are unusable while steady state is fine
-                  # (0.148 req/s), and ITL p50 reads 146.77ms vs ~124-129ms warm. So "ignore the TTFT
-                  # column" is not a workaround; the run has to START warm.
+                  # Cold-start warmup (detached)
                   (
                     FE="http://${DEPLOYMENT_NAME}-frontend.${NAMESPACE}.svc.cluster.local:8000"
                     LH="http://localhost:${DOLLAR}{DYN_SYSTEM_PORT:-9090}/health"

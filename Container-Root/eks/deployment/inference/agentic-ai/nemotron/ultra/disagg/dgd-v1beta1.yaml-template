@@ -4,12 +4,10 @@
 #
 # Author: Anton Alexander
 #
-# This is dgd.yaml-template ported to the v1beta1 API, nothing else. Every value
+# This is dgd.yaml-template ported to the v1beta1 API. Every value
 # (image, flags, env, resources, probes, node placement, KV transfer config) is
 # byte-identical to the v1alpha1 file; the only differences are the ones the new
-# schema forces, plus the one documented /dev/shm correction below. That is
-# deliberate: it makes a single A/B run against MANIFEST_TYPE=dgd a clean test of
-# the API port, with no second variable.
+# schema forces, plus the one documented /dev/shm correction below.
 #
 #   MANIFEST_TYPE=dgd-v1beta1 ./run.sh
 #
@@ -53,30 +51,7 @@
 #
 # /dev/shm — the operator owns this mount, so the `dshm` emptyDir that
 # dgd.yaml-template declares is NOT carried over, and sharedMemorySize is left
-# unset. Read from the 1.3.1 operator source, which is the version this cluster's
-# CRD reports in nvidia.com/dynamo-operator-origin-version:
-#   - GenerateBasePodSpec calls ApplySharedMemoryVolumeAndMount UNCONDITIONALLY
-#     (internal/dynamo/graph.go:1578) — there is no "user opted out" path.
-#   - A nil sharedMemorySize means the operator's own default, not "no volume":
-#     it injects an 8Gi emptyDir named `shared-memory` mounted at /dev/shm
-#     (internal/dynamo/shared_memory.go:28-48). Only the literal "0" suppresses it.
-#   - It then keeps a mount the pod template already had ONLY when the name AND the
-#     mountPath both differ from its own (shared_memory.go:69). A `dshm` mount at
-#     /dev/shm collides on path, so it is silently DROPPED — not rejected. Volumes
-#     are deduplicated by name alone (:61), so the `dshm` volume itself survives,
-#     declared but mounted nowhere.
-# So the 64Gi in dgd.yaml-template has never been in effect: every dgd run in
-# ../test/results/ got 8Gi at /dev/shm. Leaving sharedMemorySize unset here keeps
-# that value; writing 64Gi would be the first time it actually applied, i.e. a real
-# change to a knob none of those runs used. Confirm on a running pod — NOT with
-# --dry-run, since the injection happens at reconcile, not at admission:
-#   kubectl get pod <worker> -o jsonpath='{.spec.containers[?(@.name=="main")].volumeMounts}'
-#   kubectl get pod <worker> -o jsonpath='{.spec.volumes}'
-#
-# NOT ported on purpose (each would add a second variable to the A/B):
-#   - compilationCache: a PVC-backed cache the operator wires up itself.
-#   - multinode: nodeCount, which is how a PP>1 role would be expressed here instead
-#     of a LeaderWorkerSet.
+# unset.
 #
 # Topology, unchanged from dgd.yaml-template: 1 prefill node + 1 decode node,
 # TP=${GPU_PER_WORKER}/PP=1 each. KV moves prefill->decode over EFA RDMA via NIXL
@@ -122,13 +97,6 @@ spec:
               # 1.3.0-era images have no /opt/dynamo/venv - activate only when present.
               args:
                 - |-
-                  # ---- Node-fault preflight: duplicate pod address (podIP == hostIP) ----
-                  # The CNI can hand this sandbox the node's own kubelet InternalIP; cluster DNS then
-                  # never answers for the pod, so NATS/etcd are unreachable. A container RESTART CANNOT
-                  # CLEAR IT (restarts reuse the sandbox, CNI ADD is not re-invoked) - the pod object has
-                  # to be deleted. Measured 2026-08-15 on a 4-node ml.p6-b200.48xlarge cluster: all four
-                  # nodes carry their own InternalIP inside their ipamd assignable pool, so ANY
-                  # hostNetwork:false pod here can draw it. Mechanism + incident: disagg/lws-2pp.yaml-template.
                   if [ -n "${DOLLAR}{POD_IP:-}" ] && [ "${DOLLAR}{POD_IP:-}" = "${DOLLAR}{NODE_IP:-}" ]; then
                     echo "[frontend] FATAL: pod IP ${DOLLAR}POD_IP == node IP ${DOLLAR}NODE_IP with hostNetwork=false."
                     echo "[frontend]        Cluster DNS cannot answer for this pod, so NATS/etcd are unreachable."
@@ -139,7 +107,6 @@ spec:
                   if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
                   exec python3 -m dynamo.frontend --http-port 8000 --http-host 0.0.0.0
               env:
-                # Read only by the duplicate-address preflight in args above.
                 - { name: POD_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
                 - { name: NODE_IP, valueFrom: { fieldRef: { fieldPath: status.hostIP } } }
               ports: [{ containerPort: 8000, name: http }]
@@ -156,8 +123,6 @@ spec:
               # ("may not specify more than 1 handler type").
     # ---- Prefill worker (TP${GPU_PER_WORKER}/PP1, 1 node) ---------
     - name: VllmPrefillWorker
-      # v1alpha1 said componentType: worker + subComponentType: prefill; in v1beta1
-      # prefill is a first-class value of `type`.
       type: prefill
       replicas: 1
       podTemplate:
@@ -186,13 +151,6 @@ spec:
                   unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
                         HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
                   if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
-                  # ---- Node-fault preflight: duplicate pod address (podIP == hostIP) ----
-                  # The CNI can hand this sandbox the node's own kubelet InternalIP; cluster DNS then
-                  # never answers for the pod, so NATS/etcd are unreachable. A container RESTART CANNOT
-                  # CLEAR IT (restarts reuse the sandbox, CNI ADD is not re-invoked) - the pod object has
-                  # to be deleted. Measured 2026-08-15 on a 4-node ml.p6-b200.48xlarge cluster: all four
-                  # nodes carry their own InternalIP inside their ipamd assignable pool, so ANY
-                  # hostNetwork:false pod here can draw it. Mechanism + incident: disagg/lws-2pp.yaml-template.
                   if [ -n "${DOLLAR}{POD_IP:-}" ] && [ "${DOLLAR}{POD_IP:-}" = "${DOLLAR}{NODE_IP:-}" ]; then
                     echo "[prefill] FATAL: pod IP ${DOLLAR}POD_IP == node IP ${DOLLAR}NODE_IP with hostNetwork=false."
                     echo "[prefill]        Cluster DNS cannot answer for this pod, so NATS/etcd are unreachable."
@@ -279,13 +237,6 @@ spec:
                   unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
                         HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
                   if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
-                  # ---- Node-fault preflight: duplicate pod address (podIP == hostIP) ----
-                  # The CNI can hand this sandbox the node's own kubelet InternalIP; cluster DNS then
-                  # never answers for the pod, so NATS/etcd are unreachable. A container RESTART CANNOT
-                  # CLEAR IT (restarts reuse the sandbox, CNI ADD is not re-invoked) - the pod object has
-                  # to be deleted. Measured 2026-08-15 on a 4-node ml.p6-b200.48xlarge cluster: all four
-                  # nodes carry their own InternalIP inside their ipamd assignable pool, so ANY
-                  # hostNetwork:false pod here can draw it. Mechanism + incident: disagg/lws-2pp.yaml-template.
                   if [ -n "${DOLLAR}{POD_IP:-}" ] && [ "${DOLLAR}{POD_IP:-}" = "${DOLLAR}{NODE_IP:-}" ]; then
                     echo "[decode] FATAL: pod IP ${DOLLAR}POD_IP == node IP ${DOLLAR}NODE_IP with hostNetwork=false."
                     echo "[decode]        Cluster DNS cannot answer for this pod, so NATS/etcd are unreachable."
@@ -293,29 +244,7 @@ spec:
                     echo "[decode]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
                     exit 1
                   fi
-                  # Cold-start warmup (detached). A fresh pod's FIRST request pays a one-time ~4min
-                  # Triton JIT compiling the Mamba DECODE kernels (_selective_scan_update,
-                  # _causal_conv1d_update): startup only warms the PREFILL SSD path, and
-                  # --enforce-eager skips cudagraph capture, not JIT. Measured on a 2-node disagg pair
-                  # with this block as the only variable: first request 7,782ms -> 1,172ms (6.6x),
-                  # total benchmark wall -24.7%, steady state within 2%. Concurrency is a Triton
-                  # compile key on the decode path (_causal_conv1d_update: seqlen / state_len /
-                  # NP2_STATELEN / strides are tl.constexpr), hence bs=1 first
-                  # then a concurrent burst of WARMUP_CONCURRENCY. NVFP4-only by default
-                  # (WARMUP_ENABLED=auto keys off the served model's precision suffix); see .env for
-                  # the knobs and lws-pp2.yaml-template for the long-form rationale. Shares the pod, never
-                  # blocks the engine launch, swallows every error so it cannot crash the pod.
-                  # The frontend Service name is the operator-generated ${DEPLOYMENT_NAME}-frontend,
-                  # the same name ../test/.env resolves for this manifest type.
-                  # ALSO measured UNWARMED on a live NVFP4 p6-b200 run (2026-08-15): first request 119.5s,
-                  # an 18-minute JIT window, and an AIPerf report with TTFT max 340,349ms / p90 128,579ms
-                  # against a p50 of 759ms - the aggregate columns are unusable while steady state is fine
-                  # (0.148 req/s), and ITL p50 reads 146.77ms vs ~124-129ms warm. So "ignore the TTFT
-                  # column" is not a workaround; the run has to START warm.
-                  # DISAGG-SPECIFIC, from that same run: while one engine compiles the other blocks, and it
-                  # lands on the KV handoff - 15x "No available shared memory broadcast block found in 60
-                  # seconds" plus KV-transfer P90 spikes of 62-63s that stopped 9s after the last compile,
-                  # then held 125-133ms (Avg post time never moved, 3.05-3.56ms: the fabric was healthy).
+                  # Cold-start warmup (detached)
                   (
                     FE="http://${DEPLOYMENT_NAME}-frontend.${NAMESPACE}.svc.cluster.local:8000"
                     # Gate on THIS pod's dyn-system /health: the frontend answers /v1/models 200 long
@@ -377,14 +306,8 @@ spec:
                 - { name: NODE_IP, valueFrom: { fieldRef: { fieldPath: status.hostIP } } }
                 - { name: DYN_SYSTEM_ENABLED, value: "true" }
                 - { name: DYN_SYSTEM_PORT, value: "9092" }
-                # The warmer above reads these INSIDE the container, so they have to be passed
-                # through here - without these two lines the knobs in .env are inert and the ladder
-                # is always 1..10 no matter what you set in your shell.
                 - { name: WARMUP_ENABLED, value: "${WARMUP_ENABLED}" }
                 - { name: WARMUP_CONCURRENCY, value: "${WARMUP_CONCURRENCY}" }
-                # Raise the execute_model RPC deadline (default 300s) so a JIT-heavy first concurrent
-                # decode step cannot trip it and kill EngineCore ("RPC call to execute_model timed
-                # out" -> EngineDeadError).
                 - { name: VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS, value: "1800" }
                 - { name: VLLM_LOGGING_LEVEL, value: INFO }
                 - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }

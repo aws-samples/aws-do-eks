@@ -16,12 +16,6 @@ request is not failed, the decode worker keeps whatever it read, and the client 
 gets HTTP 200. So a run can be silently wrong while every metric says it passed, which
 is why this needs a checker rather than an eyeball.
 
-MEASURED 2026-08-16, live 3-Pod disagg/dgd run (Nemotron-3-Ultra-550B-A55B-NVFP4,
-p6-b200, prefill and decode on different nodes, 42 completed requests): 8 of those 42
-produced BOTH lines, each once per prefill TP rank (8/8, so 64 log lines per message),
-and all 8 returned 200. The lease was the stock 30s; the gap between decode receiving
-the request and the KV being pulled measured 50-62s, always past it.
-
 USAGE
   ./kv-lease-check.sh                      # every prefill Pod of $DEPLOYMENT_NAME
   ./kv-lease-check.sh <prefill-worker.log> # a log you already saved

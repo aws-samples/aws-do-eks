@@ -27,11 +27,6 @@ spec:
           app.kubernetes.io/component: worker
           dynamo-role: leader
       spec:
-        # hostNetwork: true -> status.podIP IS status.hostIP for this pod, by definition. The
-        # duplicate-address preflight the hostNetwork:false pods in this tree carry (see
-        # disagg/lws-2pp.yaml-template) is therefore NOT applicable here and must not be
-        # copied in: it would fire on EVERY start. The fault it detects cannot occur under host
-        # networking either - there is no separate sandbox address to collide with the node's.
         hostNetwork: true
         dnsPolicy: ClusterFirstWithHostNet
         nodeSelector:
@@ -67,11 +62,7 @@ spec:
                       HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
                 if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
                 # Wait for own DNS to be resolvable (LWS pods come up simultaneously)
-                # Resolve in ONE getent per attempt and break only on a NON-EMPTY address. The previous
-                # shape probed with one getent and captured the address with a second one, so a single
-                # empty capture immediately after a successful probe killed the pod ~2s in while printing
-                # a 300s timeout it had never waited for (measured: B200 lws-ep worker, 2026-08-15).
-                # NR==1 also keeps a multi-record answer from producing a two-word LEADER_IP.
+                # Resolve in ONE getent per attempt and break only on a NON-EMPTY address.
                 for i in ${DOLLAR}(seq 1 150); do
                   LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk 'NR==1{print ${DOLLAR}1; exit}')
                   if [ -n "${DOLLAR}LEADER_IP" ]; then break; fi
@@ -97,38 +88,10 @@ spec:
                   if [ "${DOLLAR}{N:-0}" -ge 2 ]; then break; fi
                   sleep 5
                 done
-                # Cold-start warmup (detached): a fresh pod's FIRST request pays a one-time
-                # ~4min Triton JIT tax compiling the Mamba DECODE kernels (_selective_scan_update,
-                # _causal_conv1d_update) mid-request — startup only warms the PREFILL SSD path,
-                # and --enforce-eager skips cudagraph capture. Without this, the first CUSTOMER
-                # request looks hung for ~4min; warm steady-state is fine (~14 tok/s on B200).
-                # This backgrounded warmer drives generations through the frontend so the decode
-                # kernels JIT before real traffic arrives. It shares the pod, never blocks the
-                # engine launch, and swallows all errors so it can never crash the pod. Polls
-                # /v1/models (frontend readiness uses a tcpSocket probe, so /health may be absent)
-                # until the worker registers, then warms.
-                # NOTE: CONCURRENCY is a Triton compile key on the decode path
-                # (_causal_conv1d_update_kernel declares seqlen / state_len / NP2_STATELEN and
-                # every stride_* tl.constexpr with no do_not_specialize), so a single bs=1
-                # request is not enough: a concurrent benchmark (e.g. aiperf --concurrency 10)
-                # can still select an uncompiled variant and pay JIT on its opening. We therefore
-                # warm bs=1 first (fastest to first-token) and then fire a CONCURRENT burst so
-                # the levels the benchmark will hit compile up front. See
-                # ../disagg/lws-pp2.yaml-template for why it is that kernel and not
-                # selective_state_update on this device/dtype.
-                # Precision gate: the extra JIT-heavy opening is an NVFP4 concern (the NVFP4
-                # checkpoint FP8-quantizes the Mamba mixer + NVFP4-quantizes MoE, pulling in more
-                # kernel variants). BF16 completes this benchmark without the warmup, so skip it
-                # there. WARMUP_ENABLED=auto (default) follows the served model's precision
-                # suffix; set WARMUP_ENABLED=1/0 to force on/off.
+                # Cold-start warmup (detached)
                 (
                   FE="http://${DEPLOYMENT_NAME}-frontend.${NAMESPACE}.svc.cluster.local:8000"
                   # Gate on the LEADER's own dyn-system /health (localhost:${DYN_SYSTEM_PORT}),
-                  # the same signal the startupProbe uses. The frontend is up (and answers
-                  # /v1/models 200) ~15-18min BEFORE the engine finishes loading, so gating on
-                  # the frontend fires the warmup against a not-yet-ready engine and compiles
-                  # nothing. localhost:9090/health only returns 200 once THIS leader's engine is
-                  # loaded + its routes are registered.
                   LH="http://localhost:${DOLLAR}{DYN_SYSTEM_PORT:-9090}/health"
                   WARMUP_CONCURRENCY=${DOLLAR}{WARMUP_CONCURRENCY:-10}
                   WARMUP_ENABLED=${DOLLAR}{WARMUP_ENABLED:-auto}
@@ -268,11 +231,6 @@ spec:
           app.kubernetes.io/component: worker
           dynamo-role: worker
       spec:
-        # hostNetwork: true -> status.podIP IS status.hostIP for this pod, by definition. The
-        # duplicate-address preflight the hostNetwork:false pods in this tree carry (see
-        # disagg/lws-2pp.yaml-template) is therefore NOT applicable here and must not be
-        # copied in: it would fire on EVERY start. The fault it detects cannot occur under host
-        # networking either - there is no separate sandbox address to collide with the node's.
         hostNetwork: true
         dnsPolicy: ClusterFirstWithHostNet
         nodeSelector:
@@ -306,11 +264,6 @@ spec:
                 unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
                       HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
                 if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
-                # Resolve in ONE getent per attempt and break only on a NON-EMPTY address. The previous
-                # shape probed with one getent and captured the address with a second one, so a single
-                # empty capture immediately after a successful probe killed the pod ~2s in while printing
-                # a 300s timeout it had never waited for (measured: B200 lws-ep worker, 2026-08-15).
-                # NR==1 also keeps a multi-record answer from producing a two-word LEADER_IP.
                 for i in ${DOLLAR}(seq 1 150); do
                   LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk 'NR==1{print ${DOLLAR}1; exit}')
                   if [ -n "${DOLLAR}LEADER_IP" ]; then break; fi
@@ -323,10 +276,6 @@ spec:
                 fi
                 # Resolve MY_IP on the SAME interface that routes to the leader. Under
                 # hostNetwork:true, `hostname -i` can return empty or a secondary/EFA IP
-                # (e.g. 172.16.x) that the GCS on the primary VPC CIDR (10.x) can't route
-                # back to -> the raylet registers on an unreachable IP and Ray start times
-                # out ("Failed to get node info: RPC error: Deadline Exceeded"). Deriving
-                # the source IP from `ip route get <leader>` guarantees the primary-CIDR IP.
                 MY_IP=${DOLLAR}(ip -4 route get "${DOLLAR}LEADER_IP" 2>/dev/null | awk '{for(i=1;i<=NF;i++) if(${DOLLAR}i=="src"){print ${DOLLAR}(i+1); exit}}')
                 [ -z "${DOLLAR}MY_IP" ] && MY_IP=${DOLLAR}(hostname -i | awk '{print ${DOLLAR}1}')
                 echo "[worker] LEADER_IP=${DOLLAR}LEADER_IP MY_IP=${DOLLAR}MY_IP"
@@ -427,19 +376,6 @@ spec:
           args:
             - |-
               set -eu
-              # ---- Node-fault preflight: duplicate pod address (mechanism: disagg/lws-2pp.yaml-template) ----
-              # When the CNI hands this sandbox the node's own kubelet InternalIP (status.podIP ==
-              # status.hostIP while hostNetwork is false), kube-proxy DNAT replies land in the host
-              # netns, cluster DNS never answers, and DistributedRuntime() dies with "Failed to
-              # connect to NATS: DNS error ... Temporary failure in name resolution". A container
-              # RESTART CANNOT CLEAR IT: restarts reuse the pod sandbox, so CNI ADD is not re-invoked
-              # and the address is pinned for the pod's lifetime - the pod object has to be deleted.
-              # Measured on a 4-node ml.p6-b200.48xlarge cluster (2026-08-15): ALL FOUR nodes carry
-              # their own InternalIP inside their ipamd assignable pool, so any hostNetwork:false pod
-              # in this file can draw it - not just the GPU workers. Fail in ~1s naming the remedy
-              # instead of CrashLooping on an opaque DNS error. No `say`/fd-3 indirection is needed
-              # here (unlike the worker templates): this container does not redirect its stdout into a
-              # `tee` process substitution, so a plain echo reaches `kubectl logs` before the exit.
               if [ -n "${DOLLAR}{POD_IP:-}" ] && [ "${DOLLAR}{POD_IP:-}" = "${DOLLAR}{NODE_IP:-}" ]; then
                 echo "[frontend] FATAL: pod IP ${DOLLAR}POD_IP == node IP ${DOLLAR}NODE_IP with hostNetwork=false."
                 echo "[frontend]        Cluster DNS cannot answer for this pod, so NATS/etcd are unreachable."
@@ -450,7 +386,6 @@ spec:
               # dynamo.frontend calls DistributedRuntime() which connects to NATS immediately
               # with NO retry, so a transient cold-start DNS miss (EAI_AGAIN, "Temporary failure
               # in name resolution") is fatal and CrashLoops the pod even though NATS is healthy.
-              # The worker template already guards its startup with a getent loop; mirror that here.
               NATS_HOST=${DOLLAR}{NATS_SERVER#*://}; NATS_HOST=${DOLLAR}{NATS_HOST%%:*}
               for i in ${DOLLAR}(seq 1 60); do
                 if getent hosts "${DOLLAR}NATS_HOST" >/dev/null 2>&1; then break; fi

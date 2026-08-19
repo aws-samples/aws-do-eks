@@ -22,49 +22,6 @@
 #   MEASURED aggregated DP2/TP8/EP16 serving of 550B over EFA (NET/OFI efa both
 #   nodes, socket_fallback=0, coherent completions).
 #
-# THERE IS A SECOND lws-ep TEMPLATE, IN ../disagg/, AND IT IS A DIFFERENT TOPOLOGY. Same
-# MANIFEST_TYPE name on purpose (parity); the FOLDER is the discriminator. This one is
-# AGGREGATED — grep it: no --kv-transfer-config, no NixlConnector, no --disaggregation-mode,
-# and a running pod logs zero `NIXL` / `KV Transfer metrics` lines. ../disagg/lws-ep has all
-# three on BOTH roles and moves KV prefill->decode over EFA per request.
-# (Until 2026-08-15 the file at that path was a COPY of this aggregated one — a mislabel that
-# got an aggregated result reported as "disagg" once. It was replaced by the real P/D+EP shape.)
-#   -> Report aiperf/benchmark numbers from this template as EP16 AGGREGATED, and numbers from
-#      ../disagg/lws-ep as EP16 DISAGGREGATED. Comparing the two is only fair at EQUAL GPU
-#      COUNT (this template = EP_DP_SIZE x GPU_PER_WORKER GPUs, that one = 2x that) and on
-#      ITL / p50 TTFT.
-#   -> EFA is still exercised hard here, just not by NIXL: the expert all-to-all is NCCL over
-#      EFA on every token (see the all2all note below).
-# For P/D disaggregation use ../disagg: deployment | lws-2pp | lws-pp2 | lws-ep | dgd — all of
-# those carry --kv-transfer-config. (../disagg/lws.yaml-template is gone: it was byte-identical
-# to ../disagg/lws-pp2.yaml-template, which is the symmetrical-PP2 name.)
-#
-# all2all note (why per-token cost differs from the disagg siblings): vLLM's default EP
-# backend here is allgather/reduce-scatter — the pod logs it as
-#   cuda_communicator.py  Using AgRsAll2AllManager all2all manager
-#   expert_map_manager.py [EP Rank 0/16] ... Local/global number of experts: 32/512
-# so EVERY MoE layer of EVERY token allgathers activations across all EP ranks and
-# reduce-scatters back, and half those ranks sit on the other node -> cross-node traffic is in
-# the per-TOKEN path. A disagg sibling instead pays one KV transfer per REQUEST and keeps the
-# expert compute inside one NVLink domain. Expect the two to differ on inter-token latency for
-# that structural reason.
-#
-# IMAGE: the golden image (../.env — covers agg/EP16/PP>1 + the NVFP4 cubin fix).
-# For NVFP4 set MODEL_VARIANT=NVFP4 in ../.env (MODEL_PATH/NAME switch automatically).
-#
-# SHAPE comes from .env: EP_DP_SIZE (DP group size, EP degree = EP_DP_SIZE x GPU_PER_WORKER)
-# and CPU_PER_WORKER / MEM_PER_WORKER (the old hardcoded cpu: "48" / 1000Gi were a p5en
-# assumption; p6-b200 wants its own budget).
-#
-# LABELS: part-of is ${DOLLAR}{DEPLOYMENT_NAME}, NOT ${DOLLAR}{DEPLOYMENT_NAME}-ep. Only the
-# LWS/Service resource NAMES carry the -ep suffix. Label selectors are exact-match, so the -ep
-# label made both run.sh's verify listing and stop.sh's step-2 residue sweep
-# (--selector app.kubernetes.io/part-of=${DOLLAR}{DEPLOYMENT_NAME}) match NOTHING for this
-# permutation: `./run.sh` printed no resources for a deployment it had just applied, and
-# `./stop.sh` reported "Verifying teardown ... (empty)" without that sweep ever having looked
-# at an lws-ep object. The component label (agg-ep) is the discriminator instead, and the
-# podAntiAffinity selector now carries it so it still matches only the two GPU pods.
-#
 # RENDER: MANIFEST_TYPE=lws-ep ./run.sh   (run.sh envsubst's this + kubectl apply)
 # =============================================================================
 ---
@@ -78,13 +35,6 @@ spec:
   replicas: 1
   startupPolicy: LeaderCreated
   leaderWorkerTemplate:
-    # RecreateGroupOnPodRestart, not the default None: the DP ranks share one TCPStore and one DP
-    # coordinator hosted by the leader, so a leader restart invalidates every rank. With None,
-    # a leader container restart leaves the DP1 worker alive on the dead store - measured on
-    # B200 2026-08-15: worker pid 1 still from the previous epoch 31 minutes later, logging
-    # "sendBytes failed ... remote=[...-ep-0...]:50413: Broken pipe" - and the new leader can
-    # never assemble --data-parallel-size, so it re-times-out every ~25 min forever.
-    # Trade-off: recreating the group discards the crashed pod's logs (see #68).
     restartPolicy: RecreateGroupOnPodRestart
     size: ${EP_DP_SIZE}
     # -------------------------------------------------------------------------
@@ -94,11 +44,6 @@ spec:
       metadata:
         labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}, app.kubernetes.io/component: agg-ep, dp-role: leader }
       spec:
-        # hostNetwork: true -> status.podIP IS status.hostIP for this pod, by definition. The
-        # duplicate-address preflight the hostNetwork:false pods in this tree carry (see
-        # disagg/lws-2pp.yaml-template) is therefore NOT applicable here and must not be
-        # copied in: it would fire on EVERY start. The fault it detects cannot occur under host
-        # networking either - there is no separate sandbox address to collide with the node's.
         hostNetwork: true
         dnsPolicy: ClusterFirstWithHostNet
         nodeSelector: { node.kubernetes.io/instance-type: ${INSTANCE_TYPE_WORKER} }
@@ -127,11 +72,7 @@ spec:
                       HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
                 if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
                 # Wait for own DNS to be resolvable (LWS pods come up simultaneously)
-                # Resolve in ONE getent per attempt and break only on a NON-EMPTY address. The previous
-                # shape probed with one getent and captured the address with a second one, so a single
-                # empty capture immediately after a successful probe killed the pod ~2s in while printing
-                # a 300s timeout it had never waited for (measured: B200 lws-ep worker, 2026-08-15).
-                # NR==1 also keeps a multi-record answer from producing a two-word LEADER_IP.
+                # Resolve in ONE getent per attempt and break only on a NON-EMPTY address.
                 for i in ${DOLLAR}(seq 1 150); do
                   LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk 'NR==1{print ${DOLLAR}1; exit}')
                   if [ -n "${DOLLAR}LEADER_IP" ]; then break; fi
@@ -143,20 +84,14 @@ spec:
                   echo "[dp0/leader] FATAL: ${DOLLAR}LWS_LEADER_ADDRESS did not resolve within 300s; exiting for a clean restart (do NOT proceed with an empty leader address)"
                   exit 1
                 fi
-                # Gloo needs a SINGLE concrete iface name (not NCCL's ^exclude list). Resolve the
-                # `ip -4 route get ${DOLLAR}LEADER_IP` was WRONG on the leader: that target is this pod's
-                # OWN address, and Linux answers an own-address lookup with `local <ip> dev lo`, so it
-                # exported lo and Gloo advertised loopback. Derive from the DEFAULT ROUTE and assert.
+                # Gloo needs a SINGLE concrete iface name (not NCCL's ^exclude list).
                 export GLOO_SOCKET_IFNAME=${DOLLAR}{GLOO_SOCKET_IFNAME:-${DOLLAR}(ip -o -4 route show default | awk '{print ${DOLLAR}5; exit}')}
                 GLOO_BIND_IP=${DOLLAR}(ip -o -4 addr show dev "${DOLLAR}GLOO_SOCKET_IFNAME" 2>/dev/null | awk '{print ${DOLLAR}4; exit}' | cut -d/ -f1)
                 echo "[dp0/leader] GLOO_SOCKET_IFNAME=${DOLLAR}GLOO_SOCKET_IFNAME bind=${DOLLAR}GLOO_BIND_IP"
                 case "${DOLLAR}{GLOO_BIND_IP:-}" in
                   ""|127.*) echo "[dp0/leader] FATAL: GLOO_SOCKET_IFNAME=${DOLLAR}GLOO_SOCKET_IFNAME has no routable IPv4 (got '${DOLLAR}GLOO_BIND_IP'); cross-node Gloo would bind loopback. Exiting for a clean restart."; exit 1 ;;
                 esac
-                # NVFP4 cold-start warmup (detached, non-fatal): first requests otherwise pay
-                # per-batch-size Mamba decode Triton JIT (~4 min). vLLM-native flavor of the
-                # lws.yaml warmer: the LEADER serves :8000 itself, so gate on its own /v1/models
-                # (only lists the model once the engine is loaded) and warm via localhost.
+                # NVFP4 cold-start warmup (detached)
                 WARMUP_ENABLED=${DOLLAR}{WARMUP_ENABLED:-auto}
                 case "${DOLLAR}WARMUP_ENABLED" in
                   auto) case "${MODEL_NAME}" in *NVFP4*|*nvfp4*) WARM=1 ;; *) WARM=0 ;; esac ;;
@@ -212,9 +147,6 @@ spec:
                   --host 0.0.0.0 --port 8000
             env:
               - { name: MY_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
-              # The warmup subshell above reads these INSIDE the container, so they have to be
-              # passed through here - without these two lines the knobs in .env are inert and the
-              # ladder is always 1..10 no matter what you set in your shell.
               - { name: WARMUP_ENABLED, value: "${WARMUP_ENABLED}" }
               - { name: WARMUP_CONCURRENCY, value: "${WARMUP_CONCURRENCY}" }
               - { name: HF_HOME, value: /tmp/hf_cache }
@@ -228,7 +160,6 @@ spec:
               # aiperf --concurrency N opening) can exceed it and kill EngineCore
               # ("TimeoutError: RPC call to execute_model timed out"). Harmless in steady state.
               - { name: VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS, value: "1800" }
-              # NVFP4 cubin dir is handled in the golden image (build-time chmod); no env needed.
               - { name: FI_PROVIDER, value: efa }
               - { name: FI_EFA_USE_DEVICE_RDMA, value: "1" }
               - { name: FI_EFA_FORK_SAFE, value: "1" }
@@ -261,11 +192,6 @@ spec:
       metadata:
         labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}, app.kubernetes.io/component: agg-ep, dp-role: worker }
       spec:
-        # hostNetwork: true -> status.podIP IS status.hostIP for this pod, by definition. The
-        # duplicate-address preflight the hostNetwork:false pods in this tree carry (see
-        # disagg/lws-2pp.yaml-template) is therefore NOT applicable here and must not be
-        # copied in: it would fire on EVERY start. The fault it detects cannot occur under host
-        # networking either - there is no separate sandbox address to collide with the node's.
         hostNetwork: true
         dnsPolicy: ClusterFirstWithHostNet
         nodeSelector: { node.kubernetes.io/instance-type: ${INSTANCE_TYPE_WORKER} }
@@ -308,10 +234,7 @@ spec:
                   echo "[dp1/worker] FATAL: ${DOLLAR}LWS_LEADER_ADDRESS did not resolve within 300s; exiting for a clean restart (do NOT proceed with an empty leader address)"
                   exit 1
                 fi
-                # Gloo needs a SINGLE concrete iface name (not NCCL's ^exclude list). Resolve the
-                # `ip -4 route get ${DOLLAR}LEADER_IP` was WRONG on the leader: that target is this pod's
-                # OWN address, and Linux answers an own-address lookup with `local <ip> dev lo`, so it
-                # exported lo and Gloo advertised loopback. Derive from the DEFAULT ROUTE and assert.
+                # Gloo needs a SINGLE concrete iface name (not NCCL's ^exclude list).
                 export GLOO_SOCKET_IFNAME=${DOLLAR}{GLOO_SOCKET_IFNAME:-${DOLLAR}(ip -o -4 route show default | awk '{print ${DOLLAR}5; exit}')}
                 GLOO_BIND_IP=${DOLLAR}(ip -o -4 addr show dev "${DOLLAR}GLOO_SOCKET_IFNAME" 2>/dev/null | awk '{print ${DOLLAR}4; exit}' | cut -d/ -f1)
                 echo "[dp1/worker] GLOO_SOCKET_IFNAME=${DOLLAR}GLOO_SOCKET_IFNAME bind=${DOLLAR}GLOO_BIND_IP"
@@ -382,7 +305,7 @@ spec:
 #
 # The EP16 leader runs native `vllm serve` (not dynamo.vllm), so it already exposes the whole
 # OpenAI-compatible API on :8000 (/v1/completions, /v1/chat/completions, /v1/models, /health)
-# and no dynamo.frontend pod exists here - unlike deployment / lws / dgd, which each ship a
+# and no dynamo.frontend pod exists here
 # real ${DEPLOYMENT_NAME}-frontend Deployment. But ../test/.env hardcodes
 # SERVICE_NAME=${DOLLAR}{DEPLOYMENT_NAME}-frontend, so every test script (test-aiperf.sh,
 # test-chat-completions.sh, test-completions.sh, models-health.sh, models-list.sh,

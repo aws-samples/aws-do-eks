@@ -14,78 +14,6 @@
 #                                       is too short for this model - see .env)
 #   - ${MAMBA_FLAGS} (hybrid-Mamba only; derived from MODEL_NAME in .env - empty on pure transformers)
 #
-# -----------------------------------------------------------------------------
-# FIXED here vs the upstream aws-do-eks copy (2026-06-07):
-#   (1) leaders now set DYN_SYSTEM_ENABLED=true + DYN_SYSTEM_PORT - the startupProbe
-#       httpGet /health:{9091,9092} gates on this; without it pods load but never go Ready.
-#   (2) decode worker now uses ${DOLLAR}LEADER_IP (was a bare $LEADER_IP that envsubst
-#       collapsed to /dev/tcp//6379, wasting the Ray-join wait).
-#
-# FIXED 2026-08-15 - all-GPU-cluster (p6-b200) portability. Reproduced and verified against a
-# live v1.35 scheduler before the change; see the PR for the two-pod scheduling probe.
-#   (3) podAntiAffinity selector narrowed to the GPU roles (component In [prefill,decode]).
-#       A bare `app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}` match ALSO selects the frontend
-#       pod, and required anti-affinity is enforced against EXISTING pods as well as the
-#       incoming one - so every node already holding a GPU pod became ineligible for the
-#       frontend: "0/N nodes are available: N node(s) didn't satisfy existing pods
-#       anti-affinity rules". Invisible on a cluster with spare CPU nodes (the frontend went
-#       to the m5); fatal on a 4-node all-GPU cluster, where the 4 GPU pods take every node
-#       and the frontend has no 5th node to fall back to.
-#   (4) frontend placement: INSTANCE_TYPE_FRONTEND is now a PREFERRED nodeAffinity + GPU/EFA
-#       tolerations instead of a hard nodeSelector. A hard match on an instance type the
-#       cluster does not have pins the frontend to Pending; preferred keeps the same placement
-#       wherever an m5 exists.
-#   (5) cpu/memory of the GPU pods come from CPU_PER_WORKER / MEM_PER_WORKER in .env. The old
-#       hardcoded cpu: "96" was a p5en-192-vCPU assumption; the default is now 48.
-#   (6) GLOO_SOCKET_IFNAME is now derived from the default route in all four GPU launch scripts,
-#       with a fail-loud check that the resulting bind address is routable and not loopback.
-#       ROOT CAUSE this fixes: torch's ProcessGroupGloo::createDefaultDevice() chooses its bind
-#       address by resolving gethostname(). Under `hostNetwork: true` the container inherits the
-#       NODE hostname; where that name resolves to an address that is not bindable inside the pod
-#       netns (p6-b200: ip-172-16-x-y.ec2.internal -> 172.16.x.y, while the routable address is
-#       10.1.x.y on the default-route dev), the lookup fails and Gloo falls back to LOOPBACK -
-#       torch warns "Unable to resolve hostname to a (local) address ... Manually set the network
-#       interface to bind to with GLOO_SOCKET_IFNAME". Every rank then advertises 127.0.0.1, so the
-#       cross-node world group built in init_world_group (size = TP*PP = 16) dies with
-#         Gloo connectFullMesh failed ... SO_ERROR: Connection refused, remote=[127.0.0.1]:<port>
-#       -> "RuntimeError: Engine core initialization failed" -> the leader exits -> on restart the
-#       surviving Ray worker is still in the PREVIOUS Ray session and raises
-#       ActorHandleNotFoundError ("created in job 01000000, but the current job is 02000000"), so
-#       the visible top-of-traceback blames Ray, not Gloo. All four pods then crash-loop.
-#       NCCL and Ray are both handed an explicit IP (tcp://10.1.x.y and --node-ip-address), so
-#       they are unaffected and the stack looks healthy right up to EngineCore init.
-#       This is specific to PP>1: it needs >1 node in a single role, which is why the sibling
-#       deployment.yaml-template (PP1, 1 node per role) never hit it, and why lws-pp.yaml-template
-#       - which does NOT set hostNetwork - runs the same PP2 prefill fine.
-#       MEASURED A/B (2 nodes, p6-b200, 2026-08-15, torch gloo allreduce between the two live
-#       worker pods): GLOO_SOCKET_IFNAME unset -> loopback-fallback warning + connectFullMesh
-#       "Connection refused, remote=[127.0.0.1]"; GLOO_SOCKET_IFNAME=<default-route dev> ->
-#       allreduce returns the expected value on both ranks.
-#       ALTERNATIVE FIX, equally valid and not taken here: drop `hostNetwork: true` +
-#       `dnsPolicy: ClusterFirstWithHostNet` from the four GPU pod specs, which is what
-#       lws-pp.yaml-template already does - the pod hostname then resolves to the pod IP and Gloo
-#       picks it up unaided. EFA is delivered by the vpc.amazonaws.com/efa device plugin and does
-#       NOT require host networking. Keeping hostNetwork + setting the interface explicitly is the
-#       smaller change and leaves the two templates' network posture as-is.
-#
-# KNOWN-UNPROVEN (verified live on cgk, 2026-06-07): this TP8/PP2, 4-pod, multi-node-per-role
-#   + Ray-compiled-graph topology DEADLOCKS in decode for the hybrid-Mamba model. KV DOES transfer
-#   over EFA (decode rdma_read_bytes climbs), but all decode GPUs stay 0% and output_tokens=0 —
-#   the per-stage Mamba SSM state never passes across the 2 PP stages via the Ray static DAG.
-#   *** For a PROVEN serving path use the sibling deployment.yaml-template (TP8/PP1, single
-#   node per role) - that returns real chat completions with KV over EFA (510MB rdma_read). ***
-#   STATUS 2026-08-15: that note predates this manifest's VLLM_USE_RAY_COMPILED_DAG=0 (already
-#   set below, so the "untested lead" it used to suggest is now the default) and predates the
-#   Dynamo 1.3.1-era images carrying the vLLM NIXL hybrid-Mamba multi-member descriptor fixes.
-#   It has NOT been re-run to a verdict on a 1.3.1 image, and fix (6) above was blocking every
-#   attempt before the engine could start, so treat decode-PP2 as UNVERIFIED, not as broken.
-#   ACCEPTANCE GATE when re-running it - HTTP 200 with fluent text is NOT sufficient evidence.
-#   The hybrid-Mamba KV failure mode is fluent-but-WRONG output (stale SSM state on the members
-#   that never transferred), so require BOTH:
-#     (a) byte-parity of the completion against a PP1 control (deployment.yaml-template or
-#         lws-pp.yaml-template) for the same prompt at temperature=0, and
-#     (b) the decode log showing mamba_region_group_ids NOT collapsed onto the attention group
-#         (i.e. every Mamba member registered, not just the deduplicated first one).
 # =============================================================================
 ---
 apiVersion: leaderworkerset.x-k8s.io/v1
@@ -111,11 +39,6 @@ spec:
           app.kubernetes.io/component: prefill
           dynamo-role: leader
       spec:
-        # hostNetwork: true -> status.podIP IS status.hostIP for this pod, by definition. The
-        # duplicate-address preflight the hostNetwork:false pods in this tree carry (see
-        # disagg/lws-2pp.yaml-template) is therefore NOT applicable here and must not be
-        # copied in: it would fire on EVERY start. The fault it detects cannot occur under host
-        # networking either - there is no separate sandbox address to collide with the node's.
         hostNetwork: true
         dnsPolicy: ClusterFirstWithHostNet
         nodeSelector:
@@ -150,14 +73,6 @@ spec:
                 set -u
                 unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
                       HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
-                # Dynamo images differ in python layout: 1.2.0-era images ship /opt/dynamo/venv,
-                # 1.3.0-era images (NGC vllm-runtime:1.3.0 and derivatives) install into the system
-                # python and have NO venv. Activate only when present so one manifest serves both.
-                if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
-                # Pick a WRITABLE log dir. /shared (FSx) is preferred because the log then
-                # outlives the pod, but on some clusters the PVC is exported root-squashed or
-                # owned by another uid and every `tee` line fails with "Permission denied" --
-                # the run then leaves no trail at all, which is exactly when you need one.
                 LOG_DIR=/shared
                 if ! ( : > "${DOLLAR}LOG_DIR/.wtest-${DOLLAR}HOSTNAME" ) 2>/dev/null; then
                   echo "[prefill-leader p5en] ${DOLLAR}LOG_DIR not writable; logging to /tmp instead"
@@ -167,20 +82,6 @@ spec:
                 fi
                 LOG=${DOLLAR}LOG_DIR/disagg-prefill-p5en-$(date -u +%FT%TZ).log
                 echo "[prefill-leader p5en] starting; piping to ${DOLLAR}LOG"
-                # One tee for the whole shell, then exec the engine with NO pipe, so the engine is the
-                # container's main process. Previously `exec python3 ... | tee -a "${DOLLAR}LOG"` left bash as the main
-                # process and made the container's status tee's - always 0 - so an engine that died on an
-                # unhandled exception reported "Reason: Completed / Exit Code: 0" in `kubectl describe` and
-                # only the startupProbe failure hinted otherwise; SIGTERM on pod delete also went to bash
-                # instead of the engine. Verified: the status propagates and the traceback still reaches both
-                # `kubectl logs` and "${DOLLAR}LOG" (10/10 runs).
-                # Save the container's REAL stdout before the tee takes over. bash does not wait for a
-                # process substitution to drain, and when this shell exits PID 1 goes with it - so a line
-                # echoed into the tee microseconds before `exit 1` never reaches `kubectl logs`. Measured
-                # 2026-08-15 on the 4-node p6-b200 disagg run: the preflight below fired correctly and the
-                # container exited 1 in under a second, but `kubectl logs` AND --previous showed only the
-                # two lines printed BEFORE this redirect, so the operator saw a bare crash-loop with no
-                # diagnosis at all. `say` writes each fatal line to the log file AND to fd 3 (real stdout).
                 exec 3>&1
                 exec > >(tee -a "${DOLLAR}LOG") 2>&1
                 say() { printf '%s\n' "${DOLLAR}*"; printf '%s\n' "${DOLLAR}*" >&3; }
@@ -203,11 +104,6 @@ spec:
                 # Verify the PR #42522 patch is present
                 VLLM_DIR=${DOLLAR}(python3 -c "import vllm, os; print(os.path.dirname(vllm.__file__))")
                 grep -A2 "is_kv_consumer" "${DOLLAR}VLLM_DIR/model_executor/models/config.py"
-                # Resolve in ONE getent per attempt and break only on a NON-EMPTY address. The previous
-                # shape probed with one getent and captured the address with a second one, so a single
-                # empty capture immediately after a successful probe killed the pod ~2s in while printing
-                # a 300s timeout it had never waited for (measured: B200 lws-ep worker, 2026-08-15).
-                # NR==1 also keeps a multi-record answer from producing a two-word LEADER_IP.
                 for i in ${DOLLAR}(seq 1 150); do
                   LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk 'NR==1{print ${DOLLAR}1; exit}')
                   if [ -n "${DOLLAR}LEADER_IP" ]; then break; fi
@@ -252,14 +148,10 @@ spec:
               - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }
               - { name: NATS_SERVER, value: "${NATS_URL}" }
               - { name: HF_HOME, value: /shared/hf_cache }
-              # FIX: start the dyn-system health server the startupProbe (httpGet /health:9091) gates on
               - { name: DYN_SYSTEM_ENABLED, value: "true" }
               - { name: DYN_SYSTEM_PORT, value: "9091" }
               - { name: VLLM_LOGGING_LEVEL, value: INFO }
               - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
-              # Raise the execute_model RPC deadline (default 300s) so a JIT-heavy first
-              # concurrent decode step (per-batch-size Mamba kernel Triton compile under an
-              # aiperf --concurrency N opening) cannot trip the timeout and kill EngineCore.
               - { name: VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS, value: "1800" }
               - { name: VLLM_USE_RAY_COMPILED_DAG, value: "0"}
               - { name: FI_PROVIDER, value: efa }
@@ -295,11 +187,6 @@ spec:
           app.kubernetes.io/component: prefill
           dynamo-role: worker
       spec:
-        # hostNetwork: true -> status.podIP IS status.hostIP for this pod, by definition. The
-        # duplicate-address preflight the hostNetwork:false pods in this tree carry (see
-        # disagg/lws-2pp.yaml-template) is therefore NOT applicable here and must not be
-        # copied in: it would fire on EVERY start. The fault it detects cannot occur under host
-        # networking either - there is no separate sandbox address to collide with the node's.
         hostNetwork: true
         dnsPolicy: ClusterFirstWithHostNet
         nodeSelector:
@@ -334,15 +221,8 @@ spec:
                 set -u
                 unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
                       HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
-                # Dynamo images differ in python layout: 1.2.0-era images ship /opt/dynamo/venv,
-                # 1.3.0-era images (NGC vllm-runtime:1.3.0 and derivatives) install into the system
-                # python and have NO venv. Activate only when present so one manifest serves both.
+                # Activate only when venv present
                 if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
-                # Resolve in ONE getent per attempt and break only on a NON-EMPTY address. The previous
-                # shape probed with one getent and captured the address with a second one, so a single
-                # empty capture immediately after a successful probe killed the pod ~2s in while printing
-                # a 300s timeout it had never waited for (measured: B200 lws-ep worker, 2026-08-15).
-                # NR==1 also keeps a multi-record answer from producing a two-word LEADER_IP.
                 for i in ${DOLLAR}(seq 1 150); do
                   LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk 'NR==1{print ${DOLLAR}1; exit}')
                   if [ -n "${DOLLAR}LEADER_IP" ]; then break; fi
@@ -368,9 +248,6 @@ spec:
               - { name: MY_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
               - { name: HF_HOME, value: /shared/hf_cache }
               - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
-              # Raise the execute_model RPC deadline (default 300s) so a JIT-heavy first
-              # concurrent decode step (per-batch-size Mamba kernel Triton compile under an
-              # aiperf --concurrency N opening) cannot trip the timeout and kill EngineCore.
               - { name: VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS, value: "1800" }
               - { name: VLLM_USE_RAY_COMPILED_DAG, value: "0" }
               - { name: FI_PROVIDER, value: efa }
@@ -415,11 +292,6 @@ spec:
           app.kubernetes.io/component: decode
           dynamo-role: leader
       spec:
-        # hostNetwork: true -> status.podIP IS status.hostIP for this pod, by definition. The
-        # duplicate-address preflight the hostNetwork:false pods in this tree carry (see
-        # disagg/lws-2pp.yaml-template) is therefore NOT applicable here and must not be
-        # copied in: it would fire on EVERY start. The fault it detects cannot occur under host
-        # networking either - there is no separate sandbox address to collide with the node's.
         hostNetwork: true
         dnsPolicy: ClusterFirstWithHostNet
         nodeSelector: { node.kubernetes.io/instance-type: ${INSTANCE_TYPE_WORKER} }
@@ -452,9 +324,6 @@ spec:
                 set -u
                 unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
                       HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
-                # Dynamo images differ in python layout: 1.2.0-era images ship /opt/dynamo/venv,
-                # 1.3.0-era images (NGC vllm-runtime:1.3.0 and derivatives) install into the system
-                # python and have NO venv. Activate only when present so one manifest serves both.
                 if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
                 # Same writable-log-dir probe as the prefill leader: keep /shared when the PVC
                 # accepts our writes, fall back to /tmp instead of losing the log to EACCES.
@@ -467,20 +336,6 @@ spec:
                 fi
                 LOG=${DOLLAR}LOG_DIR/disagg-decode-p5en-$(date -u +%FT%TZ).log
                 echo "[decode p5en] starting; piping to ${DOLLAR}LOG"
-                # One tee for the whole shell, then exec the engine with NO pipe, so the engine is the
-                # container's main process. Previously `exec python3 ... | tee -a "${DOLLAR}LOG"` left bash as the main
-                # process and made the container's status tee's - always 0 - so an engine that died on an
-                # unhandled exception reported "Reason: Completed / Exit Code: 0" in `kubectl describe` and
-                # only the startupProbe failure hinted otherwise; SIGTERM on pod delete also went to bash
-                # instead of the engine. Verified: the status propagates and the traceback still reaches both
-                # `kubectl logs` and "${DOLLAR}LOG" (10/10 runs).
-                # Save the container's REAL stdout before the tee takes over. bash does not wait for a
-                # process substitution to drain, and when this shell exits PID 1 goes with it - so a line
-                # echoed into the tee microseconds before `exit 1` never reaches `kubectl logs`. Measured
-                # 2026-08-15 on the 4-node p6-b200 disagg run: the preflight below fired correctly and the
-                # container exited 1 in under a second, but `kubectl logs` AND --previous showed only the
-                # two lines printed BEFORE this redirect, so the operator saw a bare crash-loop with no
-                # diagnosis at all. `say` writes each fatal line to the log file AND to fd 3 (real stdout).
                 exec 3>&1
                 exec > >(tee -a "${DOLLAR}LOG") 2>&1
                 say() { printf '%s\n' "${DOLLAR}*"; printf '%s\n' "${DOLLAR}*" >&3; }
@@ -502,11 +357,6 @@ spec:
                 python3 -c "import vllm; print(f'vllm {vllm.__version__}')"
                 VLLM_DIR=${DOLLAR}(python3 -c "import vllm, os; print(os.path.dirname(vllm.__file__))")
                 grep -A2 "is_kv_consumer" "${DOLLAR}VLLM_DIR/model_executor/models/config.py"
-                # Resolve in ONE getent per attempt and break only on a NON-EMPTY address. The previous
-                # shape probed with one getent and captured the address with a second one, so a single
-                # empty capture immediately after a successful probe killed the pod ~2s in while printing
-                # a 300s timeout it had never waited for (measured: B200 lws-ep worker, 2026-08-15).
-                # NR==1 also keeps a multi-record answer from producing a two-word LEADER_IP.
                 for i in ${DOLLAR}(seq 1 150); do
                   LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk 'NR==1{print ${DOLLAR}1; exit}')
                   if [ -n "${DOLLAR}LEADER_IP" ]; then break; fi
@@ -529,47 +379,9 @@ spec:
                   if [ "${DOLLAR}{N:-0}" -ge 2 ]; then break; fi
                   sleep 5
                 done
-                # Cold-start warmup (detached): a fresh pod's FIRST request pays a one-time
-                # ~4min Triton JIT tax compiling the Mamba DECODE kernels (_selective_scan_update,
-                # _causal_conv1d_update) mid-request — startup only warms the PREFILL SSD path,
-                # and --enforce-eager skips cudagraph capture. Without this, the first CUSTOMER
-                # request looks hung for ~4min; warm steady-state is fine (~14 tok/s on B200).
-                # This backgrounded warmer drives generations through the frontend (which exercises
-                # both prefill and decode roles) so the decode kernels JIT before real traffic
-                # arrives. It shares the pod, never blocks the engine launch, and swallows all
-                # errors so it can never crash the pod. Polls /v1/models (frontend readiness uses
-                # a tcpSocket probe, so /health may be absent) until the worker registers.
-                # NOTE (long-form rationale; the sibling templates point here): CONCURRENCY is a
-                # Triton compile key on the decode path, so a single bs=1 request is not enough.
-                # A concurrent benchmark (e.g. aiperf --concurrency 10) can still select an
-                # uncompiled variant and pay JIT on its opening. We therefore warm bs=1 first
-                # (fastest to first-token) and then fire a CONCURRENT burst so the levels the
-                # benchmark will hit compile up front.
-                #   The axis is _causal_conv1d_update_kernel: seqlen, state_len, NP2_STATELEN and
-                #   every stride_* are tl.constexpr with NO do_not_specialize
-                #   (causal_conv1d.py:748, launch :1069), so a new concurrency level is a new key.
-                #   It is NOT selective_state_update on this device/dtype - an earlier version of
-                #   this comment said that kernel compiles one variant per
-                #   effective_batch = batch*nheads bucket, which is wrong HERE: it is
-                #   @triton.jit(do_not_specialize=["N"]) and the bundled
-                #   NVIDIA_B200/cache_dtype=float32 table (NemotronH forces float32) returns only
-                #   TWO distinct BLOCK_SIZE_M/num_warps pairs across its 21 keys - key 8 -> (4,4),
-                #   every key >=16 -> (4,1) - so effective_batch cannot key a new compile. It can
-                #   on B200/float16 (7 pairs) and on H200 (6 float32 / 8 float16), which is why
-                #   the claim looked right. The remediation is unchanged either way: ladder to the
-                #   sweep's highest concurrency.
-                # Precision gate: the extra JIT-heavy opening is an NVFP4 concern (the NVFP4
-                # checkpoint FP8-quantizes the Mamba mixer + NVFP4-quantizes MoE, pulling in more
-                # kernel variants). BF16 completes this benchmark without the warmup, so skip it
-                # there. WARMUP_ENABLED=auto (default) follows the served model's precision
-                # suffix; set WARMUP_ENABLED=1/0 to force on/off.
+                # Cold-start warmup (detached)
                 (
                   FE="http://${DEPLOYMENT_NAME}-frontend.${NAMESPACE}.svc.cluster.local:8000"
-                  # Gate on the LEADER's own dyn-system /health (localhost:${DYN_SYSTEM_PORT}),
-                  # the same signal the startupProbe uses. The frontend answers /v1/models 200
-                  # ~15-18min BEFORE the engine finishes loading, so gating on the frontend fires
-                  # the warmup against a not-yet-ready engine and compiles nothing. The leader
-                  # /health only returns 200 once THIS role's engine is loaded + routes registered.
                   LH="http://localhost:${DOLLAR}{DYN_SYSTEM_PORT:-9090}/health"
                   WARMUP_CONCURRENCY=${DOLLAR}{WARMUP_CONCURRENCY:-10}
                   WARMUP_ENABLED=${DOLLAR}{WARMUP_ENABLED:-auto}
@@ -636,18 +448,11 @@ spec:
               - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }
               - { name: NATS_SERVER, value: "${NATS_URL}" }
               - { name: HF_HOME, value: /shared/hf_cache }
-              # FIX: start the dyn-system health server the startupProbe (httpGet /health:9092) gates on
               - { name: DYN_SYSTEM_ENABLED, value: "true" }
               - { name: DYN_SYSTEM_PORT, value: "9092" }
-              # The warmup subshell above reads these INSIDE the container, so they have to be
-              # passed through here - without these two lines the knobs in .env are inert and the
-              # ladder is always 1..10 no matter what you set in your shell.
               - { name: WARMUP_ENABLED, value: "${WARMUP_ENABLED}" }
               - { name: WARMUP_CONCURRENCY, value: "${WARMUP_CONCURRENCY}" }
               - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
-              # Raise the execute_model RPC deadline (default 300s) so a JIT-heavy first
-              # concurrent decode step (per-batch-size Mamba kernel Triton compile under an
-              # aiperf --concurrency N opening) cannot trip the timeout and kill EngineCore.
               - { name: VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS, value: "1800" }
               - { name: VLLM_USE_RAY_COMPILED_DAG, value: "0" }
               - { name: FI_PROVIDER, value: efa }
@@ -682,11 +487,6 @@ spec:
           app.kubernetes.io/component: decode
           dynamo-role: worker
       spec:
-        # hostNetwork: true -> status.podIP IS status.hostIP for this pod, by definition. The
-        # duplicate-address preflight the hostNetwork:false pods in this tree carry (see
-        # disagg/lws-2pp.yaml-template) is therefore NOT applicable here and must not be
-        # copied in: it would fire on EVERY start. The fault it detects cannot occur under host
-        # networking either - there is no separate sandbox address to collide with the node's.
         hostNetwork: true
         dnsPolicy: ClusterFirstWithHostNet
         nodeSelector: { node.kubernetes.io/instance-type: ${INSTANCE_TYPE_WORKER} }
@@ -719,15 +519,8 @@ spec:
                 set -u
                 unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
                       HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
-                # Dynamo images differ in python layout: 1.2.0-era images ship /opt/dynamo/venv,
-                # 1.3.0-era images (NGC vllm-runtime:1.3.0 and derivatives) install into the system
-                # python and have NO venv. Activate only when present so one manifest serves both.
+                # Activate only when venv present.
                 if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
-                # Resolve in ONE getent per attempt and break only on a NON-EMPTY address. The previous
-                # shape probed with one getent and captured the address with a second one, so a single
-                # empty capture immediately after a successful probe killed the pod ~2s in while printing
-                # a 300s timeout it had never waited for (measured: B200 lws-ep worker, 2026-08-15).
-                # NR==1 also keeps a multi-record answer from producing a two-word LEADER_IP.
                 for i in ${DOLLAR}(seq 1 150); do
                   LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk 'NR==1{print ${DOLLAR}1; exit}')
                   if [ -n "${DOLLAR}LEADER_IP" ]; then break; fi
@@ -753,9 +546,6 @@ spec:
               - { name: MY_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
               - { name: HF_HOME, value: /shared/hf_cache }
               - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
-              # Raise the execute_model RPC deadline (default 300s) so a JIT-heavy first
-              # concurrent decode step (per-batch-size Mamba kernel Triton compile under an
-              # aiperf --concurrency N opening) cannot trip the timeout and kill EngineCore.
               - { name: VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS, value: "1800" }
               - { name: VLLM_USE_RAY_COMPILED_DAG, value: "0" }
               - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }
@@ -823,19 +613,6 @@ spec:
           # "no such file or directory" and the pod CrashLoops. Activate only when present.
           args:
             - |-
-              # ---- Node-fault preflight: duplicate pod address (mechanism: disagg/lws-2pp.yaml-template) ----
-              # When the CNI hands this sandbox the node's own kubelet InternalIP (status.podIP ==
-              # status.hostIP while hostNetwork is false), kube-proxy DNAT replies land in the host
-              # netns, cluster DNS never answers, and DistributedRuntime() dies with "Failed to
-              # connect to NATS: DNS error ... Temporary failure in name resolution". A container
-              # RESTART CANNOT CLEAR IT: restarts reuse the pod sandbox, so CNI ADD is not re-invoked
-              # and the address is pinned for the pod's lifetime - the pod object has to be deleted.
-              # Measured on a 4-node ml.p6-b200.48xlarge cluster (2026-08-15): ALL FOUR nodes carry
-              # their own InternalIP inside their ipamd assignable pool, so any hostNetwork:false pod
-              # in this file can draw it - not just the GPU workers. Fail in ~1s naming the remedy
-              # instead of CrashLooping on an opaque DNS error. No `say`/fd-3 indirection is needed
-              # here (unlike the worker templates): this container does not redirect its stdout into a
-              # `tee` process substitution, so a plain echo reaches `kubectl logs` before the exit.
               if [ -n "${DOLLAR}{POD_IP:-}" ] && [ "${DOLLAR}{POD_IP:-}" = "${DOLLAR}{NODE_IP:-}" ]; then
                 echo "[frontend] FATAL: pod IP ${DOLLAR}POD_IP == node IP ${DOLLAR}NODE_IP with hostNetwork=false."
                 echo "[frontend]        Cluster DNS cannot answer for this pod, so NATS/etcd are unreachable."
@@ -843,11 +620,6 @@ spec:
                 echo "[frontend]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
                 exit 1
               fi
-              # dynamo.frontend calls DistributedRuntime() which connects to NATS immediately with NO
-              # retry, so a transient cold-start DNS miss (EAI_AGAIN, "Temporary failure in name
-              # resolution") is fatal and CrashLoops the pod even though NATS is healthy. The worker
-              # templates already guard their startup with a getent loop; agg/lws.yaml-template's
-              # frontend already carries this block - mirror it here so every frontend behaves the same.
               NATS_HOST=${DOLLAR}{NATS_SERVER#*://}; NATS_HOST=${DOLLAR}{NATS_HOST%%:*}
               for i in ${DOLLAR}(seq 1 60); do
                 if getent hosts "${DOLLAR}NATS_HOST" >/dev/null 2>&1; then break; fi

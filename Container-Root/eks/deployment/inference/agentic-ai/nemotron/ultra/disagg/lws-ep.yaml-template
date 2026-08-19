@@ -4,24 +4,18 @@
 #
 # Author: Anton Alexander
 #
-# This is the answer to "is there a disagg+EP scenario?" — yes, and it is the shape this
-# folder was missing. Expert parallelism and P/D disaggregation are orthogonal: EP shards the
+# This is the disagg+EP scenario
+# Expert parallelism and P/D disaggregation are orthogonal: EP shards the
 # MoE expert layers across DP ranks (all-to-all per token), disagg splits prefill from decode
 # (one KV transfer per request). You can run both, and each role gets its own EP group.
 #
 # SAME NAME AS ../agg/lws-ep.yaml-template, DIFFERENT MODE — the FOLDER is the discriminator.
 # `lws-ep` means "wide expert parallelism" in both folders; agg/ runs it as ONE engine with no
-# split, disagg/ (here) runs it as prefill + decode with a real KV transfer between them. Grep
-# this file for the difference: --disaggregation-mode on both roles, NixlConnector on both roles,
+# split, disagg/ (here) runs it as prefill + decode with a real KV transfer between them. 
+# The difference: --disaggregation-mode on both roles, NixlConnector on both roles,
 # --kv-transfer-config on both roles. ../agg/lws-ep has none of those; it is one `vllm serve`.
 #
-# WARNING for anyone carrying an older .env: the file that sat at THIS path until 2026-08-15 was
-# a copy of the AGGREGATED template (one `vllm serve`, no split) — a mislabel, which is why it
-# was removed to ../agg only. It was briefly an error to select `lws-ep` here. From this commit
-# `MANIFEST_TYPE=lws-ep` in disagg/ is valid again and deploys a genuine P/D split at
 # 2 * EP_DP_SIZE nodes (default 4), not the 2-node aggregated stack an old .env may have meant.
-# This file was named lws-ep-pd for one commit. run.sh no longer special-cases that name (it
-# renders ${DOLLAR}MANIFEST_TYPE.yaml-template directly); the pointer lives in .env and the README table.
 #
 # Topology (2 * EP_DP_SIZE GPU nodes + 1 preferred CPU node; default EP_DP_SIZE=2 -> 4 GPU nodes):
 #   - prefill: 1 LWS group of size ${EP_DP_SIZE}. Leader = DP rank 0 AND the DP coordinator;
@@ -40,17 +34,6 @@
 #                  latency to differ structurally from the PP siblings; compare on ITL and
 #                  p50 TTFT at equal GPU count.
 #
-# PROVENANCE — read this before quoting numbers from this file.
-# The TOPOLOGY is measured: we ran exactly this composition (dynamo.vllm, DP2 x TP8 = EP16 per
-# role, PP1, prefill LWS + decode LWS + dynamo frontend, NixlConnector backends ["LIBFABRIC"])
-# on 4x p5en and it works end to end — needle recalled, HTTP 200, decode-node
-# rdma_read_bytes +595,600,544 B for one request (8 transfers, ~60.8 MB each, 1608 descriptors,
-# 0 failures), rdma_write +0.70-1.49 GB on all four nodes in the same window (that is the EP
-# all-to-all), EP world 16 with 32/512 local/global experts per rank.
-# What is NOT measured is THIS FILE: that run used a hand-rolled manifest pair, and this is its
-# composition re-expressed in the repo's template conventions (EP_DP_SIZE, envsubst, LWS,
-# part-of labels, the ../test gate). Run ../test/models-health.sh + a single request and check
-# the decode node's rdma_read_bytes delta before you attach benchmark numbers to it.
 #
 # Gloo (why every serve block pins GLOO_SOCKET_IFNAME): data_parallel_size > 1 + async
 # scheduling makes vLLM run the per-step DP-padding all-reduce on the Gloo CPU group
@@ -59,10 +42,6 @@
 # hostNetwork: true it can bind loopback. Each block derives the default-route iface and FATALs
 # if the bound address is empty or 127.*, the same guard lws-pp2 carries.
 #
-# Portability: podAntiAffinity matches GPU roles only (a bare part-of match also selects the
-# frontend pod and required anti-affinity is enforced against EXISTING pods, which pins the
-# frontend Pending on an all-GPU cluster); cpu/memory come from CPU_PER_WORKER /
-# MEM_PER_WORKER. Same as the sibling templates.
 # =============================================================================
 ---
 apiVersion: leaderworkerset.x-k8s.io/v1
@@ -79,11 +58,6 @@ spec:
   rolloutStrategy:
     type: RollingUpdate
   leaderWorkerTemplate:
-    # RecreateGroupOnPodRestart, matching ../agg/lws-ep: the DP ranks share ONE TCPStore and one
-    # DP coordinator hosted by the leader, so a leader restart invalidates every rank. With
-    # None, a leader container restart leaves the other ranks alive on the dead store
-    # ("sendBytes failed ... Broken pipe") and the new leader can never assemble
-    # data_parallel_size=${EP_DP_SIZE}. Trade-off: recreating discards the crashed pod's logs.
     restartPolicy: RecreateGroupOnPodRestart
     size: ${EP_DP_SIZE}
     leaderTemplate:
@@ -121,7 +95,6 @@ spec:
                 set -u
                 unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
                       HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
-                # 1.2.0-era images ship /opt/dynamo/venv; 1.3.0-era images have none.
                 if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
                 # Writable-log-dir probe: keep /shared when the PVC accepts our writes, fall
                 # back to /tmp rather than losing every log line to EACCES.
@@ -141,20 +114,6 @@ spec:
                 fi
                 LOG=${DOLLAR}LOG_DIR/${DEPLOYMENT_NAME}-prefill-ep-${DOLLAR}(date -u +%FT%TZ).log
                 echo "[prefill-dp0] MY_IP=${DOLLAR}MY_IP EP=$((${EP_DP_SIZE}*${GPU_PER_WORKER})); piping to ${DOLLAR}LOG"
-                # One tee for the whole shell, then exec the engine with NO pipe, so the engine is the
-                # container's main process. Previously `exec python3 ... | tee -a "${DOLLAR}LOG"` left bash as the main
-                # process and made the container's status tee's - always 0 - so an engine that died on an
-                # unhandled exception reported "Reason: Completed / Exit Code: 0" in `kubectl describe` and
-                # only the startupProbe failure hinted otherwise; SIGTERM on pod delete also went to bash
-                # instead of the engine. Verified: the status propagates and the traceback still reaches both
-                # `kubectl logs` and "${DOLLAR}LOG" (10/10 runs).
-                # Save the container's REAL stdout before the tee takes over. bash does not wait for a
-                # process substitution to drain, and when this shell exits PID 1 goes with it - so a line
-                # echoed into the tee microseconds before `exit 1` never reaches `kubectl logs`. Measured
-                # 2026-08-15 on the 4-node p6-b200 disagg run: the preflight below fired correctly and the
-                # container exited 1 in under a second, but `kubectl logs` AND --previous showed only the
-                # two lines printed BEFORE this redirect, so the operator saw a bare crash-loop with no
-                # diagnosis at all. `say` writes each fatal line to the log file AND to fd 3 (real stdout).
                 exec 3>&1
                 exec > >(tee -a "${DOLLAR}LOG") 2>&1
                 say() { printf '%s\n' "${DOLLAR}*"; printf '%s\n' "${DOLLAR}*" >&3; }
@@ -187,15 +146,6 @@ spec:
                   done
                 fi
                 python3 -c "import vllm; print(f'vllm {vllm.__version__}')"
-                # DP rank 0 also hosts the DP coordinator + TCPStore on --data-parallel-address.
-                # ---- Gloo bind interface: REQUIRED whenever hostNetwork: true ----
-                # This is the only shape in the tree with data_parallel_size > 1, and vLLM routes the
-                # PER-STEP DP-padding all-reduce onto the Gloo CPU group whenever async scheduling is on
-                # ("Disabling NCCL for DP synchronization when using async scheduling" -> dp_utils.py
-                # "Using CPU all reduce to synchronize DP padding between ranks"). That barrier therefore
-                # runs cross-node on TCP once per decode step. NCCL_SOCKET_IFNAME does NOT apply to it -
-                # Gloo reads GLOO_SOCKET_IFNAME only - so unpinned it binds whatever Gloo guesses, which
-                # under hostNetwork: true is the loopback failure mode already fixed in lws-pp2 (#69/#77).
                 export GLOO_SOCKET_IFNAME=${DOLLAR}{GLOO_SOCKET_IFNAME:-${DOLLAR}(ip -o -4 route show default | awk '{print ${DOLLAR}5; exit}')}
                 GLOO_BIND_IP=${DOLLAR}(ip -o -4 addr show dev "${DOLLAR}GLOO_SOCKET_IFNAME" 2>/dev/null | awk '{print ${DOLLAR}4; exit}' | cut -d/ -f1)
                 say "[prefill-dp0] GLOO_SOCKET_IFNAME=${DOLLAR}GLOO_SOCKET_IFNAME bind=${DOLLAR}GLOO_BIND_IP"
@@ -233,13 +183,7 @@ spec:
               - { name: DYN_SYSTEM_PORT, value: "9091" }
               - { name: VLLM_LOGGING_LEVEL, value: INFO }
               - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
-              # See the decode leader for why 1800 (JIT-heavy first concurrent step vs the
-              # 300s execute_model RPC default). Kept on both roles so a prefill-side compile
-              # cannot kill EngineCore either.
               - { name: VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS, value: "1800" }
-              # data_parallel_size > 1 makes the API-server wait for every engine core inside
-              # this budget, so the whole weight load counts against it (a 1200s deadline
-              # missed a 51023-tensor runai_streamer load by 4 seconds on B200).
               - { name: VLLM_ENGINE_READY_TIMEOUT_S, value: "2400" }
               - { name: FLASHINFER_DISABLE_VERSION_CHECK, value: "1" }
               - { name: FI_PROVIDER, value: efa }
@@ -252,9 +196,6 @@ spec:
               - { name: NCCL_TUNER_PLUGIN, value: ofi }
               - { name: OFI_NCCL_FORCE_NUM_RAILS, value: "4" }
               - { name: NCCL_RUNTIME_CONNECT, value: "0" }
-              # 0 here, not the 1 the PP siblings use: this matches the EP permutation in
-              # ../agg/lws-ep.yaml-template, whose cross-node expert all-to-all is the path
-              # NVLS init failures showed up on.
               - { name: NCCL_NVLS_ENABLE, value: "0" }
               - { name: NCCL_CUMEM_ENABLE, value: "1" }
               - { name: NCCL_SOCKET_IFNAME, value: "^lo,docker,veth,eni" }
@@ -308,9 +249,6 @@ spec:
                 unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
                       HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
                 if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
-                # Same node-fault preflight as disagg/lws-2pp.yaml-template - a duplicate pod address
-                # (podIP == hostIP) is fatal and un-restartable, then a bounded wait for cluster DNS.
-                # See that file for the mechanism and the measured incident.
                 if [ -n "${DOLLAR}{MY_IP:-}" ] && [ "${DOLLAR}{MY_IP:-}" = "${DOLLAR}{NODE_IP:-}" ]; then
                   echo "[prefill-dp${DOLLAR}{LWS_WORKER_INDEX}] FATAL: pod IP ${DOLLAR}MY_IP == node IP ${DOLLAR}NODE_IP with hostNetwork=false."
                   echo "[prefill-dp${DOLLAR}{LWS_WORKER_INDEX}]        The CNI gave this sandbox the node's primary ENI address, so cluster DNS"
@@ -336,10 +274,6 @@ spec:
                     sleep 2
                   done
                 fi
-                # ONE getent per attempt, break only on a NON-EMPTY address: probing with one
-                # getent and capturing with a second let a single empty capture kill the pod ~2s
-                # in while printing a 300s timeout it never waited. NR==1 keeps a multi-record
-                # answer from producing a two-word LEADER_IP.
                 for i in ${DOLLAR}(seq 1 150); do
                   LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk 'NR==1{print ${DOLLAR}1; exit}')
                   if [ -n "${DOLLAR}LEADER_IP" ]; then break; fi
@@ -354,11 +288,6 @@ spec:
                   if (echo > /dev/tcp/${DOLLAR}LEADER_IP/29550) 2>/dev/null; then break; fi
                   sleep 5
                 done
-                # --headless: no API server here. LWS_WORKER_INDEX is 1-based for workers
-                # (the leader is index 0 = DP rank 0), so it IS the DP start rank. Every engine
-                # arg must match the leader's - each DP rank builds its own EngineCore, so the
-                # kv-transfer-config and --disaggregation-mode belong here too.
-                # ---- Gloo bind interface: REQUIRED whenever hostNetwork: true (see header note "Gloo") ----
                 export GLOO_SOCKET_IFNAME=${DOLLAR}{GLOO_SOCKET_IFNAME:-${DOLLAR}(ip -o -4 route show default | awk '{print ${DOLLAR}5; exit}')}
                 GLOO_BIND_IP=${DOLLAR}(ip -o -4 addr show dev "${DOLLAR}GLOO_SOCKET_IFNAME" 2>/dev/null | awk '{print ${DOLLAR}4; exit}' | cut -d/ -f1)
                 echo "[prefill-dp${DOLLAR}{LWS_WORKER_INDEX}] GLOO_SOCKET_IFNAME=${DOLLAR}GLOO_SOCKET_IFNAME bind=${DOLLAR}GLOO_BIND_IP"
@@ -491,20 +420,6 @@ spec:
                 fi
                 LOG=${DOLLAR}LOG_DIR/${DEPLOYMENT_NAME}-decode-ep-${DOLLAR}(date -u +%FT%TZ).log
                 echo "[decode-dp0] MY_IP=${DOLLAR}MY_IP EP=$((${EP_DP_SIZE}*${GPU_PER_WORKER})); piping to ${DOLLAR}LOG"
-                # One tee for the whole shell, then exec the engine with NO pipe, so the engine is the
-                # container's main process. Previously `exec python3 ... | tee -a "${DOLLAR}LOG"` left bash as the main
-                # process and made the container's status tee's - always 0 - so an engine that died on an
-                # unhandled exception reported "Reason: Completed / Exit Code: 0" in `kubectl describe` and
-                # only the startupProbe failure hinted otherwise; SIGTERM on pod delete also went to bash
-                # instead of the engine. Verified: the status propagates and the traceback still reaches both
-                # `kubectl logs` and "${DOLLAR}LOG" (10/10 runs).
-                # Save the container's REAL stdout before the tee takes over. bash does not wait for a
-                # process substitution to drain, and when this shell exits PID 1 goes with it - so a line
-                # echoed into the tee microseconds before `exit 1` never reaches `kubectl logs`. Measured
-                # 2026-08-15 on the 4-node p6-b200 disagg run: the preflight below fired correctly and the
-                # container exited 1 in under a second, but `kubectl logs` AND --previous showed only the
-                # two lines printed BEFORE this redirect, so the operator saw a bare crash-loop with no
-                # diagnosis at all. `say` writes each fatal line to the log file AND to fd 3 (real stdout).
                 exec 3>&1
                 exec > >(tee -a "${DOLLAR}LOG") 2>&1
                 say() { printf '%s\n' "${DOLLAR}*"; printf '%s\n' "${DOLLAR}*" >&3; }
@@ -537,30 +452,12 @@ spec:
                   done
                 fi
                 python3 -c "import vllm; print(f'vllm {vllm.__version__}')"
-                # Cold-start warmup (detached) - identical block to the other templates in this
-                # folder and in ../agg; see ../.env for the WARMUP_* knobs. A fresh pod's FIRST
-                # request pays a one-time ~4min Triton JIT compiling the Mamba DECODE kernels
-                # (_selective_scan_update, _causal_conv1d_update): startup only warms the PREFILL
-                # SSD path, and --enforce-eager skips cudagraph capture, not JIT. This warmer
-                # drives generations through the frontend so those kernels compile before real
-                # traffic. It shares the pod, never blocks the engine launch, and swallows every
-                # error so it cannot crash the pod. CONCURRENCY is a Triton compile key on the
-                # decode path (_causal_conv1d_update_kernel: seqlen / state_len / NP2_STATELEN /
-                # strides are tl.constexpr), so bs=1 alone leaves a concurrent benchmark paying
-                # that JIT on its opening - hence bs=1 first, then a concurrent burst of
-                # WARMUP_CONCURRENCY; see lws-pp2.yaml-template for why it is that kernel and not
-                # selective_state_update on this device/dtype.
-                # Precision gate: this is an NVFP4 concern (that checkpoint
-                # FP8-quantizes the Mamba mixer and pulls in more kernel variants); BF16 does not
-                # need it, so WARMUP_ENABLED=auto keys off the served model's precision suffix.
-                # Only the DECODE LEADER runs it: one warmer per deployment, and the requests it
-                # sends fan out across both roles and all EP ranks through the frontend anyway.
+                # Cold-start warmup (detached)
                 (
                   FE="http://${DEPLOYMENT_NAME}-frontend.${NAMESPACE}.svc.cluster.local:8000"
                   # Gate on THIS leader's dyn-system /health, the same signal the startupProbe
                   # uses. The frontend answers /v1/models 200 long before the engine finishes
-                  # loading, so gating on the frontend alone fires the warmup against a
-                  # not-yet-ready engine and compiles nothing.
+                  # loading 
                   LH="http://localhost:${DOLLAR}{DYN_SYSTEM_PORT:-9092}/health"
                   WARMUP_CONCURRENCY=${DOLLAR}{WARMUP_CONCURRENCY:-10}
                   WARMUP_ENABLED=${DOLLAR}{WARMUP_ENABLED:-auto}
@@ -596,9 +493,6 @@ spec:
                       fi
                       sleep 5
                     done
-                    # Fail LOUD if the gate never opened (still non-fatal to the pod): falling out of
-                    # this loop silently is indistinguishable from "warmed up fine", and the next
-                    # benchmark would quietly pay the JIT tax again.
                     [ "${DOLLAR}warmed" = 1 ] || echo "[warmup] gave up after 30min waiting for ${DOLLAR}LH 200 + ${MODEL_NAME} in ${DOLLAR}FE/v1/models; the FIRST benchmark requests will pay the Mamba JIT (non-fatal)"
                   fi
                 ) &
@@ -609,30 +503,6 @@ spec:
                 case "${DOLLAR}{GLOO_BIND_IP:-}" in
                   ""|127.*) say "[decode-dp0] FATAL: GLOO_SOCKET_IFNAME=${DOLLAR}GLOO_SOCKET_IFNAME has no routable IPv4 (got '${DOLLAR}GLOO_BIND_IP'); the cross-node DP-padding all-reduce would bind loopback. Exiting for a clean restart."; exit 1 ;;
                 esac
-                # --gpu-memory-utilization must stay at 0.92 on the EP decode blocks. It is NOT
-                # interchangeable with the 0.98 that the single-node decode groups in disagg/lws-2pp and
-                # disagg/lws-pp2 use. vLLM 0.23's gpu_worker.init_device -> worker/utils.request_memory
-                # demands that utilization * total ALREADY BE FREE when the rank initialises, and by then a
-                # DP x TP = EP group already holds 4.11-4.57 GiB on every B200: the CUDA context, the NCCL
-                # communicators (the node-local TP one PLUS the cross-node DP/EP one) and the EFA rails.
-                # That total is what was measured; the per-component split was not.
-                # At 0.98 decode could never start. Measured 2026-08-16 on a 4-node ml.p6-b200.48xlarge run:
-                # free was 173.78-174.24 of 178.35 GiB on all 16 GPUs (2 decode pods x 8) while 0.98 asks for
-                # 174.78, so all 16 ranks raised "Free memory on device cuda:N (173.8/178.35 GiB) on startup
-                # is less than desired GPU memory utilization (0.98, 174.78 GiB)" 88s after the DP group
-                # leader announced itself, inside a 3m28s pod lifetime, and the group crash-looped at that
-                # period indefinitely, never reaching weight load. Structural, not the loop measuring its own
-                # teardown: three pod generations on two nodes 25min apart gave byte-identical per-device
-                # figures, down to the cuda:7 outlier sitting 0.46 GiB above its siblings.
-                # 0.92 is then CONFIRMED end-to-end on that same cluster (06:13-06:34Z): all 5 disagg pods
-                # 1/1 with 0 restarts, "Free memory on device" absent from all 4 engine pods, and decode
-                # through the whole chain it had never reached - weights 31.11 GiB in 348.8s, "Available KV
-                # cache memory: 128.37 GiB", "GPU KV cache size: 8,808,857 tokens", NIXL worker up,
-                # "init engine (profile, create kv cache, warmup model) took 684.33 s", Ready 21m after start.
-                # The ask (0.92 x 178.35 = 164.08 GiB) against the actual use (31.11 weights + 128.37 KV =
-                # 159.48 GiB) is why raising this buys no capability here, only more KV on top of an already
-                # 8.8M-token cache. Do not raise it without re-measuring free memory at init ON THE EP
-                # TOPOLOGY - and note vLLM only prints a free-memory figure when the check FAILS.
                 exec python3 -m dynamo.vllm \
                   --model ${MODEL_PATH} \
                   --served-model-name ${MODEL_NAME} \
@@ -653,7 +523,6 @@ spec:
                   --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_connector_extra_config":{"backends":["LIBFABRIC"],"kv_lease_duration":${KV_LEASE_DURATION}}}'
             env:
               - { name: MY_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
-              # NODE_IP is read only by the node-fault preflight in args above (podIP == hostIP).
               - { name: NODE_IP, valueFrom: { fieldRef: { fieldPath: status.hostIP } } }
               - { name: DYNAMO_BACKEND, value: vllm }
               - { name: DYN_NAMESPACE, value: dynamo-disagg }
@@ -662,16 +531,10 @@ spec:
               - { name: HF_HOME, value: /shared/hf_cache }
               - { name: DYN_SYSTEM_ENABLED, value: "true" }
               - { name: DYN_SYSTEM_PORT, value: "9092" }
-              # The warmer reads these INSIDE the container, so they must be passed through here
-              # or the knobs in .env are inert (they were, until this line existed).
               - { name: WARMUP_ENABLED, value: "${WARMUP_ENABLED}" }
               - { name: WARMUP_CONCURRENCY, value: "${WARMUP_CONCURRENCY}" }
               - { name: VLLM_LOGGING_LEVEL, value: INFO }
               - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
-              # Raise the execute_model RPC deadline (default 300s) so a JIT-heavy first
-              # concurrent decode step (per-batch-bucket Mamba Triton compile under an aiperf
-              # --concurrency N opening) cannot trip the timeout and kill EngineCore with
-              # "RPC call to execute_model timed out" -> EngineDeadError.
               - { name: VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS, value: "1800" }
               - { name: VLLM_ENGINE_READY_TIMEOUT_S, value: "2400" }
               - { name: FLASHINFER_DISABLE_VERSION_CHECK, value: "1" }
@@ -738,9 +601,6 @@ spec:
                 unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
                       HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
                 if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
-                # Same node-fault preflight as disagg/lws-2pp.yaml-template - a duplicate pod address
-                # (podIP == hostIP) is fatal and un-restartable, then a bounded wait for cluster DNS.
-                # See that file for the mechanism and the measured incident.
                 if [ -n "${DOLLAR}{MY_IP:-}" ] && [ "${DOLLAR}{MY_IP:-}" = "${DOLLAR}{NODE_IP:-}" ]; then
                   echo "[decode-dp${DOLLAR}{LWS_WORKER_INDEX}] FATAL: pod IP ${DOLLAR}MY_IP == node IP ${DOLLAR}NODE_IP with hostNetwork=false."
                   echo "[decode-dp${DOLLAR}{LWS_WORKER_INDEX}]        The CNI gave this sandbox the node's primary ENI address, so cluster DNS"
@@ -788,30 +648,6 @@ spec:
                 case "${DOLLAR}{GLOO_BIND_IP:-}" in
                   ""|127.*) echo "[decode-dp${DOLLAR}{LWS_WORKER_INDEX}] FATAL: GLOO_SOCKET_IFNAME=${DOLLAR}GLOO_SOCKET_IFNAME has no routable IPv4 (got '${DOLLAR}GLOO_BIND_IP'); the cross-node DP-padding all-reduce would bind loopback. Exiting for a clean restart."; exit 1 ;;
                 esac
-                # --gpu-memory-utilization must stay at 0.92 on the EP decode blocks. It is NOT
-                # interchangeable with the 0.98 that the single-node decode groups in disagg/lws-2pp and
-                # disagg/lws-pp2 use. vLLM 0.23's gpu_worker.init_device -> worker/utils.request_memory
-                # demands that utilization * total ALREADY BE FREE when the rank initialises, and by then a
-                # DP x TP = EP group already holds 4.11-4.57 GiB on every B200: the CUDA context, the NCCL
-                # communicators (the node-local TP one PLUS the cross-node DP/EP one) and the EFA rails.
-                # That total is what was measured; the per-component split was not.
-                # At 0.98 decode could never start. Measured 2026-08-16 on a 4-node ml.p6-b200.48xlarge run:
-                # free was 173.78-174.24 of 178.35 GiB on all 16 GPUs (2 decode pods x 8) while 0.98 asks for
-                # 174.78, so all 16 ranks raised "Free memory on device cuda:N (173.8/178.35 GiB) on startup
-                # is less than desired GPU memory utilization (0.98, 174.78 GiB)" 88s after the DP group
-                # leader announced itself, inside a 3m28s pod lifetime, and the group crash-looped at that
-                # period indefinitely, never reaching weight load. Structural, not the loop measuring its own
-                # teardown: three pod generations on two nodes 25min apart gave byte-identical per-device
-                # figures, down to the cuda:7 outlier sitting 0.46 GiB above its siblings.
-                # 0.92 is then CONFIRMED end-to-end on that same cluster (06:13-06:34Z): all 5 disagg pods
-                # 1/1 with 0 restarts, "Free memory on device" absent from all 4 engine pods, and decode
-                # through the whole chain it had never reached - weights 31.11 GiB in 348.8s, "Available KV
-                # cache memory: 128.37 GiB", "GPU KV cache size: 8,808,857 tokens", NIXL worker up,
-                # "init engine (profile, create kv cache, warmup model) took 684.33 s", Ready 21m after start.
-                # The ask (0.92 x 178.35 = 164.08 GiB) against the actual use (31.11 weights + 128.37 KV =
-                # 159.48 GiB) is why raising this buys no capability here, only more KV on top of an already
-                # 8.8M-token cache. Do not raise it without re-measuring free memory at init ON THE EP
-                # TOPOLOGY - and note vLLM only prints a free-memory figure when the check FAILS.
                 exec python3 -m dynamo.vllm \
                   --model ${MODEL_PATH} \
                   --served-model-name ${MODEL_NAME} \
@@ -908,19 +744,6 @@ spec:
           command: ["/bin/bash", "-c"]
           args:
             - |-
-              # ---- Node-fault preflight: duplicate pod address (mechanism: disagg/lws-2pp.yaml-template) ----
-              # When the CNI hands this sandbox the node's own kubelet InternalIP (status.podIP ==
-              # status.hostIP while hostNetwork is false), kube-proxy DNAT replies land in the host
-              # netns, cluster DNS never answers, and DistributedRuntime() dies with "Failed to
-              # connect to NATS: DNS error ... Temporary failure in name resolution". A container
-              # RESTART CANNOT CLEAR IT: restarts reuse the pod sandbox, so CNI ADD is not re-invoked
-              # and the address is pinned for the pod's lifetime - the pod object has to be deleted.
-              # Measured on a 4-node ml.p6-b200.48xlarge cluster (2026-08-15): ALL FOUR nodes carry
-              # their own InternalIP inside their ipamd assignable pool, so any hostNetwork:false pod
-              # in this file can draw it - not just the GPU workers. Fail in ~1s naming the remedy
-              # instead of CrashLooping on an opaque DNS error. No `say`/fd-3 indirection is needed
-              # here (unlike the worker templates): this container does not redirect its stdout into a
-              # `tee` process substitution, so a plain echo reaches `kubectl logs` before the exit.
               if [ -n "${DOLLAR}{POD_IP:-}" ] && [ "${DOLLAR}{POD_IP:-}" = "${DOLLAR}{NODE_IP:-}" ]; then
                 echo "[frontend] FATAL: pod IP ${DOLLAR}POD_IP == node IP ${DOLLAR}NODE_IP with hostNetwork=false."
                 echo "[frontend]        Cluster DNS cannot answer for this pod, so NATS/etcd are unreachable."
@@ -928,11 +751,6 @@ spec:
                 echo "[frontend]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
                 exit 1
               fi
-              # dynamo.frontend calls DistributedRuntime() which connects to NATS immediately with NO
-              # retry, so a transient cold-start DNS miss (EAI_AGAIN, "Temporary failure in name
-              # resolution") is fatal and CrashLoops the pod even though NATS is healthy. The worker
-              # templates already guard their startup with a getent loop; agg/lws.yaml-template's
-              # frontend already carries this block - mirror it here so every frontend behaves the same.
               NATS_HOST=${DOLLAR}{NATS_SERVER#*://}; NATS_HOST=${DOLLAR}{NATS_HOST%%:*}
               for i in ${DOLLAR}(seq 1 60); do
                 if getent hosts "${DOLLAR}NATS_HOST" >/dev/null 2>&1; then break; fi

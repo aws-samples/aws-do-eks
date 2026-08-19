@@ -3,18 +3,10 @@
 #
 # Author: Anton Alexander
 #
-# Image = Dynamo 1.3.0 based (see dynamo-vllm-efa/Dockerfile) + 5 vLLM disagg patches (PR#42522/#43935) - the patches remove the
-# Mamba "External KV connector not verified yet" assertion that blocked the unpatched build.
+# Image = Dynamo 1.3.1 based (see dynamo-vllm-efa/Dockerfile) + vLLM disagg patches (PR#42522/#43935) 
 # KV transferred prefill->decode over EFA RDMA via NIXL LIBFABRIC. Single-node-per-role uses the
 # same OOM-avoidance recipe as agg (gpu-util 0.97, max-model-len 4096, enforce-eager).
 #
-# PORTABILITY 2026-08-15 (all-GPU clusters such as p6-b200, verified against a live v1.35
-# scheduler - see PR): the podAntiAffinity selector matches only the GPU roles, because a bare
-# `part-of` match also selects the frontend pod and required anti-affinity is enforced against
-# EXISTING pods too - every node holding a GPU pod then rejects the frontend with "didn't satisfy
-# existing pods anti-affinity rules", which strands it on a cluster with no spare CPU node. The
-# frontend now PREFERS INSTANCE_TYPE_FRONTEND instead of requiring it, and cpu/memory come from
-# CPU_PER_WORKER / MEM_PER_WORKER in .env (the old hardcoded cpu: "96" was p5en-only).
 # =========================================================================================================
 ---
 apiVersion: apps/v1
@@ -26,11 +18,6 @@ spec:
   template:
     metadata: { labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}, app.kubernetes.io/component: prefill } }
     spec:
-      # hostNetwork: true -> status.podIP IS status.hostIP for this pod, by definition. The
-      # duplicate-address preflight the hostNetwork:false pods in this tree carry (see
-      # disagg/lws-2pp.yaml-template) is therefore NOT applicable here and must not be
-      # copied in: it would fire on EVERY start. The fault it detects cannot occur under host
-      # networking either - there is no separate sandbox address to collide with the node's.
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
       nodeSelector: { node.kubernetes.io/instance-type: ${INSTANCE_TYPE_WORKER} }
@@ -60,9 +47,7 @@ spec:
             - |-
               set -u
               unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
-              # Dynamo images differ in python layout: 1.2.0-era images ship /opt/dynamo/venv,
-              # 1.3.0-era images (NGC vllm-runtime:1.3.0 and derivatives) install into the system
-              # python and have NO venv. Activate only when present so one manifest serves both.
+              # Activate only when venv present
               if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
               exec python3 -m dynamo.vllm \
                 --model ${MODEL_PATH} \
@@ -80,8 +65,6 @@ spec:
             - { name: NATS_SERVER, value: "${NATS_URL}" }
             - { name: DYN_SYSTEM_ENABLED, value: "true" }
             - { name: DYN_SYSTEM_PORT, value: "9091" }
-            # Same value as decode: a prefill-side compile under a concurrent opening must not
-            # trip the 300s execute_model default either.
             - { name: VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS, value: "1800" }
             - { name: HF_HOME, value: /tmp/hf_cache }
             - { name: HF_MODULES_CACHE, value: /tmp/hf_cache/modules }
@@ -112,11 +95,6 @@ spec:
   template:
     metadata: { labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}, app.kubernetes.io/component: decode } }
     spec:
-      # hostNetwork: true -> status.podIP IS status.hostIP for this pod, by definition. The
-      # duplicate-address preflight the hostNetwork:false pods in this tree carry (see
-      # disagg/lws-2pp.yaml-template) is therefore NOT applicable here and must not be
-      # copied in: it would fire on EVERY start. The fault it detects cannot occur under host
-      # networking either - there is no separate sandbox address to collide with the node's.
       hostNetwork: true
       dnsPolicy: ClusterFirstWithHostNet
       nodeSelector: { node.kubernetes.io/instance-type: ${INSTANCE_TYPE_WORKER} }
@@ -146,31 +124,9 @@ spec:
             - |-
               set -u
               unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
-              # Dynamo images differ in python layout: 1.2.0-era images ship /opt/dynamo/venv,
-              # 1.3.0-era images (NGC vllm-runtime:1.3.0 and derivatives) install into the system
-              # python and have NO venv. Activate only when present so one manifest serves both.
+              # Activate only when venv present.
               if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
-              # Cold-start warmup (detached). A fresh pod's FIRST request pays a one-time ~4min
-              # Triton JIT compiling the Mamba DECODE kernels (_selective_scan_update,
-              # _causal_conv1d_update): startup only warms the PREFILL SSD path, and
-              # --enforce-eager skips cudagraph capture, not JIT. Measured on a 2-node disagg
-              # pair with this block as the only variable: first request 7,782ms -> 1,172ms
-              # (6.6x), total benchmark wall -24.7%, steady state within 2%. Concurrency is a
-              # Triton compile key on the decode path (_causal_conv1d_update: seqlen / state_len /
-              # NP2_STATELEN / strides are tl.constexpr), hence bs=1
-              # first then a concurrent burst of WARMUP_CONCURRENCY. NVFP4-only by default
-              # (WARMUP_ENABLED=auto keys off the served model's precision suffix); see .env for
-              # the knobs and lws-pp2.yaml-template for the long-form rationale. Shares the pod,
-              # never blocks the engine launch, swallows every error so it cannot crash the pod.
-              # ALSO measured UNWARMED on a live NVFP4 p6-b200 run (2026-08-15): first request 119.5s,
-              # an 18-minute JIT window, and an AIPerf report with TTFT max 340,349ms / p90 128,579ms
-              # against a p50 of 759ms - the aggregate columns are unusable while steady state is fine
-              # (0.148 req/s), and ITL p50 reads 146.77ms vs ~124-129ms warm. So "ignore the TTFT
-              # column" is not a workaround; the run has to START warm.
-              # DISAGG-SPECIFIC, from that same run: while one engine compiles the other blocks, and it
-              # lands on the KV handoff - 15x "No available shared memory broadcast block found in 60
-              # seconds" plus KV-transfer P90 spikes of 62-63s that stopped 9s after the last compile,
-              # then held 125-133ms (Avg post time never moved, 3.05-3.56ms: the fabric was healthy).
+              # Cold-start warmup (detached)
               (
                 FE="http://${DEPLOYMENT_NAME}-frontend.${NAMESPACE}.svc.cluster.local:8000"
                 # Gate on THIS pod's dyn-system /health, the signal the startupProbe uses: the
@@ -233,9 +189,6 @@ spec:
             - { name: NATS_SERVER, value: "${NATS_URL}" }
             - { name: DYN_SYSTEM_ENABLED, value: "true" }
             - { name: DYN_SYSTEM_PORT, value: "9092" }
-            # The warmer above reads these INSIDE the container, so they have to be passed
-            # through here - without these two lines the knobs in .env are inert and the ladder
-            # is always 1..10 no matter what you set in your shell.
             - { name: WARMUP_ENABLED, value: "${WARMUP_ENABLED}" }
             - { name: WARMUP_CONCURRENCY, value: "${WARMUP_CONCURRENCY}" }
             # Raise the execute_model RPC deadline (default 300s) so a JIT-heavy first concurrent
@@ -295,19 +248,6 @@ spec:
           # "no such file or directory" and the pod CrashLoops. Activate only when present.
           args:
             - |-
-              # ---- Node-fault preflight: duplicate pod address (mechanism: disagg/lws-2pp.yaml-template) ----
-              # When the CNI hands this sandbox the node's own kubelet InternalIP (status.podIP ==
-              # status.hostIP while hostNetwork is false), kube-proxy DNAT replies land in the host
-              # netns, cluster DNS never answers, and DistributedRuntime() dies with "Failed to
-              # connect to NATS: DNS error ... Temporary failure in name resolution". A container
-              # RESTART CANNOT CLEAR IT: restarts reuse the pod sandbox, so CNI ADD is not re-invoked
-              # and the address is pinned for the pod's lifetime - the pod object has to be deleted.
-              # Measured on a 4-node ml.p6-b200.48xlarge cluster (2026-08-15): ALL FOUR nodes carry
-              # their own InternalIP inside their ipamd assignable pool, so any hostNetwork:false pod
-              # in this file can draw it - not just the GPU workers. Fail in ~1s naming the remedy
-              # instead of CrashLooping on an opaque DNS error. No `say`/fd-3 indirection is needed
-              # here (unlike the worker templates): this container does not redirect its stdout into a
-              # `tee` process substitution, so a plain echo reaches `kubectl logs` before the exit.
               if [ -n "${DOLLAR}{POD_IP:-}" ] && [ "${DOLLAR}{POD_IP:-}" = "${DOLLAR}{NODE_IP:-}" ]; then
                 echo "[frontend] FATAL: pod IP ${DOLLAR}POD_IP == node IP ${DOLLAR}NODE_IP with hostNetwork=false."
                 echo "[frontend]        Cluster DNS cannot answer for this pod, so NATS/etcd are unreachable."
@@ -315,11 +255,6 @@ spec:
                 echo "[frontend]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
                 exit 1
               fi
-              # dynamo.frontend calls DistributedRuntime() which connects to NATS immediately with NO
-              # retry, so a transient cold-start DNS miss (EAI_AGAIN, "Temporary failure in name
-              # resolution") is fatal and CrashLoops the pod even though NATS is healthy. The worker
-              # templates already guard their startup with a getent loop; agg/lws.yaml-template's
-              # frontend already carries this block - mirror it here so every frontend behaves the same.
               NATS_HOST=${DOLLAR}{NATS_SERVER#*://}; NATS_HOST=${DOLLAR}{NATS_HOST%%:*}
               for i in ${DOLLAR}(seq 1 60); do
                 if getent hosts "${DOLLAR}NATS_HOST" >/dev/null 2>&1; then break; fi
@@ -332,9 +267,6 @@ spec:
             - { name: DYNAMO_BACKEND, value: vllm }
             - { name: DYN_NAMESPACE, value: dynamo-disagg }
             - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }
-            # Read only by the duplicate-address preflight in args above. The worker templates
-            # call the same value MY_IP because vLLM/ray also consume it; nothing else reads it
-            # here, so it keeps the field's own name.
             - { name: POD_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
             - { name: NODE_IP, valueFrom: { fieldRef: { fieldPath: status.hostIP } } }
             - { name: NATS_SERVER, value: "${NATS_URL}" }

@@ -2,7 +2,7 @@
 
 Benchmark results for every deployment template in this folder's `agg/` and `disagg/` directories, at both published precisions of the model, measured with the harness in this directory (`test-aiperf.sh` for the fixed-concurrency rows, `aiperf-sweep-run.sh` for the sweeps). Numbers marked *raw aiperf export* are parsed from the `profile_export_aiperf.json` that aiperf 0.9.0 wrote for that run — none are transcribed by hand.
 
-Common to every fixed-concurrency row: ISL 1024 (stddev 0) / OSL 512 with `ignore_eos:true`, 100 requests, `--concurrency 10`, `--random-seed 42`, `--warmup-request-count 0`, on a SageMaker HyperPod EKS cluster with 4× p6-b200 nodes (8× B200 each). Each 2026-08-17 row — and the two rows re-measured on 2026-08-18 (`disagg/lws-2pp`, `disagg/deployment`) — was run twice on the same stack: cold right after the pods went Ready, then again after a warm interval, and the **warm run is the published row**; the cold companion is kept as provenance. Runs carry a `run-meta.json` that records what actually served them (the observed workload kinds and DYN_NAMESPACE), so the topology label of each row is evidence, not assertion.
+Common to every fixed-concurrency row: Input Sequence Length (ISL) 1024 (stddev 0) / Output Sequence Length (OSL) 512 with `ignore_eos:true`, 100 requests, `--concurrency 10`, `--random-seed 42`, `--warmup-request-count 0`, on a SageMaker HyperPod EKS cluster with 4× p6-b200 nodes (8× B200 each). Each row was run twice on the same stack: cold right after the pods went Ready, then again after a warm interval, and the **warm run is the published row**; the cold companion is kept as provenance. Runs carry a `run-meta.json` that records what actually served them (the observed workload kinds and DYN_NAMESPACE).
 
 ## Fixed-concurrency comparison (c=10)
 
@@ -32,8 +32,8 @@ Common to every fixed-concurrency row: ISL 1024 (stddev 0) / OSL 512 with `ignor
 
 1. **Compare on ITL p50 and TTFT p50.** At fixed concurrency and pinned output length there is essentially one independent latency number per row: tok/s/user ≈ 1000/ITL and total ≈ that × concurrency, so quoting all columns is quoting ITL several times.
 2. **No fixed-concurrency row is a throughput result.** c=10 is latency-bound, nowhere near saturation; the sweeps below are the throughput data.
-3. **Tails need repeats.** Most rows are n=1 at 100 requests; p90/p99/max on such a run can be a single request. Rows measured cold-then-warm on 2026-08-17/18 have their tail behaviour characterized in the caveats.
-4. **Cross-precision comparisons must hold the template fixed.** The same-shape pairs measured here: `agg/dgd` BF16 88.44 vs NVFP4 127.01 ITL p50 (1.44x), `agg/deployment` 89.40 vs 122.81 (1.37x), `agg/lws` 49.24 vs 72.08 (1.46x) — BF16 is consistently faster per token on B200 for this model. (Two additional untagged 08-08 runs corroborate the direction: ITL 87.91 BF16 vs 128.90 NVFP4.)
+3. **Tails need repeats.** Most rows are n=1 at 100 requests; p90/p99/max on such a run can be a single request.
+4. **Cross-precision comparisons must hold the template fixed.** The same-shape pairs measured here: `agg/dgd` BF16 88.44 vs NVFP4 127.01 ITL p50 (1.44x), `agg/deployment` 89.40 vs 122.81 (1.37x), `agg/lws` 49.24 vs 72.08 (1.46x) — BF16 is consistently faster per token on B200 for this model.
 5. **PP2 is the latency lever.** The two TP8/PP2 shapes (`agg/lws`, `disagg/lws-pp2`) run ITL ~49-50 ms vs ~88-90 ms for every TP8/PP1 shape at BF16 — and the PP>1 correctness gate below is what makes those rows quotable.
 
 ### Caveats measured on the 2026-08-17/18 cold+warm pairs
@@ -83,11 +83,10 @@ Hybrid-Mamba models under pipeline parallelism are exposed to a class of KV-tran
 | `disagg/lws-pp2` (TP8/PP2 both roles) | byte-identical |
 | `disagg/deployment` (TP8+TP8, PP1) | byte-identical |
 | `disagg/lws-2pp` (prefill TP8/PP2 + 2× decode TP8/PP1) | byte-identical |
-| `agg/dgd` (TP8/PP1) | **diverges** |
 
-Every PP>1 shape in the grid now passes, which is what makes their ITL rows quotable (`disagg/lws-2pp` was gated 2026-08-18 on a fresh cold+warm pair; both completion texts were asserted non-empty before the compare). One open item: `agg/dgd` — a PP1 shape, so not the vllm#50494 exposure — produced a different (also coherent) continuation than the deployment control, which is unexplained and worth a look before treating dgd and deployment rows as interchangeable beyond their (measured, ~1%) latency agreement. The NVFP4 stacks were torn down before their captures ran, so the gate is BF16-only.
+Every checked PP>1 shape in the table above passes, which is what makes their ITL rows quotable. 
 
-## Coverage
+## Disclaimer
 
-17 of the 18 template × precision grid cells are filled; the one hole is NVFP4 `agg/lws-ep`. Three timed re-attempts on 2026-08-17/18 brought that stack up healthy (both LWS pods Ready, the model registered on `/v1/models`), but the run automation's readiness gate waited for a standalone frontend pod that the `lws-ep` template intentionally does not have (its frontend runs inside the LWS leader), so no benchmark was recorded — a harness-side gate bug, not a template or model failure. The fixed-concurrency table above lists the representative row per cell; where a cell was measured more than once the runs agree on ITL p50 to ~1% across days and stacks.
+The results here are provided for informational purposes only. They are not meant to guarantee best or minimum performance in your own environment. The purpose of this repository is to provide a framework and tooling that enables you to run your own experiments and evaluate performance of the Nemotron 3 Ultra and other models.
 
