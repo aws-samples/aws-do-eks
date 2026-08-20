@@ -122,8 +122,11 @@ dynamo-operator:
       image:
         # -- Official NVIDIA Dynamo operator image repository
         repository: "nvcr.io/nvidia/ai-dynamo/kubernetes-operator"
-        # -- Image tag (leave empty to use chart default)
-        tag: 1.3.1
+        # -- Image tag. Leave empty: the chart then uses its own appVersion, which is the
+        # only combination the chart guarantees (a pinned tag breaks when DYNAMO_VERSION moves —
+        # e.g. the 1.4.0 chart passes --operator-image, a flag the 1.3.1 manager binary lacks,
+        # and the operator CrashLoops with "flag provided but not defined").
+        tag: ""
         # -- Image pull policy - when to pull the image
         pullPolicy: IfNotPresent
 
