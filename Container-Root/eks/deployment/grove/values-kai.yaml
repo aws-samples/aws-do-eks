@@ -1,0 +1,26 @@
+# Values for the standalone KAI scheduler release (chart: ghcr.io/kai-scheduler/kai-scheduler).
+# Chart defaults are production-usable; only overrides that matter on EKS are surfaced here
+# (overridden further by custom-values.yaml if you keep one).
+
+global:
+  # Keep scheduler components off GPU nodes so they never compete with workload capacity.
+  nodeSelector: {}
+  tolerations: []
+
+  # GPU sharing (fractional GPU) is off: Dynamo workloads request whole GPUs.
+  gpuSharing: false
+
+  # Enable when the cluster runs a node autoscaler (Karpenter / cluster-autoscaler) so KAI
+  # marks unschedulable pods for scale-up instead of holding them.
+  clusterAutoscaling: false
+
+# The chart's pre-install topology-migration hook copies Kueue Topology CRs into KAI Topology
+# CRs. On clusters where Kueue is installed WITH existing Topology objects the hook job can
+# fail its backoff (configmap hook-ordering mount race on first attempt) and mark the whole
+# release failed. Migration is optional and idempotent, so keep it out of the install path and
+# run it by hand when wanted:
+#   for T in $(kubectl get topologies.kueue.x-k8s.io -o name); do
+#     kubectl get $T -o go-template='apiVersion: kai.scheduler/v1{{"\n"}}kind: Topology{{"\n"}}metadata:{{"\n"}}  name: {{.metadata.name}}{{"\n"}}spec:{{"\n"}}  levels:{{"\n"}}{{range .spec.levels}}  - nodeLabel: "{{.nodeLabel}}"{{"\n"}}{{end}}' | kubectl apply -f -
+#   done
+topologyMigration:
+  enabled: false

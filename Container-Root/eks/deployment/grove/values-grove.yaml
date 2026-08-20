@@ -1,0 +1,13 @@
+# Values for the standalone Grove operator release (chart: ghcr.io/ai-dynamo/grove/grove-charts).
+# Chart defaults are production-usable; only overrides that matter on EKS are surfaced here
+# (overridden further by custom-values.yaml if you keep one).
+
+# Grove operator replicas. Leader election is on by default in the chart, so >1 is safe.
+replicaCount: 1
+
+# Keep the operator off GPU nodes so it never competes with workload capacity.
+nodeSelector: {}
+tolerations: []
+
+# Webhook certificates are self-provisioned by the operator (certProvisionMode: auto in the
+# chart). No cert-manager dependency.
