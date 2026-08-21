@@ -115,7 +115,7 @@ cd /eks/deployment/inference/agentic-ai/nemotron/ultra/agg
 
 ### Disaggregated mode
 
-Disaggregated mode on EFA requires a patched version of the `nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.3.1-efa` container. A pre-built container image is available at `public.ecr.aws/hpc-cloud/dynamo-vllm-efa:1.3.1-patched`. If you prefer to build your own image, use the [dynamo-vllm-efa](https://github.com/aws-samples/aws-do-eks/tree/main/Container-Root/eks/deployment/inference/agentic-ai/nemotron/ultra/dynamo-vllm-efa) folder. The example here is configured to use the pre-built image.
+On Dynamo 1.4.0 / vLLM 0.26 (`nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.4.0-efa`), disaggregated mode on EFA no longer requires vLLM patches at PP1 — the stock NIXL connector transfers hybrid-Mamba KV correctly (verified live on 2x p5en.48xlarge, 2026-08-20). The manifests default to `public.ecr.aws/hpc-cloud/dynamo-vllm-efa:1.4.0-patched`, a thin overlay on that base adding ray (multi-node pipeline parallel), the NVFP4 cubin-dir fix, and CVE remediation; build it yourself with the [dynamo-vllm-efa](https://github.com/aws-samples/aws-do-eks/tree/main/Container-Root/eks/deployment/inference/agentic-ai/nemotron/ultra/dynamo-vllm-efa) folder. For PP>1 disaggregation, or on a Dynamo 1.3.1 platform, use the previous image `public.ecr.aws/hpc-cloud/dynamo-vllm-efa:1.3.1-patched` (its recipe is preserved in the git history of the same folder).
 
 In the `aws-do-eks` shell, execute:
 
