@@ -38,11 +38,17 @@ kubectl get crd -o name | grep -E "grove.io|kai.scheduler|scheduling.run.ai" | x
 kubectl delete namespace "$GROVE_NAMESPACE" --ignore-not-found --timeout=120s
 kubectl delete namespace "$KAI_NAMESPACE" --ignore-not-found --timeout=120s
 
-# 6. Verify zero residue - all of the following should print nothing.
+# 6. RuntimeClass nvidia — only the one deploy.sh created (marker label); a RuntimeClass owned
+#    by the GPU-Operator is left alone. Only KAI's injection references it, so with KAI gone it
+#    has no remaining consumer.
+kubectl delete runtimeclass -l app.kubernetes.io/created-by=aws-do-eks-grove-deploy --ignore-not-found
+
+# 7. Verify zero residue - all of the following should print nothing.
 echo ""
 echo "Verifying removal (all of the following should be empty):"
 kubectl get crd | grep -E "grove.io|kai.scheduler|scheduling.run.ai"
 kubectl get namespace "$GROVE_NAMESPACE" 2>/dev/null
 kubectl get namespace "$KAI_NAMESPACE" 2>/dev/null
 helm list -A 2>/dev/null | grep -E "^grove|^kai-scheduler"
+kubectl get runtimeclass -l app.kubernetes.io/created-by=aws-do-eks-grove-deploy --no-headers 2>/dev/null
 echo "Done."
