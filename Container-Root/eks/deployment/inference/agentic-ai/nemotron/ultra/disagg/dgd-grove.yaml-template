@@ -1,0 +1,347 @@
+# =============================================================================
+# Nemotron-3 Ultra disaggregated P/D via Grove — DynamoGraphDeployment, v1beta1
+# =============================================================================
+#
+# Author: Anton Alexander
+#
+# Same topology as dgd-v1beta1.yaml-template — 1 prefill node + 1 decode node,
+# TP${GPU_PER_WORKER}/PP1 per role, KV prefill->decode over EFA RDMA via NIXL
+# LIBFABRIC — rendered through Grove. On a Dynamo >= 1.4.0 operator with Grove
+# enabled, the WHOLE graph becomes one grove.io PodCliqueSet (frontend, prefill,
+# decode each a PodClique) and is GANG-SCHEDULED as a PodGang by kai-scheduler.
+# That is the operational win over dgd-v1beta1 on a busy cluster: prefill can
+# no longer come up alone, hold ${GPU_PER_WORKER} GPUs and wait forever for a
+# decode node that never frees — the graph schedules all-or-nothing, and KAI
+# queues it as one unit.
+#
+#   MANIFEST_TYPE=dgd-grove ./run.sh
+#
+# Prerequisites (both in this repo, apply in order):
+#   1. eks/deployment/nvidia-dynamo  — Dynamo platform >= 1.4.0 (operator/etcd/NATS)
+#   2. eks/deployment/grove          — standalone Grove + KAI releases; its deploy.sh
+#      flips global.grove.enabled + global.kai-scheduler.enabled on the platform
+#      release so the operator renders DGDs through Grove.
+# Without step 2 the operator uses its non-Grove renderer and this file behaves
+# exactly like dgd-v1beta1.yaml-template (same spec, no gang scheduling).
+#
+# VALIDATION STATUS:
+#   The Grove chain (PodCliqueSet -> PodCliques -> PodGang, kai-scheduler on every
+#   pod, EFA-not-Socket transport) is PROVEN live 2026-08-20 on 2x p5en.48xlarge
+#   with Dynamo 1.4.0 (PR #93 evidence). This exact disagg topology — 550B
+#   Nemotron-3 Ultra, 1 prefill + 1 decode (TP8/PP1 each), Grove-rendered DGD
+#   gang-scheduled by kai, STOCK vllm-runtime:1.4.0-efa — is also PROVEN live
+#   2026-08-20 on the same pair: DGD Ready=True in ~9 min, coherent completions,
+#   KV over EFA verified (decode rdma_read +3.061 GB matching NIXL telemetry
+#   48 x 60.82 MB to 0.0015%, LIBFABRIC x8 on both roles, zero transfer
+#   failures). That run applied a directly-authored DGD of the same shape; the
+#   envsubst render of THIS file has not itself been applied yet — smoke it once
+#   before quoting numbers from it.
+#
+#   Scaling a ROLE across nodes (e.g. PP2 prefill) is expressible here by adding
+#   `multinode: { nodeCount: N }` to that component (see ../agg/dgd-grove.yaml-template
+#   for the pattern), but that combination is UNVALIDATED through the DGD path —
+#   lws-2pp.yaml-template remains the proven PP2-prefill artifact. Decode stays
+#   PP1 regardless: PP>1 decode deadlocks the hybrid-Mamba 550B (its header
+#   explains why).
+#
+# Differences vs dgd-v1beta1.yaml-template, and why:
+#   - podAntiAffinity is keyed to the operator-applied label
+#     nvidia.com/dynamo-graph-deployment-name (VERIFIED present on Grove-rendered
+#     pods) instead of app.kubernetes.io/part-of, whose passthrough onto
+#     Grove-rendered pods is unverified.
+#   - sharedMemorySize: 64Gi on both workers (dgd-v1beta1 leaves it unset =
+#     operator's 8Gi default). 64Gi is what the proven 550B Grove run set and
+#     verified injected; the CRD field is the only /dev/shm knob the operator
+#     honors (podTemplate mounts there are silently dropped).
+#   - Everything else — env, probes, warmup, KV transfer config, resources —
+#     is carried unchanged, single-node components keep their explicit
+#     startupProbe/dyn-system wiring (each role's pod IS its engine here, no
+#     leader/worker split to worry about).
+# =============================================================================
+---
+apiVersion: nvidia.com/v1beta1
+kind: DynamoGraphDeployment
+metadata:
+  name: ${DEPLOYMENT_NAME}
+  namespace: ${NAMESPACE}
+  labels:
+    app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
+spec:
+  backendFramework: vllm
+  env:
+    - { name: DYNAMO_BACKEND, value: vllm }
+    - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }
+    - { name: NATS_SERVER,    value: "${NATS_URL}" }
+    # /tmp, NOT /shared: pods run uid 1000 and /shared is root-owned - the frontend
+    # dies registering the model ("Failed to create cache directory /shared/hf_cache/hub:
+    # Permission denied") and /v1/models stays empty -> every request 404s.
+    - { name: HF_HOME,        value: /tmp/hf_cache }
+  components:
+    # ---- Frontend (router, CPU-only; its own PodClique in the gang) --------
+    - name: Frontend
+      type: frontend
+      replicas: 1
+      podTemplate:
+        spec:
+          nodeSelector: { node.kubernetes.io/instance-type: ${INSTANCE_TYPE_FRONTEND} }
+          volumes:
+            - { name: fsx-pvc, persistentVolumeClaim: { claimName: fsx-pvc } }
+          containers:
+            # The name MUST be "main" - that is the container the operator merges its
+            # image/command/env/ports/probe defaults into.
+            - name: main
+              image: ${REGISTRY}${IMAGE}${TAG}
+              imagePullPolicy: Always
+              command: ["/bin/bash", "-c"]
+              args:
+                - |-
+                  if [ -n "${DOLLAR}{POD_IP:-}" ] && [ "${DOLLAR}{POD_IP:-}" = "${DOLLAR}{NODE_IP:-}" ]; then
+                    echo "[frontend] FATAL: pod IP ${DOLLAR}POD_IP == node IP ${DOLLAR}NODE_IP with hostNetwork=false."
+                    echo "[frontend]        Cluster DNS cannot answer for this pod, so NATS/etcd are unreachable."
+                    echo "[frontend]        RESTARTING WILL NOT HELP - the sandbox keeps the address. Remedy:"
+                    echo "[frontend]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
+                    exit 1
+                  fi
+                  if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
+                  exec python3 -m dynamo.frontend --http-port 8000 --http-host 0.0.0.0
+              env:
+                - { name: POD_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
+                - { name: NODE_IP, valueFrom: { fieldRef: { fieldPath: status.hostIP } } }
+              ports: [{ containerPort: 8000, name: http }]
+              # The frontend reads the model dir (config/tokenizer, not weights) to build the
+              # preprocessor when workers register a local path - without this mount the model
+              # never appears in /v1/models.
+              volumeMounts:
+                - { name: fsx-pvc, mountPath: /shared }
+              resources:
+                requests: { cpu: "2", memory: 4Gi }
+                limits:   { cpu: "4", memory: 8Gi }
+              # NOTE: no readinessProbe here - the operator injects its own frontend probe.
+    # ---- Prefill worker (TP${GPU_PER_WORKER}/PP1, 1 node) ---------
+    - name: VllmPrefillWorker
+      type: prefill
+      replicas: 1
+      # Operator-managed /dev/shm tmpfs (CRD field; nil defaults to 8Gi and a
+      # podTemplate mount at /dev/shm is silently dropped). 64Gi is the value
+      # verified injected in the live 550B run — do not shrink it for the 550B.
+      sharedMemorySize: 64Gi
+      podTemplate:
+        spec:
+          nodeSelector: { node.kubernetes.io/instance-type: ${INSTANCE_TYPE_WORKER} }
+          tolerations:
+            - { key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
+            - { key: vpc.amazonaws.com/efa, operator: Exists, effect: NoSchedule }
+          affinity:
+            # Keyed to the operator label (verified on Grove-rendered pods) — see header.
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      nvidia.com/dynamo-graph-deployment-name: ${DEPLOYMENT_NAME}
+                  topologyKey: kubernetes.io/hostname
+          volumes:
+            - { name: fsx-pvc, persistentVolumeClaim: { claimName: fsx-pvc } }
+            - { name: gdrdrv, hostPath: { path: /dev/gdrdrv, type: CharDevice } }
+          containers:
+            - name: main
+              image: ${REGISTRY}${IMAGE}${TAG}
+              imagePullPolicy: Always
+              securityContext: { capabilities: { add: ["IPC_LOCK"] } }
+              command: ["/bin/bash", "-c"]
+              args:
+                - |-
+                  set -u
+                  unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
+                        HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
+                  if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
+                  if [ -n "${DOLLAR}{POD_IP:-}" ] && [ "${DOLLAR}{POD_IP:-}" = "${DOLLAR}{NODE_IP:-}" ]; then
+                    echo "[prefill] FATAL: pod IP ${DOLLAR}POD_IP == node IP ${DOLLAR}NODE_IP with hostNetwork=false."
+                    echo "[prefill]        Cluster DNS cannot answer for this pod, so NATS/etcd are unreachable."
+                    echo "[prefill]        RESTARTING WILL NOT HELP - the sandbox keeps the address. Remedy:"
+                    echo "[prefill]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
+                    exit 1
+                  fi
+                  exec python3 -m dynamo.vllm \
+                    --model ${MODEL_PATH} \
+                    --served-model-name ${MODEL_NAME} \
+                    --tensor-parallel-size ${GPU_PER_WORKER} --pipeline-parallel-size 1 \
+                    --max-model-len 4096 --gpu-memory-utilization 0.97 --enforce-eager \
+                    --trust-remote-code ${MAMBA_FLAGS} \
+                    --load-format runai_streamer \
+                    --disaggregation-mode prefill \
+                    --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_connector_extra_config":{"backends":["LIBFABRIC"],"kv_lease_duration":${KV_LEASE_DURATION}}}'
+              env:
+                # Read only by the duplicate-address preflight in args above.
+                - { name: POD_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
+                - { name: NODE_IP, valueFrom: { fieldRef: { fieldPath: status.hostIP } } }
+                - { name: DYN_SYSTEM_ENABLED, value: "true" }
+                - { name: DYN_SYSTEM_PORT, value: "9091" }
+                # Same value as decode: a prefill-side compile under a concurrent opening must not
+                # trip the 300s execute_model default either.
+                - { name: VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS, value: "1800" }
+                - { name: VLLM_LOGGING_LEVEL, value: INFO }
+                - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
+                - { name: FLASHINFER_DISABLE_VERSION_CHECK, value: "1" }
+                - { name: FI_PROVIDER, value: efa }
+                - { name: FI_EFA_USE_DEVICE_RDMA, value: "1" }
+                - { name: FI_EFA_FORK_SAFE, value: "1" }
+                - { name: FI_HMEM_CUDA_USE_DMABUF, value: "1" }
+                - { name: FI_EFA_ENABLE_SHM, value: "0" }
+                - { name: FI_EFA_ENABLE_SHM_TRANSFER, value: "0" }
+                - { name: NIXL_LIBFABRIC_MAX_RAILS, value: "1" }
+                - { name: NIXL_SKIP_TOPOLOGY_CHECK, value: "1" }
+                - { name: NCCL_NET_PLUGIN, value: ofi }
+                - { name: NCCL_TUNER_PLUGIN, value: ofi }
+                - { name: OFI_NCCL_FORCE_NUM_RAILS, value: "4" }
+              # Port MUST be named "system": the operator injects readiness/liveness probes
+              # that target the named port; any other name fails with
+              # 'strconv.Atoi: parsing "system"' and the worker never goes Ready.
+              ports: [{ containerPort: 9091, name: system }]
+              startupProbe:
+                httpGet: { path: /health, port: 9091 }
+                periodSeconds: 30
+                timeoutSeconds: 10
+                failureThreshold: 240
+              volumeMounts:
+                - { name: fsx-pvc, mountPath: /shared }
+                - { name: gdrdrv, mountPath: /dev/gdrdrv }
+              resources:
+                requests: { cpu: "${CPU_PER_WORKER}", memory: 1000Gi, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
+                limits:   { cpu: "${CPU_PER_WORKER}", memory: 1000Gi, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
+    # ---- Decode worker (TP${GPU_PER_WORKER}/PP1, 1 node) ----------
+    # PP1 is deliberate, do not "scale" this role with multinode: PP>1 decode
+    # deadlocks the hybrid-Mamba 550B (see lws-2pp.yaml-template header).
+    - name: VllmDecodeWorker
+      type: decode
+      replicas: 1
+      # Same operator-managed /dev/shm sizing as prefill (see that comment).
+      sharedMemorySize: 64Gi
+      podTemplate:
+        spec:
+          nodeSelector: { node.kubernetes.io/instance-type: ${INSTANCE_TYPE_WORKER} }
+          tolerations:
+            - { key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
+            - { key: vpc.amazonaws.com/efa, operator: Exists, effect: NoSchedule }
+          affinity:
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      nvidia.com/dynamo-graph-deployment-name: ${DEPLOYMENT_NAME}
+                  topologyKey: kubernetes.io/hostname
+          volumes:
+            - { name: fsx-pvc, persistentVolumeClaim: { claimName: fsx-pvc } }
+            - { name: gdrdrv, hostPath: { path: /dev/gdrdrv, type: CharDevice } }
+          containers:
+            - name: main
+              image: ${REGISTRY}${IMAGE}${TAG}
+              imagePullPolicy: Always
+              securityContext: { capabilities: { add: ["IPC_LOCK"] } }
+              command: ["/bin/bash", "-c"]
+              args:
+                - |-
+                  set -u
+                  unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
+                        HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
+                  if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
+                  if [ -n "${DOLLAR}{POD_IP:-}" ] && [ "${DOLLAR}{POD_IP:-}" = "${DOLLAR}{NODE_IP:-}" ]; then
+                    echo "[decode] FATAL: pod IP ${DOLLAR}POD_IP == node IP ${DOLLAR}NODE_IP with hostNetwork=false."
+                    echo "[decode]        Cluster DNS cannot answer for this pod, so NATS/etcd are unreachable."
+                    echo "[decode]        RESTARTING WILL NOT HELP - the sandbox keeps the address. Remedy:"
+                    echo "[decode]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
+                    exit 1
+                  fi
+                  # Cold-start warmup (detached)
+                  (
+                    FE="http://${DEPLOYMENT_NAME}-frontend.${NAMESPACE}.svc.cluster.local:8000"
+                    # Gate on THIS pod's dyn-system /health: the frontend answers /v1/models 200 long
+                    # before the engine has loaded, so gating on the frontend alone fires the warmup at
+                    # a dead engine and compiles nothing.
+                    LH="http://localhost:${DOLLAR}{DYN_SYSTEM_PORT:-9092}/health"
+                    WARMUP_CONCURRENCY=${DOLLAR}{WARMUP_CONCURRENCY:-10}
+                    WARMUP_ENABLED=${DOLLAR}{WARMUP_ENABLED:-auto}
+                    case "${DOLLAR}WARMUP_ENABLED" in
+                      auto) case "${MODEL_NAME}" in
+                              *NVFP4*|*nvfp4*) : ;;
+                              *) echo "[warmup] ${MODEL_NAME} is not NVFP4; warmup not needed, skipping (non-fatal)"; exit 0 ;;
+                            esac ;;
+                      0|false|no) echo "[warmup] WARMUP_ENABLED=${DOLLAR}WARMUP_ENABLED; skipping (non-fatal)"; exit 0 ;;
+                    esac
+                    if ! command -v curl >/dev/null 2>&1; then
+                      echo "[warmup] curl not present; skipping cold-start warmup (non-fatal)"
+                    else
+                      warmed=0
+                      for i in ${DOLLAR}(seq 1 360); do
+                        if curl -sf -o /dev/null --max-time 5 "${DOLLAR}LH" 2>/dev/null \
+                           && curl -sf --max-time 5 "${DOLLAR}FE/v1/models" 2>/dev/null | grep -q "${MODEL_NAME}"; then
+                          echo "[warmup] engine ready (own /health 200 + model registered); priming batch=1 Mamba decode kernel (one-time JIT, ~4min)"
+                          curl -s -o /dev/null --max-time 900 "${DOLLAR}FE/v1/completions" \
+                            -H 'Content-Type: application/json' \
+                            -d "{\"model\":\"${MODEL_NAME}\",\"prompt\":\"warmup\",\"max_tokens\":4,\"temperature\":0}" \
+                            && echo "[warmup] batch=1 warm; priming concurrent batch buckets 1..${DOLLAR}WARMUP_CONCURRENCY" \
+                            || echo "[warmup] batch=1 warmup returned non-zero (non-fatal)"
+                          for j in ${DOLLAR}(seq 1 "${DOLLAR}WARMUP_CONCURRENCY"); do
+                            curl -s -o /dev/null --max-time 900 "${DOLLAR}FE/v1/completions" \
+                              -H 'Content-Type: application/json' \
+                              -d "{\"model\":\"${MODEL_NAME}\",\"prompt\":\"warmup\",\"max_tokens\":4,\"temperature\":0}" &
+                          done
+                          wait
+                          echo "[warmup] concurrent batch buckets warm; benchmark opening will be fast"
+                          warmed=1
+                          break
+                        fi
+                        sleep 5
+                      done
+                      # Fail LOUD if the gate never opened (still non-fatal to the pod): falling out of
+                      # this loop silently is indistinguishable from "warmed up fine", and the next
+                      # benchmark would quietly pay the JIT tax again.
+                      [ "${DOLLAR}warmed" = 1 ] || echo "[warmup] gave up after 30min waiting for ${DOLLAR}LH 200 + ${MODEL_NAME} in ${DOLLAR}FE/v1/models; the FIRST benchmark requests will pay the Mamba JIT (non-fatal)"
+                    fi
+                  ) &
+                  exec python3 -m dynamo.vllm \
+                    --model ${MODEL_PATH} \
+                    --served-model-name ${MODEL_NAME} \
+                    --tensor-parallel-size ${GPU_PER_WORKER} --pipeline-parallel-size 1 \
+                    --max-model-len 4096 --gpu-memory-utilization 0.97 --enforce-eager \
+                    --trust-remote-code ${MAMBA_FLAGS} \
+                    --load-format runai_streamer \
+                    --disaggregation-mode decode \
+                    --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_connector_extra_config":{"backends":["LIBFABRIC"],"kv_lease_duration":${KV_LEASE_DURATION}}}'
+              env:
+                # Read only by the duplicate-address preflight in args above.
+                - { name: POD_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
+                - { name: NODE_IP, valueFrom: { fieldRef: { fieldPath: status.hostIP } } }
+                - { name: DYN_SYSTEM_ENABLED, value: "true" }
+                - { name: DYN_SYSTEM_PORT, value: "9092" }
+                - { name: WARMUP_ENABLED, value: "${WARMUP_ENABLED}" }
+                - { name: WARMUP_CONCURRENCY, value: "${WARMUP_CONCURRENCY}" }
+                - { name: VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS, value: "1800" }
+                - { name: VLLM_LOGGING_LEVEL, value: INFO }
+                - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
+                - { name: FLASHINFER_DISABLE_VERSION_CHECK, value: "1" }
+                - { name: FI_PROVIDER, value: efa }
+                - { name: FI_EFA_USE_DEVICE_RDMA, value: "1" }
+                - { name: FI_EFA_FORK_SAFE, value: "1" }
+                - { name: FI_HMEM_CUDA_USE_DMABUF, value: "1" }
+                - { name: FI_EFA_ENABLE_SHM, value: "0" }
+                - { name: FI_EFA_ENABLE_SHM_TRANSFER, value: "0" }
+                - { name: NIXL_LIBFABRIC_MAX_RAILS, value: "1" }
+                - { name: NIXL_SKIP_TOPOLOGY_CHECK, value: "1" }
+                - { name: NCCL_NET_PLUGIN, value: ofi }
+                - { name: NCCL_TUNER_PLUGIN, value: ofi }
+                - { name: OFI_NCCL_FORCE_NUM_RAILS, value: "4" }
+              # Port MUST be named "system": the operator injects readiness/liveness probes
+              # that target the named port; any other name fails with
+              # 'strconv.Atoi: parsing "system"' and the worker never goes Ready.
+              ports: [{ containerPort: 9092, name: system }]
+              startupProbe:
+                httpGet: { path: /health, port: 9092 }
+                periodSeconds: 30
+                timeoutSeconds: 10
+                failureThreshold: 240
+              volumeMounts:
+                - { name: fsx-pvc, mountPath: /shared }
+                - { name: gdrdrv, mountPath: /dev/gdrdrv }
+              resources:
+                requests: { cpu: "${CPU_PER_WORKER}", memory: 1000Gi, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
+                limits:   { cpu: "${CPU_PER_WORKER}", memory: 1000Gi, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }

@@ -1,0 +1,240 @@
+# =============================================================================
+# Nemotron-3 Ultra 550B AGGREGATED, MULTINODE via Grove — DynamoGraphDeployment
+# =============================================================================
+#
+# Author: Anton Alexander
+#
+# This is the Grove-native counterpart of lws.yaml-template: ONE engine spanning
+# ${NODE_COUNT_PER_WORKER} GPU nodes (TP${GPU_PER_WORKER} x PP${NODE_COUNT_PER_WORKER}),
+# expressed as a single v1beta1 DGD with `multinode.nodeCount` instead of a
+# LeaderWorkerSet. The Dynamo operator (1.4.0+, Grove enabled) renders the whole
+# graph as one grove.io PodCliqueSet: the frontend becomes a PodClique, the
+# multinode worker becomes a PodCliqueScalingGroup with leader/worker cliques,
+# and the whole set is GANG-SCHEDULED as a PodGang by kai-scheduler — the graph
+# schedules all-or-nothing, so partial capacity can never strand a half-booted
+# engine holding GPUs.
+#
+#   MANIFEST_TYPE=dgd-grove ./run.sh
+#
+# Prerequisites (both in this repo, apply in order):
+#   1. eks/deployment/nvidia-dynamo  — Dynamo platform >= 1.4.0 (operator/etcd/NATS)
+#   2. eks/deployment/grove          — standalone Grove + KAI scheduler releases;
+#      its deploy.sh also flips global.grove.enabled + global.kai-scheduler.enabled
+#      on the platform release so the operator starts rendering DGDs through Grove.
+# Without step 2 the operator falls back to its non-Grove renderer and `multinode`
+# components render via LWS — this file then requires LWS to be installed.
+#
+# VALIDATION STATUS (be honest with yourself before benchmarking):
+#   PROVEN 2026-08-20 on a 2x p5en.48xlarge EKS cluster (Dynamo 1.4.0, PR #93
+#   evidence): the full Grove chain for exactly this shape — DGD Ready=True,
+#   PodCliqueSet 1/1, PodGang created, every pod scheduled by kai-scheduler,
+#   leader/worker cliques with stable per-clique hostnames as the torch
+#   distributed init method, cross-node engine traffic on EFA
+#   ("Using network Libfabric" x8, zero Socket fallback), real completions served.
+#   That run used a small plumbing model (TP16/PP1). The 550B checkpoint has NOT
+#   yet been run through THIS template; TP8/PP2 is its engine shape proven E2E on
+#   lws.yaml-template. Run one live smoke before quoting numbers from this file.
+#
+#   The cold-start warmup block the other agg templates carry is intentionally
+#   ABSENT here: in a clique the warmer would launch on every rank pod, and its
+#   leader-only health gate has not been validated through the operator's
+#   multinode wiring. BF16 never needed it; before benchmarking NVFP4 through
+#   this template, add it back leader-guarded once the live run establishes
+#   which pod answers the dyn-system port.
+#
+#   Image: the Grove smoke ran nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.4.0-efa.
+#   The .env default (1.3.1-patched) has NOT been run through the operator's
+#   multinode bootstrap; if the ranks fail to join, try
+#   REGISTRY=nvcr.io/nvidia/ai-dynamo/ IMAGE=vllm-runtime TAG=":1.4.0-efa" first.
+#
+# Two negatives already paid for on this path — do not rediscover them:
+#   1. EFA must be allocated as the FULL node complement (${EFA_PER_WORKER}=all
+#      NICs the device plugin advertises). A partial NIC slice makes libfabric
+#      device-list init fail in-pod (ibv_open_device errno 2 on unallocated
+#      devices) and aws-ofi-nccl silently falls back to Socket.
+#   2. Full-node GPU pods only (nvidia.com/gpu: 8 on p5en). A half-node 4-GPU
+#      slice got clean Libfabric init and then hung in the first cross-node
+#      collective. Grove-proven shape = whole nodes.
+#
+# /dev/shm: sized via the component-level `sharedMemorySize` CRD field, NOT a
+# podTemplate dshm emptyDir. The 1.4.0 operator always manages its own tmpfs at
+# /dev/shm (CRD doc: nil = 8Gi default, "0" disables) and a podTemplate mount at
+# that path is silently dropped — the CRD field is the only reliable knob.
+# 64Gi was verified injected on Grove-rendered pods in the live 550B disagg run
+# (2026-08-20); TP${GPU_PER_WORKER} intra-node ranks move activations through
+# /dev/shm, so do not shrink it below the proven value for the 550B.
+#
+# =============================================================================
+---
+apiVersion: nvidia.com/v1beta1
+kind: DynamoGraphDeployment
+metadata:
+  name: ${DEPLOYMENT_NAME}
+  namespace: ${NAMESPACE}
+  labels:
+    app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
+spec:
+  backendFramework: vllm
+  env:
+    - { name: DYNAMO_BACKEND, value: vllm }
+    - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }
+    - { name: NATS_SERVER,    value: "${NATS_URL}" }
+    # /tmp, NOT /shared: pods run uid 1000 and /shared is root-owned — the frontend
+    # dies registering the model ("Failed to create cache directory /shared/hf_cache/hub:
+    # Permission denied") and /v1/models stays empty -> every request 404s.
+    - { name: HF_HOME,        value: /tmp/hf_cache }
+  components:
+    # ---- Frontend (router, CPU-only; renders as its own PodClique) ---------
+    - name: Frontend
+      type: frontend
+      replicas: 1
+      podTemplate:
+        spec:
+          nodeSelector: { node.kubernetes.io/instance-type: ${INSTANCE_TYPE_FRONTEND} }
+          volumes:
+            - { name: fsx-pvc, persistentVolumeClaim: { claimName: fsx-pvc } }
+          containers:
+            # The operator merges its defaults into the container named exactly "main";
+            # any other container is a user-managed sidecar.
+            - name: main
+              resources:
+                requests: { cpu: "2", memory: 4Gi }
+                limits:   { cpu: "4", memory: 8Gi }
+              image: ${REGISTRY}${IMAGE}${TAG}
+              imagePullPolicy: Always
+              command: ["/bin/bash", "-c"]
+              args:
+                - |-
+                  # ---- Node-fault preflight: duplicate pod address (podIP == hostIP) ----
+                  # The CNI can hand this sandbox the node's own kubelet InternalIP; cluster DNS
+                  # then never answers for the pod, so NATS/etcd are unreachable. A container
+                  # RESTART CANNOT CLEAR IT (restarts reuse the sandbox, CNI ADD is not
+                  # re-invoked) - the pod object has to be deleted.
+                  if [ -n "${DOLLAR}{POD_IP:-}" ] && [ "${DOLLAR}{POD_IP:-}" = "${DOLLAR}{NODE_IP:-}" ]; then
+                    echo "[frontend] FATAL: pod IP ${DOLLAR}POD_IP == node IP ${DOLLAR}NODE_IP with hostNetwork=false."
+                    echo "[frontend]        Cluster DNS cannot answer for this pod, so NATS/etcd are unreachable."
+                    echo "[frontend]        RESTARTING WILL NOT HELP - the sandbox keeps the address. Remedy:"
+                    echo "[frontend]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
+                    exit 1
+                  fi
+                  if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
+                  exec python3 -m dynamo.frontend --http-port 8000 --http-host 0.0.0.0
+              env:
+                # Read only by the duplicate-address preflight in args above.
+                - { name: POD_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
+                - { name: NODE_IP, valueFrom: { fieldRef: { fieldPath: status.hostIP } } }
+              ports: [{ containerPort: 8000, name: http }]
+              # NOTE: no readinessProbe here — the operator injects its own frontend probe;
+              # adding ours makes the API server reject the generated pod
+              # ("may not specify more than 1 handler type").
+              volumeMounts:
+                - { name: fsx-pvc, mountPath: /shared }
+    # ---- Multinode aggregated worker: ONE engine across ${NODE_COUNT_PER_WORKER} nodes ----
+    # `multinode.nodeCount` is the whole Grove delta vs dgd-v1beta1: the operator turns
+    # this component into a PodCliqueScalingGroup (leader clique + worker clique), gives
+    # the leader a stable hostname the ranks use as the distributed init method, and
+    # gang-schedules the group. Engine world size = TP x PP =
+    # ${GPU_PER_WORKER} x ${NODE_COUNT_PER_WORKER} GPUs = ${NODE_COUNT_PER_WORKER} full nodes.
+    - name: VllmWorker
+      type: worker
+      replicas: 1
+      # Operator-managed /dev/shm tmpfs (see header) — verified injected at this
+      # size on Grove-rendered pods in the live 550B disagg run.
+      sharedMemorySize: 64Gi
+      multinode:
+        nodeCount: ${NODE_COUNT_PER_WORKER}
+      podTemplate:
+        spec:
+          nodeSelector: { node.kubernetes.io/instance-type: ${INSTANCE_TYPE_WORKER} }
+          tolerations:
+            - { key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
+            - { key: vpc.amazonaws.com/efa, operator: Exists, effect: NoSchedule }
+          affinity:
+            # Belt-and-suspenders (full-node GPU requests already forbid co-location).
+            # Keyed to the operator-applied label — VERIFIED present on Grove-rendered
+            # pods; app.kubernetes.io/part-of passthrough onto Grove pods is not.
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      nvidia.com/dynamo-graph-deployment-name: ${DEPLOYMENT_NAME}
+                  topologyKey: kubernetes.io/hostname
+          volumes:
+            - { name: fsx-pvc, persistentVolumeClaim: { claimName: fsx-pvc } }
+          containers:
+            - name: main
+              image: ${REGISTRY}${IMAGE}${TAG}
+              imagePullPolicy: Always
+              securityContext: { capabilities: { add: ["IPC_LOCK"] } }
+              command: ["/bin/bash", "-c"]
+              args:
+                - |-
+                  set -u
+                  unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
+                        HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
+                  if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
+                  if [ -n "${DOLLAR}{POD_IP:-}" ] && [ "${DOLLAR}{POD_IP:-}" = "${DOLLAR}{NODE_IP:-}" ]; then
+                    echo "[worker] FATAL: pod IP ${DOLLAR}POD_IP == node IP ${DOLLAR}NODE_IP with hostNetwork=false."
+                    echo "[worker]        Cluster DNS cannot answer for this pod, so NATS/etcd are unreachable."
+                    echo "[worker]        RESTARTING WILL NOT HELP - the sandbox keeps the address. Remedy:"
+                    echo "[worker]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
+                    exit 1
+                  fi
+                  # TP stays inside each node (${GPU_PER_WORKER} GPUs); PP spans the
+                  # ${NODE_COUNT_PER_WORKER} clique members — the engine shape proven E2E for
+                  # the 550B on lws.yaml-template. The rank bootstrap itself is the operator's
+                  # (leader-clique hostname), not ours.
+                  exec python3 -m dynamo.vllm \
+                    --model ${MODEL_PATH} \
+                    --served-model-name ${MODEL_NAME} \
+                    --load-format ${LOAD_FORMAT} \
+                    --tensor-parallel-size ${GPU_PER_WORKER} \
+                    --pipeline-parallel-size ${NODE_COUNT_PER_WORKER} \
+                    --max-model-len 4096 --gpu-memory-utilization 0.97 --enforce-eager \
+                    --trust-remote-code \
+                    --mamba-cache-mode align
+              env:
+                # Read only by the duplicate-address preflight in args above.
+                - { name: POD_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
+                - { name: NODE_IP, valueFrom: { fieldRef: { fieldPath: status.hostIP } } }
+                - { name: VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS, value: "1800" }
+                - { name: HF_MODULES_CACHE, value: /tmp/hf_cache/modules }
+                - { name: VLLM_LOGGING_LEVEL, value: INFO }
+                # ---- Cross-node engine traffic over EFA (NCCL -> aws-ofi-nccl -> libfabric).
+                # This block is what lws.yaml-template carries for the same 2-node engine;
+                # values verified live in the Grove smoke (Libfabric x8, Socket 0).
+                - { name: FI_PROVIDER, value: efa }
+                - { name: FI_EFA_USE_DEVICE_RDMA, value: "1" }
+                - { name: FI_EFA_FORK_SAFE, value: "1" }
+                - { name: FI_HMEM_CUDA_USE_DMABUF, value: "1" }
+                - { name: OFI_NCCL_FORCE_NUM_RAILS, value: "4" }
+                - { name: NCCL_NET_PLUGIN, value: ofi }
+                - { name: NCCL_TUNER_PLUGIN, value: ofi }
+                - { name: NCCL_NVLS_ENABLE, value: "0" }
+                - { name: NCCL_CUMEM_ENABLE, value: "1" }
+                - { name: NCCL_SOCKET_IFNAME, value: "^lo,docker,veth,eni,pod-id-link0" }
+                # Keep INIT,NET on: it is how you PROVE the engine rode EFA and not the
+                # Socket fallback ("Using network Libfabric" per rank, channels via
+                # NET/Libfabric/GDRDMA). Drop to WARN only after that check.
+                - { name: NCCL_DEBUG, value: INFO }
+                - { name: NCCL_DEBUG_SUBSYS, value: "INIT,NET" }
+              # NOTE: no explicit ports/startupProbe here, unlike dgd-v1beta1. In a
+              # multinode clique the SAME container spec lands on leader AND worker rank
+              # pods; only the leader answers the dyn-system health port, so a probe here
+              # would hold every worker rank NotReady forever. The operator injects
+              # multinode-aware probes (proven: DGD reached Ready=True in the smoke).
+              # A cold ~1 TB BF16 Lustre load has NOT been timed against those injected
+              # thresholds — watch the first 550B run before trusting them.
+              volumeMounts:
+                - { name: fsx-pvc, mountPath: /shared }
+              resources:
+                requests:
+                  cpu: "${CPU_PER_WORKER}"
+                  memory: ${MEM_PER_WORKER}
+                  nvidia.com/gpu: "${GPU_PER_WORKER}"
+                  vpc.amazonaws.com/efa: "${EFA_PER_WORKER}"
+                limits:
+                  cpu: "${CPU_PER_WORKER}"
+                  memory: ${MEM_PER_WORKER}
+                  nvidia.com/gpu: "${GPU_PER_WORKER}"
+                  vpc.amazonaws.com/efa: "${EFA_PER_WORKER}"
