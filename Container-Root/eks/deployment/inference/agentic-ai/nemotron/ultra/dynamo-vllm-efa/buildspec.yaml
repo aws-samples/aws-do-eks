@@ -15,7 +15,7 @@ version: 0.2
 #
 # Project env vars (PLAINTEXT unless noted):
 #   REGISTRY=public.ecr.aws/hpc-cloud/
-#   IMAGE=dynamo-vllm-efa:1.4.0-golden
+#   IMAGE=dynamo-vllm-efa:1.4.0-patched
 #   GATE_SEVERITY=CRITICAL,HIGH
 #   MAX_HIGH=75
 #   BASE=nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.4.0-efa
@@ -27,7 +27,7 @@ env:
     GATE_SEVERITY: "CRITICAL,HIGH"
     MAX_HIGH: "75"
     REGISTRY: "public.ecr.aws/hpc-cloud/"
-    IMAGE: "dynamo-vllm-efa:1.4.0-golden"
+    IMAGE: "dynamo-vllm-efa:1.4.0-patched"
 
 phases:
   install:
