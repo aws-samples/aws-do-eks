@@ -27,10 +27,15 @@
 # VALIDATION STATUS:
 #   The Grove chain (PodCliqueSet -> PodCliques -> PodGang, kai-scheduler on every
 #   pod, EFA-not-Socket transport) is PROVEN live 2026-08-20 on 2x p5en.48xlarge
-#   with Dynamo 1.4.0 (PR #93 evidence). The engine + KV shape here is byte-for-byte
-#   the dgd-v1beta1 one, which is E2E-proven for the 550B. The COMBINATION —
-#   this disagg spec rendered through Grove — has not had its own live run yet;
-#   smoke it once before quoting numbers.
+#   with Dynamo 1.4.0 (PR #93 evidence). This exact disagg topology — 550B
+#   Nemotron-3 Ultra, 1 prefill + 1 decode (TP8/PP1 each), Grove-rendered DGD
+#   gang-scheduled by kai, STOCK vllm-runtime:1.4.0-efa — is also PROVEN live
+#   2026-08-20 on the same pair: DGD Ready=True in ~9 min, coherent completions,
+#   KV over EFA verified (decode rdma_read +3.061 GB matching NIXL telemetry
+#   48 x 60.82 MB to 0.0015%, LIBFABRIC x8 on both roles, zero transfer
+#   failures). That run applied a directly-authored DGD of the same shape; the
+#   envsubst render of THIS file has not itself been applied yet — smoke it once
+#   before quoting numbers from it.
 #
 #   Scaling a ROLE across nodes (e.g. PP2 prefill) is expressible here by adding
 #   `multinode: { nodeCount: N }` to that component (see ../agg/dgd-grove.yaml-template
@@ -44,6 +49,10 @@
 #     nvidia.com/dynamo-graph-deployment-name (VERIFIED present on Grove-rendered
 #     pods) instead of app.kubernetes.io/part-of, whose passthrough onto
 #     Grove-rendered pods is unverified.
+#   - sharedMemorySize: 64Gi on both workers (dgd-v1beta1 leaves it unset =
+#     operator's 8Gi default). 64Gi is what the proven 550B Grove run set and
+#     verified injected; the CRD field is the only /dev/shm knob the operator
+#     honors (podTemplate mounts there are silently dropped).
 #   - Everything else — env, probes, warmup, KV transfer config, resources —
 #     is carried unchanged, single-node components keep their explicit
 #     startupProbe/dyn-system wiring (each role's pod IS its engine here, no
@@ -112,6 +121,10 @@ spec:
     - name: VllmPrefillWorker
       type: prefill
       replicas: 1
+      # Operator-managed /dev/shm tmpfs (CRD field; nil defaults to 8Gi and a
+      # podTemplate mount at /dev/shm is silently dropped). 64Gi is the value
+      # verified injected in the live 550B run — do not shrink it for the 550B.
+      sharedMemorySize: 64Gi
       podTemplate:
         spec:
           nodeSelector: { node.kubernetes.io/instance-type: ${INSTANCE_TYPE_WORKER} }
@@ -201,6 +214,8 @@ spec:
     - name: VllmDecodeWorker
       type: decode
       replicas: 1
+      # Same operator-managed /dev/shm sizing as prefill (see that comment).
+      sharedMemorySize: 64Gi
       podTemplate:
         spec:
           nodeSelector: { node.kubernetes.io/instance-type: ${INSTANCE_TYPE_WORKER} }

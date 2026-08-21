@@ -56,9 +56,13 @@
 #      slice got clean Libfabric init and then hung in the first cross-node
 #      collective. Grove-proven shape = whole nodes.
 #
-# /dev/shm: the dshm emptyDir below is carried AS-RUN from the proven Grove
-# smoke on the 1.4.0 operator. (The single-node dgd-v1beta1 template omits it
-# because the 1.3.x operator owned that mount; 1.4.0 merged ours cleanly.)
+# /dev/shm: sized via the component-level `sharedMemorySize` CRD field, NOT a
+# podTemplate dshm emptyDir. The 1.4.0 operator always manages its own tmpfs at
+# /dev/shm (CRD doc: nil = 8Gi default, "0" disables) and a podTemplate mount at
+# that path is silently dropped — the CRD field is the only reliable knob.
+# 64Gi was verified injected on Grove-rendered pods in the live 550B disagg run
+# (2026-08-20); TP${GPU_PER_WORKER} intra-node ranks move activations through
+# /dev/shm, so do not shrink it below the proven value for the 550B.
 #
 # =============================================================================
 ---
@@ -134,6 +138,9 @@ spec:
     - name: VllmWorker
       type: worker
       replicas: 1
+      # Operator-managed /dev/shm tmpfs (see header) — verified injected at this
+      # size on Grove-rendered pods in the live 550B disagg run.
+      sharedMemorySize: 64Gi
       multinode:
         nodeCount: ${NODE_COUNT_PER_WORKER}
       podTemplate:
@@ -154,9 +161,6 @@ spec:
                   topologyKey: kubernetes.io/hostname
           volumes:
             - { name: fsx-pvc, persistentVolumeClaim: { claimName: fsx-pvc } }
-            # AS-RUN in the proven Grove smoke; TP${GPU_PER_WORKER} intra-node ranks
-            # move activations through /dev/shm and the operator default is too small.
-            - { name: dshm, emptyDir: { medium: Memory, sizeLimit: 64Gi } }
           containers:
             - name: main
               image: ${REGISTRY}${IMAGE}${TAG}
@@ -223,7 +227,6 @@ spec:
               # thresholds — watch the first 550B run before trusting them.
               volumeMounts:
                 - { name: fsx-pvc, mountPath: /shared }
-                - { name: dshm, mountPath: /dev/shm }
               resources:
                 requests:
                   cpu: "${CPU_PER_WORKER}"
