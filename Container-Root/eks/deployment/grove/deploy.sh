@@ -16,6 +16,19 @@ export KAI_NAMESPACE=${KAI_NAMESPACE:-kai-scheduler}
 export KAI_VERSION=${KAI_VERSION:-"v0.13.4"}
 export DYNAMO_NAMESPACE=${DYNAMO_NAMESPACE:-dynamo-system}
 
+# 0. RuntimeClass "nvidia": KAI's admission webhook injects runtimeClassName: nvidia into every
+#    GPU-requesting pod (runtimeenforcement plugin, default admission.gpuPodRuntimeClassName).
+#    Upstream expects the NVIDIA GPU-Operator to have created that RuntimeClass; EKS / HyperPod
+#    GPU AMIs bake the driver + containerd nvidia runtime into the node instead, so the object
+#    does not exist and the API server rejects every GPU pod at create with
+#    'RuntimeClass "nvidia" not found' (Dynamo workers included — the only visible symptom is a
+#    gang stuck Pending behind a GPU-less frontend). Pre-create it; skipped when one already
+#    exists (e.g. GPU-Operator clusters). To disable the injection instead, set
+#    admission.gpuPodRuntimeClassName=null on the KAI release.
+if ! kubectl get runtimeclass nvidia >/dev/null 2>&1; then
+    kubectl apply -f runtimeclass-nvidia.yaml
+fi
+
 # 1. KAI scheduler first: Grove PodGangs schedule best with gang scheduling available.
 helm upgrade --install kai-scheduler oci://ghcr.io/kai-scheduler/kai-scheduler/kai-scheduler \
     --version "$KAI_VERSION" --namespace "$KAI_NAMESPACE" --create-namespace -f values-kai.yaml
