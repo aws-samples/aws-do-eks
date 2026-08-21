@@ -17,7 +17,7 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-IMAGE="${IMAGE:-dynamo-vllm-efa:1.3.1-patched}"
+IMAGE="${IMAGE:-dynamo-vllm-efa:1.4.0-golden}"
 GATE_SEVERITY="${GATE_SEVERITY:-CRITICAL}"
 MAX_HIGH="${MAX_HIGH:-}"                       # empty = report HIGH, do not gate on it
 OUTDIR="${OUTDIR:-$HERE/sbom}"

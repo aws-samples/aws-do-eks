@@ -5,27 +5,29 @@ version: 0.2
 #
 # Author: Anton Alexander
 #
-# Reproducible build fromPUBLIC base: nvcr.io/nvidia/ai-dynamo/
-# vllm-runtime:1.3.1-efa (EFA 1.49 baked + NIXL LIBFABRIC + vLLM 0.23.0 baked) + nixl patches
+# Reproducible build from PUBLIC base: nvcr.io/nvidia/ai-dynamo/
+# vllm-runtime:1.4.0-efa (EFA 1.49 baked + NIXL LIBFABRIC + vLLM 0.26.0 baked).
+# The 0.23-era nixl patch stage is retired: stock 0.26 covers PP1 hybrid-Mamba
+# disagg (see the Dockerfile header). PP>1 disagg: stay on :1.3.1-patched.
 #
 # Reuses build-sbom-scan.sh, so the CodeBuild path produces the SAME artifacts
 # as the local path: image + syft SBOM (SPDX+CycloneDX) + trivy CVE gate.
 #
 # Project env vars (PLAINTEXT unless noted):
 #   REGISTRY=public.ecr.aws/hpc-cloud/
-#   IMAGE=dynamo-vllm-efa:1.3.1-patched
+#   IMAGE=dynamo-vllm-efa:1.4.0-golden
 #   GATE_SEVERITY=CRITICAL,HIGH
 #   MAX_HIGH=75
-#   BASE=nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.3.1-efa
+#   BASE=nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.4.0-efa
 # =============================================================================
 
 env:
   variables:
-    BASE: "nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.3.1-efa"
+    BASE: "nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.4.0-efa"
     GATE_SEVERITY: "CRITICAL,HIGH"
     MAX_HIGH: "75"
     REGISTRY: "public.ecr.aws/hpc-cloud/"
-    IMAGE: "dynamo-vllm-efa:1.3.1-patched"
+    IMAGE: "dynamo-vllm-efa:1.4.0-golden"
 
 phases:
   install:
@@ -53,7 +55,7 @@ phases:
   build:
     commands:
       - cd "${CODEBUILD_SRC_DIR}/Container-Root/eks/deployment/inference/agentic-ai/nemotron/ultra/dynamo-vllm-efa"
-      # build (ENABLE_DISAGG_PATCHES=1) -> syft SBOM -> trivy CVE gate.
+      # build -> syft SBOM -> trivy CVE gate.
       # build-sbom-scan.sh exits NONZERO on any CRITICAL or a missing scan,
       # which fails this phase (no false-pass - see the script's fail-loud guard).
       - REGISTRY="${REGISTRY}" IMAGE="${IMAGE}" BASE="${BASE}" GATE_SEVERITY="${GATE_SEVERITY}" MAX_HIGH="${MAX_HIGH}" ./build-sbom-scan.sh

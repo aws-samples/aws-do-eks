@@ -43,8 +43,9 @@
 #   which pod answers the dyn-system port.
 #
 #   Image: the Grove smoke ran nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.4.0-efa.
-#   The .env default (1.3.1-patched) has NOT been run through the operator's
-#   multinode bootstrap; if the ranks fail to join, try
+#   The .env default (1.4.0-golden — same base plus ray/NVFP4/CVE deltas) has
+#   NOT itself been run through the operator's multinode bootstrap; if the
+#   ranks fail to join, try
 #   REGISTRY=nvcr.io/nvidia/ai-dynamo/ IMAGE=vllm-runtime TAG=":1.4.0-efa" first.
 #
 # Two negatives already paid for on this path — do not rediscover them:
