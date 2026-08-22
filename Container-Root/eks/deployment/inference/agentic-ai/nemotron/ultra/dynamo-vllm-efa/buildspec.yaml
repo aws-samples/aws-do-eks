@@ -7,8 +7,9 @@ version: 0.2
 #
 # Reproducible build from PUBLIC base: nvcr.io/nvidia/ai-dynamo/
 # vllm-runtime:1.4.0-efa (EFA 1.49 baked + NIXL LIBFABRIC + vLLM 0.26.0 baked).
-# The 0.23-era nixl patch stage is retired: stock 0.26 covers PP1 hybrid-Mamba
-# disagg (see the Dockerfile header). PP>1 disagg: stay on :1.3.1-patched.
+# The nixl patch stage carries the 0.26-era pull-path pipeline-parallel patches
+# (see the Dockerfile header): PP1 hybrid disagg is stock-covered, PP>1 disagg is
+# covered by patches/ — no 1.3.1-patched fallback needed.
 #
 # Reuses build-sbom-scan.sh, so the CodeBuild path produces the SAME artifacts
 # as the local path: image + syft SBOM (SPDX+CycloneDX) + trivy CVE gate.
