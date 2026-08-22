@@ -184,6 +184,12 @@ spec:
             - { name: VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS, value: "1800" }
             - { name: HF_MODULES_CACHE, value: /tmp/hf_cache/modules }
             - { name: VLLM_LOGGING_LEVEL, value: INFO }
+            # NVFP4 on sm100: vllm_omni's Quack/CuTeDSL FP8 scaled-mm monkey-patch defaults
+            # ON, but its tuned-compile helper cannot spawn inside vLLM's daemonic TP workers
+            # ("daemonic processes are not allowed to have children") -> exception + FlashInfer
+            # fallback on EVERY GEMM call, nothing caches, and decode crawls at ~0.05-0.1 tok/s
+            # while looking "stuck". Force it off; BF16 never enters this path (no-op there).
+            - { name: VLLM_OMNI_USE_QUACK_FP8, value: "0" }
             # NVFP4 cubin dir is handled in the golden image (build-time chmod); no env needed.
           # Port MUST be named "system": the operator injects readiness/liveness probes
           # that target the named port; any other name fails with
