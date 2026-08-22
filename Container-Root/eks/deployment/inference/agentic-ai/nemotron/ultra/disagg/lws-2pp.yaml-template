@@ -156,6 +156,12 @@ spec:
               - { name: VLLM_USE_RAY_V2_EXECUTOR_BACKEND, value: "1" }
               - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
               - { name: FLASHINFER_DISABLE_VERSION_CHECK, value: "1" }
+              # NVFP4 on sm100: vllm_omni's Quack/CuTeDSL FP8 scaled-mm monkey-patch defaults
+              # ON, but its tuned-compile helper cannot spawn inside vLLM's daemonic TP workers
+              # ("daemonic processes are not allowed to have children") -> exception + FlashInfer
+              # fallback on EVERY GEMM call, nothing caches, and decode crawls at ~0.05-0.1 tok/s
+              # while looking "stuck". Force it off; BF16 never enters this path (no-op there).
+              - { name: VLLM_OMNI_USE_QUACK_FP8, value: "0" }
               - { name: FI_PROVIDER, value: efa }
               - { name: FI_EFA_USE_DEVICE_RDMA, value: "1" }
               - { name: FI_EFA_FORK_SAFE, value: "1" }
@@ -245,6 +251,11 @@ spec:
               - { name: HF_HOME, value: /shared/hf_cache }
               - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
               - { name: FLASHINFER_DISABLE_VERSION_CHECK, value: "1" }
+              # NVFP4 on sm100: same Quack/CuTeDSL FP8 fix as the leader — engine ranks the
+              # raylet spawns on this node inherit this container's env. The measured failure
+              # was in multiproc TP workers; keep the Quack patch off on every rank so NVFP4
+              # behavior is uniform across shapes. BF16 never enters this path (no-op there).
+              - { name: VLLM_OMNI_USE_QUACK_FP8, value: "0" }
               - { name: FI_PROVIDER, value: efa }
               - { name: FI_EFA_USE_DEVICE_RDMA, value: "1" }
               - { name: FI_EFA_FORK_SAFE, value: "1" }
@@ -439,6 +450,12 @@ spec:
               - { name: VLLM_LOGGING_LEVEL, value: INFO }
               - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
               - { name: FLASHINFER_DISABLE_VERSION_CHECK, value: "1" }
+              # NVFP4 on sm100: vllm_omni's Quack/CuTeDSL FP8 scaled-mm monkey-patch defaults
+              # ON, but its tuned-compile helper cannot spawn inside vLLM's daemonic TP workers
+              # ("daemonic processes are not allowed to have children") -> exception + FlashInfer
+              # fallback on EVERY GEMM call, nothing caches, and decode crawls at ~0.05-0.1 tok/s
+              # while looking "stuck". Force it off; BF16 never enters this path (no-op there).
+              - { name: VLLM_OMNI_USE_QUACK_FP8, value: "0" }
               - { name: FI_PROVIDER, value: efa }
               - { name: FI_EFA_USE_DEVICE_RDMA, value: "1" }
               - { name: FI_EFA_FORK_SAFE, value: "1" }

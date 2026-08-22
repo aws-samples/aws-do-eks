@@ -152,6 +152,12 @@ spec:
               - { name: HF_HOME, value: /tmp/hf_cache }
               - { name: HF_MODULES_CACHE, value: /tmp/hf_cache/modules }
               - { name: VLLM_LOGGING_LEVEL, value: INFO }
+              # NVFP4 on sm100: vllm_omni's Quack/CuTeDSL FP8 scaled-mm monkey-patch defaults
+              # ON, but its tuned-compile helper cannot spawn inside vLLM's daemonic TP workers
+              # ("daemonic processes are not allowed to have children") -> exception + FlashInfer
+              # fallback on EVERY GEMM call, nothing caches, and decode crawls at ~0.05-0.1 tok/s
+              # while looking "stuck". Force it off; BF16 never enters this path (no-op there).
+              - { name: VLLM_OMNI_USE_QUACK_FP8, value: "0" }
               # 550B BF16 weight loading from Lustre exceeds the default 600s engine timeout.
               # Prefetch (~10 min) + safetensors load (~30 min) requires >= 2400s.
               - { name: VLLM_ENGINE_READY_TIMEOUT_S, value: "2400" }
@@ -268,6 +274,12 @@ spec:
               - { name: HF_HOME, value: /tmp/hf_cache }
               - { name: HF_MODULES_CACHE, value: /tmp/hf_cache/modules }
               - { name: VLLM_LOGGING_LEVEL, value: INFO }
+              # NVFP4 on sm100: vllm_omni's Quack/CuTeDSL FP8 scaled-mm monkey-patch defaults
+              # ON, but its tuned-compile helper cannot spawn inside vLLM's daemonic TP workers
+              # ("daemonic processes are not allowed to have children") -> exception + FlashInfer
+              # fallback on EVERY GEMM call, nothing caches, and decode crawls at ~0.05-0.1 tok/s
+              # while looking "stuck". Force it off; BF16 never enters this path (no-op there).
+              - { name: VLLM_OMNI_USE_QUACK_FP8, value: "0" }
               # 550B BF16 weight loading from Lustre exceeds the default 600s engine timeout.
               - { name: VLLM_ENGINE_READY_TIMEOUT_S, value: "2400" }
               # Raise the multiproc-executor RPC deadline (default 300s): a JIT-heavy first

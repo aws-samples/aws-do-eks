@@ -151,6 +151,12 @@ spec:
               - { name: DYN_SYSTEM_ENABLED, value: "true" }
               - { name: DYN_SYSTEM_PORT, value: "9091" }
               - { name: VLLM_LOGGING_LEVEL, value: INFO }
+              # NVFP4 on sm100: vllm_omni's Quack/CuTeDSL FP8 scaled-mm monkey-patch defaults
+              # ON, but its tuned-compile helper cannot spawn inside vLLM's daemonic TP workers
+              # ("daemonic processes are not allowed to have children") -> exception + FlashInfer
+              # fallback on EVERY GEMM call, nothing caches, and decode crawls at ~0.05-0.1 tok/s
+              # while looking "stuck". Force it off; BF16 never enters this path (no-op there).
+              - { name: VLLM_OMNI_USE_QUACK_FP8, value: "0" }
               - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
               - { name: VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS, value: "1800" }
               - { name: VLLM_USE_RAY_COMPILED_DAG, value: "0"}
@@ -249,6 +255,11 @@ spec:
               - { name: HF_HOME, value: /shared/hf_cache }
               - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
               - { name: VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS, value: "1800" }
+              # NVFP4 on sm100: same Quack/CuTeDSL FP8 fix as the leader — engine ranks the
+              # raylet spawns on this node inherit this container's env. The measured failure
+              # was in multiproc TP workers; keep the Quack patch off on every rank so NVFP4
+              # behavior is uniform across shapes. BF16 never enters this path (no-op there).
+              - { name: VLLM_OMNI_USE_QUACK_FP8, value: "0" }
               - { name: VLLM_USE_RAY_COMPILED_DAG, value: "0" }
               - { name: FI_PROVIDER, value: efa }
               - { name: FI_EFA_USE_DEVICE_RDMA, value: "1" }
@@ -454,6 +465,12 @@ spec:
               - { name: WARMUP_CONCURRENCY, value: "${WARMUP_CONCURRENCY}" }
               - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
               - { name: VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS, value: "1800" }
+              # NVFP4 on sm100: vllm_omni's Quack/CuTeDSL FP8 scaled-mm monkey-patch defaults
+              # ON, but its tuned-compile helper cannot spawn inside vLLM's daemonic TP workers
+              # ("daemonic processes are not allowed to have children") -> exception + FlashInfer
+              # fallback on EVERY GEMM call, nothing caches, and decode crawls at ~0.05-0.1 tok/s
+              # while looking "stuck". Force it off; BF16 never enters this path (no-op there).
+              - { name: VLLM_OMNI_USE_QUACK_FP8, value: "0" }
               - { name: VLLM_USE_RAY_COMPILED_DAG, value: "0" }
               - { name: FI_PROVIDER, value: efa }
               - { name: FI_EFA_USE_DEVICE_RDMA, value: "1" }
@@ -547,6 +564,11 @@ spec:
               - { name: HF_HOME, value: /shared/hf_cache }
               - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
               - { name: VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS, value: "1800" }
+              # NVFP4 on sm100: same Quack/CuTeDSL FP8 fix as the leader — engine ranks the
+              # raylet spawns on this node inherit this container's env. The measured failure
+              # was in multiproc TP workers; keep the Quack patch off on every rank so NVFP4
+              # behavior is uniform across shapes. BF16 never enters this path (no-op there).
+              - { name: VLLM_OMNI_USE_QUACK_FP8, value: "0" }
               - { name: VLLM_USE_RAY_COMPILED_DAG, value: "0" }
               - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }
               - { name: NATS_SERVER, value: "${NATS_URL}" }
