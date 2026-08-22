@@ -1,13 +1,25 @@
-# Nemotron-550B on Dynamo 1.4.0 (-efa base) + vLLM 0.26 — 1.4.0-efa VARIANT of the golden image.
+# Nemotron-550B on Dynamo 1.4.0 (-efa base) + vLLM 0.26 — golden image, PP>1 disagg enabled.
 #
 # Author: Anton Alexander
 #
-# Covers: aggregated, EP16 (DP2/TP8), and hybrid-Mamba disagg (NIXL) at PP1.
-# NOT covered (vs the 1.3.1 golden): PP>1 DISAGG. The vLLM PR#48263 overlay + PP1 fix
-# (golden steps 3/3b) were built against the 0.23-era nixl connector package (v4->v8);
-# vLLM 0.26.0 rewrote that package (base_worker/push_worker/pull_worker/tp_mapping,
-# NIXL_CONNECTOR_VERSION=5) and the overlay files CANNOT drop onto it. Track #48263 —
-# when its successor lands against 0.26+, re-add a measured overlay stage.
+# Covers: aggregated, EP16 (DP2/TP8), hybrid-Mamba disagg (NIXL) at PP1, AND PP>1 DISAGG
+# (pipeline-parallel prefill) via the patches/ layer — the 0.26-era successor of the
+# 0.23 vLLM PR#48263 overlay, re-authored against the rewritten nixl connector package
+# (base_worker/pull_worker/metadata, NIXL_CONNECTOR_VERSION 5->6):
+#   patch 1: pipeline-parallel producers on the PULL path (per-stage handshake/read,
+#            per-shard transfer handles); lifts the kv_consumer pp>1 constructor guard
+#            for pull mode.
+#   patch 2: hybrid-Mamba (HMA) producers under PP — pooled regions advertise ALL member
+#            layers (region_members) and the consumer emits descriptors per
+#            (region x member-group) + the Mamba conv/ssm section per stage, so no SSM
+#            member is silently dropped (the 0.23 BUG9 wrong-output class).
+# MEASURED (2026-08-22, 4x ml.p6-b200.48xlarge HyperPod): 550B asym disagg with prefill
+# TP8/PP2 (2 nodes) -> decode TP8/PP1 served temperature-0 output byte-identical to the
+# PP1 reference; decode NIXL telemetry read BOTH producer stages at exact byte parity
+# (16 x 30.41 MB PP2 == 8 x 60.82 MB PP1 == 486.56 MB/request). The same manifest on the
+# STOCK base crashes deterministically at the connector constructor (NotImplementedError
+# pp>1+HMA). Still gated fatal by design: heterogeneous-TP x HMA x PP, cross-layer
+# blocks x PP, packed allocation x PP, push-mode x PP consumers.
 #
 # WHY the overlay retirement is safe at PP1 — MEASURED, not assumed (nixl-ep-297,
 # 2026-08-20): 550B Nemotron-3-Ultra disagg (prefill TP8 + decode TP8, 2x p5en) on the
@@ -87,19 +99,31 @@ import ray  # import, not just metadata — a broken wheel passes a version chec
 print("[deps] ray=2.55.1 installed, vllm intact")
 PY
 
-# ---- 3) nixl connector: STOCK (overlay + PP1 fix RETIRED at 0.26) ---------------------
-#    Golden steps 3/3b deleted per the header. Assert the layout we measured so a future
-#    base swap that changes the connector fails here, not on a p5en at serve time.
+# ---- 3) nixl connector: pull-path pipeline-parallel patches (strict, fail-at-build) ---
+#    patches/*.diff are unified diffs cut against the vLLM v0.26.0 tag (vllm/ paths only).
+#    Strict --fuzz=0: any hunk offset means the base's connector drifted from v0.26.0 and
+#    the port must be re-validated — fail HERE, not on a GPU node at serve time. The
+#    import block then proves the patched package still loads and carries the markers.
+COPY patches/ /opt/vllm-patches/
 RUN set -eux; \
+    SITE="$(python3 -c 'import importlib.util; print(importlib.util.find_spec("vllm").submodule_search_locations[0].rsplit("/vllm",1)[0])')"; \
+    cd "${SITE}"; \
+    shopt -s nullglob; \
+    for p in /opt/vllm-patches/*.diff /opt/vllm-patches/*.patch; do \
+      echo "[nixl-pp] applying ${p}"; \
+      patch -p1 --fuzz=0 --forward < "${p}"; \
+    done; \
     python3 - <<'PY'
-import importlib.util, os, re
-b = importlib.util.find_spec("vllm").submodule_search_locations[0]
-nixl = os.path.join(b, "distributed", "kv_transfer", "kv_connector", "v1", "nixl")
-assert os.path.isdir(nixl), "nixl connector package missing — base layout changed, re-measure"
-src = open(os.path.join(nixl, "metadata.py")).read()
-mm = re.search(r"NIXL_CONNECTOR_VERSION.*?=\s*(\d+)", src)
-assert mm and int(mm.group(1)) >= 5, f"connector version {mm and mm.group(1)} < 5 — pre-0.26 layout, the PP1-hybrid stock-proof (nixl-ep-297) does not apply"
-print(f"[nixl] stock package connector v{mm.group(1)} (PP1 hybrid disagg stock-proven 2026-08-20)")
+import vllm.distributed.kv_transfer.kv_connector.v1.nixl.base_worker as bw
+import vllm.distributed.kv_transfer.kv_connector.v1.nixl.pull_worker as pw
+import vllm.distributed.kv_transfer.kv_connector.v1.nixl.metadata as md
+assert getattr(pw.NixlPullConnectorWorker, "_supports_consumer_pp", False) is True, \
+    "patch 1 marker missing: pull worker does not declare consumer-PP support"
+assert getattr(pw.NixlPullConnectorWorker, "_supports_pp_hma", False) is True, \
+    "patch 2 marker missing: pull worker does not declare PP+HMA support"
+assert md.NIXL_CONNECTOR_VERSION >= 6, f"connector v{md.NIXL_CONNECTOR_VERSION} < 6 — patches not applied"
+assert "_add_pp_remote_agent" in open(bw.__file__).read()
+print(f"[nixl-pp] patches applied; connector v{md.NIXL_CONNECTOR_VERSION}; PP>1 pull disagg enabled")
 PY
 
 # ---- 4) CVE remediation: drop worker-UNUSED /usr/bin/nats-server ----------------------
@@ -119,8 +143,8 @@ b = importlib.util.find_spec("vllm").submodule_search_locations[0]
 assert os.path.isdir(os.path.join(b, "distributed/kv_transfer/kv_connector/v1/nixl")), "nixl connector package missing"
 assert os.path.exists("/opt/amazon/efa/bin/fi_info"), "EFA userspace missing"
 assert not os.path.exists("/usr/bin/nats-server"), "nats-server still present (CRITICAL CVE)"
-print("[golden-1.4.0] agg + EP16 + PP1-hybrid-disagg prerequisites present; EFA present; "
-      "0-CRITICAL precondition met; PP>1 disagg NOT covered (see header)")
+print("[golden-1.4.0] agg + EP16 + hybrid-disagg (PP1 and PP>1) prerequisites present; "
+      "EFA present; 0-CRITICAL precondition met")
 PY
 
 # ---- 6) NVFP4 fix: make flashinfer's cubin package dir writable -----------------------
@@ -138,5 +162,5 @@ RUN set -eux; \
     echo "[nvfp4-cubin-fix] ${CUBINS} made writable (chmod -R a+rwX; flashinfer/ subtree left for the worker to own)"
 
 USER dynamo
-LABEL org.opencontainers.image.description="Golden-image 1.4.0 variant: Dynamo 1.4.0 (-efa base, EFA 1.49 baked) + vLLM 0.26 stock nixl connector v5 + ray 2.55.1 (agg + EP16 + PP1 hybrid-Mamba disagg; PP>1 disagg pending a 0.26-era #48263 successor; Dockerfile-only reproducible)"
+LABEL org.opencontainers.image.description="Golden-image 1.4.0: Dynamo 1.4.0 (-efa base, EFA 1.49 baked) + vLLM 0.26 nixl connector v6 (pull-path pipeline-parallel + hybrid-Mamba patches, 0.26-era #48263 successor) + ray 2.55.1 (agg + EP16 + hybrid-Mamba disagg at PP1 and PP>1; Dockerfile-only reproducible)"
 LABEL org.opencontainers.image.source="https://github.com/vllm-project/vllm/pull/48263"
