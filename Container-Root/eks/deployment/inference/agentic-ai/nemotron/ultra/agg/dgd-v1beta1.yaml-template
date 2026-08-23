@@ -191,7 +191,7 @@ spec:
                     --load-format ${LOAD_FORMAT} \
                     --tensor-parallel-size ${GPU_PER_WORKER} --pipeline-parallel-size 1 \
                     --max-model-len 4096 --gpu-memory-utilization 0.97 --enforce-eager \
-                    --trust-remote-code \
+                    --trust-remote-code ${MOE_BACKEND_FLAG} \
                     --mamba-cache-mode align
               env:
                 # Read only by the duplicate-address preflight in args above.
