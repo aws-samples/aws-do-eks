@@ -141,7 +141,7 @@ spec:
                   --max-model-len 8192 \
                   --gpu-memory-utilization 0.92 \
                   --enforce-eager \
-                  --trust-remote-code \
+                  --trust-remote-code ${MOE_BACKEND_FLAG} \
                   --mamba-cache-mode align \
                   --no-disable-hybrid-kv-cache-manager \
                   --host 0.0.0.0 --port 8000
@@ -266,7 +266,7 @@ spec:
                   --max-model-len 8192 \
                   --gpu-memory-utilization 0.92 \
                   --enforce-eager \
-                  --trust-remote-code \
+                  --trust-remote-code ${MOE_BACKEND_FLAG} \
                   --mamba-cache-mode align \
                   --no-disable-hybrid-kv-cache-manager
             env:

@@ -163,7 +163,7 @@ spec:
                     --served-model-name ${MODEL_NAME} \
                     --tensor-parallel-size ${GPU_PER_WORKER} --pipeline-parallel-size 1 \
                     --max-model-len 4096 --gpu-memory-utilization 0.97 --enforce-eager \
-                    --trust-remote-code ${MAMBA_FLAGS} \
+                    --trust-remote-code ${MAMBA_FLAGS} ${MOE_BACKEND_FLAG} \
                     --load-format runai_streamer \
                     --disaggregation-mode prefill \
                     --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_connector_extra_config":{"backends":["LIBFABRIC"],"kv_lease_duration":${KV_LEASE_DURATION}}}'
@@ -302,7 +302,7 @@ spec:
                     --served-model-name ${MODEL_NAME} \
                     --tensor-parallel-size ${GPU_PER_WORKER} --pipeline-parallel-size 1 \
                     --max-model-len 4096 --gpu-memory-utilization 0.97 --enforce-eager \
-                    --trust-remote-code ${MAMBA_FLAGS} \
+                    --trust-remote-code ${MAMBA_FLAGS} ${MOE_BACKEND_FLAG} \
                     --load-format runai_streamer \
                     --disaggregation-mode decode \
                     --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_connector_extra_config":{"backends":["LIBFABRIC"],"kv_lease_duration":${KV_LEASE_DURATION}}}'

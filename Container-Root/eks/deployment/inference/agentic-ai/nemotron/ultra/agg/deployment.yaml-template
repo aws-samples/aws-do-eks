@@ -189,7 +189,7 @@ spec:
                 --max-model-len 4096 \
                 --gpu-memory-utilization 0.97 \
                 --enforce-eager \
-                --trust-remote-code \
+                --trust-remote-code ${MOE_BACKEND_FLAG} \
                 --mamba-cache-mode align
           env:
             - { name: DYNAMO_BACKEND, value: vllm }
