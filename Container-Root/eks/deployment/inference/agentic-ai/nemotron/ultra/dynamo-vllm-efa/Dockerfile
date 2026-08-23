@@ -13,13 +13,29 @@
 #            layers (region_members) and the consumer emits descriptors per
 #            (region x member-group) + the Mamba conv/ssm section per stage, so no SSM
 #            member is silently dropped (the 0.23 BUG9 wrong-output class).
+#   patch 3: pipeline-parallel CONSUMERS of pipeline-parallel producers (symmetric
+#            PPxPP, e.g. the lws-pp2 template). Registration classifies each producer
+#            shard against the local layer slice: a disjoint shard is SKIPPED (its KV is
+#            read by the consumer stage that owns those layers) instead of failing the
+#            whole handshake; a union-coverage check still fails loudly if no shard
+#            covers a local region. Fixes the 2026-08-22 lws-pp2 all-requests-failed run
+#            (every decode stage rejected the non-overlapping prefill shard, KV never
+#            transferred, requests returned empty-content 200s).
 # MEASURED (2026-08-22, 4x ml.p6-b200.48xlarge HyperPod): 550B asym disagg with prefill
 # TP8/PP2 (2 nodes) -> decode TP8/PP1 served temperature-0 output byte-identical to the
 # PP1 reference; decode NIXL telemetry read BOTH producer stages at exact byte parity
 # (16 x 30.41 MB PP2 == 8 x 60.82 MB PP1 == 486.56 MB/request). The same manifest on the
 # STOCK base crashes deterministically at the connector constructor (NotImplementedError
-# pp>1+HMA). Still gated fatal by design: heterogeneous-TP x HMA x PP, cross-layer
-# blocks x PP, packed allocation x PP, push-mode x PP consumers.
+# pp>1+HMA).
+# MEASURED (2026-08-23, same fleet): 550B SYMMETRIC PP2/PP2 disagg (prefill TP8/PP2 +
+# decode TP8/PP2, 32 GPUs) served temperature-0 output byte-identical to the PP1
+# reference; zero "no matching local region" errors (the pre-patch-3 failure fired on
+# every request); each decode stage skipped its disjoint prefill shard (8x per stage,
+# mirror-image) and read its overlapping stage at byte parity (16 x 30.41 MB ==
+# 486.56 MB/request); streaming first-content-chunk at 0.36 s of a 5.39 s request.
+# Still gated fatal by design: heterogeneous-TP x HMA x PP, misaligned PP layer splits
+# (e.g. PP2 producer x PP4 consumer), cross-layer blocks x PP, packed allocation x PP,
+# push-mode x PP consumers.
 #
 # WHY the overlay retirement is safe at PP1 — MEASURED, not assumed (nixl-ep-297,
 # 2026-08-20): 550B Nemotron-3-Ultra disagg (prefill TP8 + decode TP8, 2x p5en) on the
@@ -122,8 +138,14 @@ assert getattr(pw.NixlPullConnectorWorker, "_supports_consumer_pp", False) is Tr
 assert getattr(pw.NixlPullConnectorWorker, "_supports_pp_hma", False) is True, \
     "patch 2 marker missing: pull worker does not declare PP+HMA support"
 assert md.NIXL_CONNECTOR_VERSION >= 6, f"connector v{md.NIXL_CONNECTOR_VERSION} < 6 — patches not applied"
-assert "_add_pp_remote_agent" in open(bw.__file__).read()
-print(f"[nixl-pp] patches applied; connector v{md.NIXL_CONNECTOR_VERSION}; PP>1 pull disagg enabled")
+src = open(bw.__file__).read()
+assert "_add_pp_remote_agent" in src, \
+    "patch 1 marker missing: per-shard PP producer registration absent"
+assert "_local_region_indices_if_overlapping" in src, \
+    "patch 3 marker missing: symmetric PPxPP shard-overlap classifier absent"
+assert hasattr(bw.NixlBaseConnectorWorker, "_representative_stage"), \
+    "patch 3 marker missing: representative-stage geometry lookup absent"
+print(f"[nixl-pp] patches applied; connector v{md.NIXL_CONNECTOR_VERSION}; PP>1 pull disagg (incl. symmetric PPxPP) enabled")
 PY
 
 # ---- 4) CVE remediation: drop worker-UNUSED /usr/bin/nats-server ----------------------
