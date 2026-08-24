@@ -43,12 +43,14 @@
 # VALIDATION STATUS (be honest before quoting numbers):
 #   - EP16 per role + P/D split: PROVEN under LWS (disagg/lws-ep).
 #   - Grove multinode: PROVEN for TP/PP engine sharding (dgd-grove headers).
-#   - EP/DP under Grove multinode — THIS template — is UNPROVEN: no live run
-#     has exercised the operator's hybrid-lb DP injection with
-#     --enable-expert-parallel on this model. LWS supplied the DP-group leader
-#     wiring via the LWS leader env; Grove is proven for TP/PP multinode only.
-#     Do not claim this works until a live smoke passes; lws-ep remains the
-#     proven EP16-disagg artifact.
+#   - EP/DP under Grove multinode — THIS template — PROVEN live 2026-08-24:
+#     all 4 rank pods (prefill + decode, DP2 x TP8 = EP16 each role) ran the
+#     operator's hybrid-lb injection with --enable-expert-parallel (worker
+#     ranks EP0-EP15 visible in logs); NIXL compatibility handshake passed on
+#     both decode DP ranks; greedy output byte-identical to the lws-pp2
+#     control (no lws-ep capture exists — cross-parallelism coherence check);
+#     warm aiperf c=10 ISL1024/OSL512 100 req 0 err: TTFT p50 722 ms /
+#     ITL p50 109.1 ms / 90.6 output tok/s.
 #
 # Gotchas carried from the learnings corpus (same set as dgd-grove-pp2):
 #   - sharedMemorySize CRD field is the ONLY /dev/shm knob (64Gi = the

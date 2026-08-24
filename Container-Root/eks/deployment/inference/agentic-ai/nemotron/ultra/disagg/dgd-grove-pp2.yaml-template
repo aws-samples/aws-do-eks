@@ -55,9 +55,11 @@
 #   - Symmetric PP2 (both roles) on the patched image: PROVEN live under LWS
 #     (lws-pp2, Ray bootstrap, valid aiperf run 2026-08-23).
 #   - THIS combination — PP2 both roles under the operator's multinode
-#     bootstrap (mp by default) — is UNVALIDATED until a live smoke. The mp
-#     path structurally avoids the Ray-cgraph decode deadlock, but hybrid-Mamba
-#     PP2 decode has never been run through it. Smoke before benchmarking.
+#     bootstrap (mp by default) — PROVEN live 2026-08-24: hybrid-Mamba PP2
+#     decode ran clean through the mp path (no Ray-cgraph deadlock), greedy
+#     output byte-identical to the lws-pp2 control, warm aiperf c=10
+#     ISL1024/OSL512 100 req 0 err: TTFT p50 369 ms / ITL p50 51.8 ms /
+#     190.1 output tok/s (within ~4-6% of the lws-pp2 pin capture).
 #
 # Gotchas carried from the learnings corpus:
 #   - /dev/shm sizes ONLY via the component-level `sharedMemorySize` CRD field

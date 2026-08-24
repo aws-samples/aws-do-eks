@@ -49,12 +49,12 @@
 #   - EP16 aggregated (DP2/TP8/EP16 over EFA): PROVEN under LWS (agg/lws-ep,
 #     measured 550B serving, NET/OFI efa both nodes, socket_fallback=0).
 #   - Grove multinode: PROVEN for TP/PP engine sharding (dgd-grove headers).
-#   - EP/DP under Grove multinode — THIS template — is UNPROVEN: no live run
-#     has exercised the operator's hybrid-lb DP injection with
-#     --enable-expert-parallel. LWS supplied the DP-group leader wiring via
-#     the LWS leader env; Grove is proven for TP/PP multinode only. Do not
-#     claim this works until a live smoke passes; lws-ep remains the proven
-#     EP16-agg artifact.
+#   - EP/DP under Grove multinode — THIS template — PROVEN live 2026-08-24:
+#     the operator's hybrid-lb DP injection observed verbatim in both rank
+#     pods' live args alongside --enable-expert-parallel (DP2 x TP8 = EP16,
+#     EngineCore_DP0 and DP1 both initialized), greedy output byte-identical
+#     to the agg deployment control, warm aiperf c=10 ISL1024/OSL512 100 req
+#     0 err: TTFT p50 379 ms / ITL p50 108.5 ms / 91.6 output tok/s.
 #
 # Gotchas carried from the learnings corpus:
 #   - sharedMemorySize CRD field is the ONLY /dev/shm knob (64Gi = the
