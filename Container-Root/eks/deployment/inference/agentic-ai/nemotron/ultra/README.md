@@ -64,12 +64,17 @@ The folder decides whether prefill and decode are split; `MANIFEST_TYPE` decides
 | `agg/` | `lws-ep` | wide expert parallelism, DP`EP_DP_SIZE` x TP8 (EP16 by default) | 2 | no |
 | `agg/` | `dgd` | `DynamoGraphDeployment`, one worker (needs the Dynamo operator) | 1 | no |
 | `agg/` | `dgd-v1beta1` | the same deployment on the `nvidia.com/v1beta1` API instead of the deprecated `v1alpha1` | 1 | no |
+| `agg/` | `dgd-grove` | the `lws` engine shape (one engine, TP8 x PP`NODE_COUNT_PER_WORKER`) as a `v1beta1` DGD with `multinode.nodeCount`, Grove-rendered and gang-scheduled (needs Dynamo >= 1.4.0 + Grove/KAI) | `NODE_COUNT_PER_WORKER` (2) | no |
+| `agg/` | `dgd-grove-ep` | the `lws-ep` shape (wide EP, DP`EP_DP_SIZE` x TP8) as a Grove-rendered DGD; the operator injects the DP coordination — unproven pending live smoke, see the template header | `EP_DP_SIZE` (2) | no |
 | `disagg/` | `deployment` | 1 prefill + 1 decode, TP8/PP1 each | 2 | yes |
 | `disagg/` | `lws-2pp` | prefill TP8/PP2 + 2x decode TP8/PP1 | 4 | yes |
 | `disagg/` | `lws-pp2` | symmetrical PP2: prefill AND decode each TP8/PP2 | 4 | yes |
 | `disagg/` | `lws-ep` | wide expert parallelism **per role**: prefill DP`EP_DP_SIZE` x TP8 + decode DP`EP_DP_SIZE` x TP8 (EP16 each by default) | 2 x `EP_DP_SIZE` (4) | yes |
 | `disagg/` | `dgd` | `DynamoGraphDeployment` prefill + decode (needs the Dynamo operator) | 2 | yes |
 | `disagg/` | `dgd-v1beta1` | the same deployment on the `nvidia.com/v1beta1` API instead of the deprecated `v1alpha1` | 2 | yes |
+| `disagg/` | `dgd-grove` | the `dgd-v1beta1` topology Grove-rendered and gang-scheduled as one PodGang (needs Dynamo >= 1.4.0 + Grove/KAI) | 2 | yes |
+| `disagg/` | `dgd-grove-pp2` | the `lws-pp2` shape (symmetric PP2 per role) as a Grove-rendered DGD, both workers `multinode.nodeCount` — requires the `:1.4.0-patched` image (stock vLLM 0.26 refuses PP>1 + hybrid-KV); unvalidated through the operator path, see the template header | 2 x `NODE_COUNT_PER_WORKER` (4) | yes |
+| `disagg/` | `dgd-grove-ep` | the `lws-ep` shape (EP16 per role) as a Grove-rendered DGD; the operator injects the DP coordination — unproven pending live smoke, see the template header | 2 x `EP_DP_SIZE` (4) | yes |
 
 `MANIFEST_TYPE` names the template file directly. For example, if MANIFEST_TYPE=dgd, then `run.sh` replaces all variables in dgd.yaml-template with values from .env, producing `dgd.yaml`, then executes `kubectl apply -f ./dgd.yaml`. The `./stop.sh` script executes `kubectl delete -f ./dgd.yaml` correspondingly. 
 

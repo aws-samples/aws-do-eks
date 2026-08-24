@@ -1,0 +1,348 @@
+# =============================================================================
+# Nemotron-3 Ultra — EP16 DISAGGREGATED via Grove — DynamoGraphDeployment, v1beta1
+# =============================================================================
+#
+# Author: Anton Alexander
+#
+# The disagg lws-ep topology — prefill DP${EP_DP_SIZE} x TP${GPU_PER_WORKER}
+# (EP degree = EP_DP_SIZE * GPU_PER_WORKER, 16 by default) + decode the same,
+# independently, with KV prefill->decode over EFA RDMA via NIXL LIBFABRIC —
+# rendered through Grove: each role carries `multinode.nodeCount: ${EP_DP_SIZE}`
+# and the whole graph (frontend + 2 x ${EP_DP_SIZE} GPU pods) gang-schedules as
+# one PodGang. 2 * ${EP_DP_SIZE} GPU nodes (default 4), PP stays 1 on both
+# roles (EP does not need PP, and PP>1 decode is its own template family).
+#
+#   MANIFEST_TYPE=dgd-grove-ep ./run.sh
+#
+# SAME NAME AS ../agg/dgd-grove-ep.yaml-template, DIFFERENT MODE — the FOLDER is
+# the discriminator, exactly as with lws-ep. This one splits prefill from decode
+# (--disaggregation-mode + --kv-transfer-config on both roles); ../agg's does not.
+#
+# Prerequisites: same as dgd-grove.yaml-template (Dynamo >= 1.4.0 platform via
+# ../../../nvidia-dynamo, then Grove + KAI via ../../../grove).
+#
+# DP COORDINATION (the whole delta vs lws-ep, read before debugging):
+#   lws-ep wires vLLM's EXTERNAL-LB data parallelism by hand: the LWS leader is
+#   DP rank 0 + coordinator (--data-parallel-address = its own IP, rpc port
+#   29550/29551) and each worker joins --headless with
+#   --data-parallel-start-rank ${DOLLAR}{LWS_WORKER_INDEX}.
+#   Here the OPERATOR wires DP: seeing --data-parallel-size ${EP_DP_SIZE} with
+#   TP*PP*DP > the pod's 8 GPUs, it injects per rank pod
+#     --data-parallel-hybrid-lb --data-parallel-size-local 1
+#     --data-parallel-start-rank <rank> --data-parallel-address <leader-clique
+#     hostname> --data-parallel-rpc-port 13445
+#   right after the `python3 -m dynamo.vllm` token in THIS script. Do NOT add
+#   those flags here (duplicates), and do NOT add any other `python3 ... vllm`
+#   line to this script (the injection regex would corrupt it).
+#   HONEST DIFFERENCE: hybrid-lb is NOT the mode lws-ep proved. Under hybrid-lb
+#   every rank runs its own local coordinator and Dynamo routes between ranks;
+#   under lws-ep's external-lb the leader coordinates and workers are headless.
+#   --enable-expert-parallel rides on top of DP identically in both, but the
+#   coordination path itself is different code.
+#
+# VALIDATION STATUS (be honest before quoting numbers):
+#   - EP16 per role + P/D split: PROVEN under LWS (disagg/lws-ep).
+#   - Grove multinode: PROVEN for TP/PP engine sharding (dgd-grove headers).
+#   - EP/DP under Grove multinode — THIS template — is UNPROVEN: no live run
+#     has exercised the operator's hybrid-lb DP injection with
+#     --enable-expert-parallel on this model. LWS supplied the DP-group leader
+#     wiring via the LWS leader env; Grove is proven for TP/PP multinode only.
+#     Do not claim this works until a live smoke passes; lws-ep remains the
+#     proven EP16-disagg artifact.
+#
+# Gotchas carried from the learnings corpus (same set as dgd-grove-pp2):
+#   - sharedMemorySize CRD field is the ONLY /dev/shm knob (64Gi = the
+#     live-verified 550B value); podTemplate dshm mounts are silently dropped.
+#   - runtimeVersionOverride: required by the 1.4.0 admission webhook when TAG
+#     is not parseable semver; ":1.4.0-patched" parses, custom ECR test tags
+#     usually do not — uncomment on all components if you point TAG at one.
+#   - Gang crash-loop triage: read the previous-container log of the attempt
+#     that got FURTHEST; the Gloo/TCPStore strand errors are secondary.
+#   - ../test/.env MANIFEST_TYPE must be set to dgd-grove-ep for benchmark
+#     artifacts to land under this manifest's FSx path (stale-MANIFEST_TYPE
+#     trap; verify with run-meta.json observed.workloads, never the path).
+#
+# Env parity note: the env blocks mirror disagg/lws-ep (the proven EP cell)
+# verbatim, minus the LWS leader-resolution machinery. The Grove-proven PP1
+# dgd-grove additionally sets FI_EFA_ENABLE_SHM{,_TRANSFER}=0; on this 4-node
+# anti-affine shape no two NIXL peers share a node, and lws-ep proved without
+# them, so they are omitted — add them first if NIXL init misbehaves.
+#
+# No warmup subshell and no ports/probes on the worker components — same
+# multinode-clique reasoning as dgd-grove-pp2.yaml-template's header.
+# =============================================================================
+---
+apiVersion: nvidia.com/v1beta1
+kind: DynamoGraphDeployment
+metadata:
+  name: ${DEPLOYMENT_NAME}
+  namespace: ${NAMESPACE}
+  labels:
+    app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
+spec:
+  backendFramework: vllm
+  env:
+    - { name: DYNAMO_BACKEND, value: vllm }
+    - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }
+    - { name: NATS_SERVER,    value: "${NATS_URL}" }
+    # /tmp, NOT /shared: pods run uid 1000 and /shared is root-owned - the frontend
+    # dies registering the model ("Failed to create cache directory /shared/hf_cache/hub:
+    # Permission denied") and /v1/models stays empty -> every request 404s.
+    - { name: HF_HOME,        value: /tmp/hf_cache }
+  components:
+    # ---- Frontend (router, CPU-only; its own PodClique in the gang) --------
+    # Verbatim from dgd-grove.yaml-template.
+    - name: Frontend
+      type: frontend
+      replicas: 1
+      # runtimeVersionOverride: "1.4.0"   # uncomment for a non-semver custom TAG (see header)
+      podTemplate:
+        spec:
+          nodeSelector: { node.kubernetes.io/instance-type: ${INSTANCE_TYPE_FRONTEND} }
+          volumes:
+            - { name: fsx-pvc, persistentVolumeClaim: { claimName: fsx-pvc } }
+          containers:
+            # The name MUST be "main" - that is the container the operator merges its
+            # image/command/env/ports/probe defaults into.
+            - name: main
+              image: ${REGISTRY}${IMAGE}${TAG}
+              imagePullPolicy: Always
+              command: ["/bin/bash", "-c"]
+              args:
+                - |-
+                  if [ -n "${DOLLAR}{POD_IP:-}" ] && [ "${DOLLAR}{POD_IP:-}" = "${DOLLAR}{NODE_IP:-}" ]; then
+                    echo "[frontend] FATAL: pod IP ${DOLLAR}POD_IP == node IP ${DOLLAR}NODE_IP with hostNetwork=false."
+                    echo "[frontend]        Cluster DNS cannot answer for this pod, so NATS/etcd are unreachable."
+                    echo "[frontend]        RESTARTING WILL NOT HELP - the sandbox keeps the address. Remedy:"
+                    echo "[frontend]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
+                    exit 1
+                  fi
+                  if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
+                  exec python3 -m dynamo.frontend --http-port 8000 --http-host 0.0.0.0
+              env:
+                - { name: POD_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
+                - { name: NODE_IP, valueFrom: { fieldRef: { fieldPath: status.hostIP } } }
+              ports: [{ containerPort: 8000, name: http }]
+              # The frontend reads the model dir (config/tokenizer, not weights) to build the
+              # preprocessor when workers register a local path - without this mount the model
+              # never appears in /v1/models.
+              volumeMounts:
+                - { name: fsx-pvc, mountPath: /shared }
+              resources:
+                requests: { cpu: "2", memory: 4Gi }
+                limits:   { cpu: "4", memory: 8Gi }
+              # NOTE: no readinessProbe here - the operator injects its own frontend probe.
+    # ---- Prefill: DP${EP_DP_SIZE} x TP${GPU_PER_WORKER}, EP degree
+    # EP_DP_SIZE * GPU_PER_WORKER; one DP rank per node, its own EP group ------
+    - name: VllmPrefillWorker
+      type: prefill
+      replicas: 1
+      # Operator-managed /dev/shm tmpfs (CRD field; the only knob the operator
+      # honors - podTemplate mounts at /dev/shm are silently dropped). 64Gi is
+      # the value verified injected in the live 550B Grove run.
+      sharedMemorySize: 64Gi
+      # runtimeVersionOverride: "1.4.0"   # uncomment for a non-semver custom TAG (see header)
+      multinode:
+        nodeCount: ${EP_DP_SIZE}
+      podTemplate:
+        spec:
+          nodeSelector: { node.kubernetes.io/instance-type: ${INSTANCE_TYPE_WORKER} }
+          tolerations:
+            - { key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
+            - { key: vpc.amazonaws.com/efa, operator: Exists, effect: NoSchedule }
+          affinity:
+            # Keyed to the operator-applied label (VERIFIED present on Grove-rendered
+            # pods; app.kubernetes.io/part-of passthrough is not).
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      nvidia.com/dynamo-graph-deployment-name: ${DEPLOYMENT_NAME}
+                  topologyKey: kubernetes.io/hostname
+          volumes:
+            - { name: fsx-pvc, persistentVolumeClaim: { claimName: fsx-pvc } }
+            - { name: gdrdrv, hostPath: { path: /dev/gdrdrv, type: CharDevice } }
+          containers:
+            - name: main
+              image: ${REGISTRY}${IMAGE}${TAG}
+              imagePullPolicy: Always
+              securityContext: { capabilities: { add: ["IPC_LOCK"] } }
+              command: ["/bin/bash", "-c"]
+              args:
+                - |-
+                  set -u
+                  unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
+                        HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
+                  if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
+                  if [ -n "${DOLLAR}{POD_IP:-}" ] && [ "${DOLLAR}{POD_IP:-}" = "${DOLLAR}{NODE_IP:-}" ]; then
+                    echo "[prefill] FATAL: pod IP ${DOLLAR}POD_IP == node IP ${DOLLAR}NODE_IP with hostNetwork=false."
+                    echo "[prefill]        Cluster DNS cannot answer for this pod, so NATS/etcd are unreachable."
+                    echo "[prefill]        RESTARTING WILL NOT HELP - the sandbox keeps the address. Remedy:"
+                    echo "[prefill]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
+                    exit 1
+                  fi
+                  # Gloo bind interface: data_parallel_size > 1 runs the per-step DP-padding
+                  # all-reduce on the Gloo CPU group cross-node; same derive-and-FATAL guard
+                  # lws-ep carries.
+                  export GLOO_SOCKET_IFNAME=${DOLLAR}{GLOO_SOCKET_IFNAME:-${DOLLAR}(ip -o -4 route show default | awk '{print ${DOLLAR}5; exit}')}
+                  GLOO_BIND_IP=${DOLLAR}(ip -o -4 addr show dev "${DOLLAR}GLOO_SOCKET_IFNAME" 2>/dev/null | awk '{print ${DOLLAR}4; exit}' | cut -d/ -f1)
+                  echo "[prefill] GLOO_SOCKET_IFNAME=${DOLLAR}GLOO_SOCKET_IFNAME bind=${DOLLAR}GLOO_BIND_IP"
+                  case "${DOLLAR}{GLOO_BIND_IP:-}" in
+                    ""|127.*) echo "[prefill] FATAL: GLOO_SOCKET_IFNAME=${DOLLAR}GLOO_SOCKET_IFNAME has no routable IPv4 (got '${DOLLAR}GLOO_BIND_IP'); the cross-node DP-padding all-reduce would bind loopback. Exiting for a clean restart."; exit 1 ;;
+                  esac
+                  # DP coordination flags (hybrid-lb, size-local, start-rank, address, rpc
+                  # port) are INJECTED by the operator right after the dynamo.vllm token
+                  # below - keep this the only python...vllm line (header).
+                  exec python3 -m dynamo.vllm \
+                    --model ${MODEL_PATH} \
+                    --served-model-name ${MODEL_NAME} \
+                    --tensor-parallel-size ${GPU_PER_WORKER} \
+                    --data-parallel-size ${EP_DP_SIZE} \
+                    --enable-expert-parallel \
+                    --pipeline-parallel-size 1 \
+                    --max-model-len 8192 \
+                    --gpu-memory-utilization 0.92 \
+                    --enforce-eager \
+                    --trust-remote-code ${MOE_BACKEND_FLAG} \
+                    ${MAMBA_FLAGS} \
+                    --load-format runai_streamer \
+                    --disaggregation-mode prefill \
+                    --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_connector_extra_config":{"backends":["LIBFABRIC"],"kv_lease_duration":${KV_LEASE_DURATION}}}'
+              env:
+                # Read only by the duplicate-address preflight in args above.
+                - { name: POD_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
+                - { name: NODE_IP, valueFrom: { fieldRef: { fieldPath: status.hostIP } } }
+                - { name: VLLM_LOGGING_LEVEL, value: INFO }
+                - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
+                - { name: VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS, value: "1800" }
+                # 550B BF16 weight loading from Lustre exceeds the default 600s engine timeout.
+                - { name: VLLM_ENGINE_READY_TIMEOUT_S, value: "2400" }
+                - { name: FLASHINFER_DISABLE_VERSION_CHECK, value: "1" }
+                # NVFP4 on sm100: vllm_omni's Quack/CuTeDSL FP8 scaled-mm monkey-patch defaults
+                # ON, but its tuned-compile helper cannot spawn inside vLLM's daemonic TP workers
+                # ("daemonic processes are not allowed to have children") -> exception + FlashInfer
+                # fallback on EVERY GEMM call, nothing caches, and decode crawls at ~0.05-0.1 tok/s
+                # while looking "stuck". Force it off; BF16 never enters this path (no-op there).
+                - { name: VLLM_OMNI_USE_QUACK_FP8, value: "0" }
+                - { name: FI_PROVIDER, value: efa }
+                - { name: FI_EFA_USE_DEVICE_RDMA, value: "1" }
+                - { name: FI_EFA_FORK_SAFE, value: "1" }
+                - { name: FI_HMEM_CUDA_USE_DMABUF, value: "1" }
+                - { name: NIXL_LIBFABRIC_MAX_RAILS, value: "1" }
+                - { name: NIXL_SKIP_TOPOLOGY_CHECK, value: "1" }
+                - { name: NCCL_NET_PLUGIN, value: ofi }
+                - { name: NCCL_TUNER_PLUGIN, value: ofi }
+                - { name: OFI_NCCL_FORCE_NUM_RAILS, value: "4" }
+                - { name: NCCL_RUNTIME_CONNECT, value: "0" }
+                - { name: NCCL_NVLS_ENABLE, value: "0" }
+                - { name: NCCL_CUMEM_ENABLE, value: "1" }
+                - { name: NCCL_SOCKET_IFNAME, value: "^lo,docker,veth,eni" }
+              # NOTE: no ports/startupProbe on a multinode component (see header).
+              volumeMounts:
+                - { name: fsx-pvc, mountPath: /shared }
+                - { name: gdrdrv, mountPath: /dev/gdrdrv }
+              resources:
+                requests: { cpu: "${CPU_PER_WORKER}", memory: ${MEM_PER_WORKER}, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
+                limits:   { cpu: "${CPU_PER_WORKER}", memory: ${MEM_PER_WORKER}, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
+    # ---- Decode: its OWN DP${EP_DP_SIZE} x TP${GPU_PER_WORKER} EP group, same
+    # width, independent coordinator. PP stays 1 (EP does not need PP). --------
+    - name: VllmDecodeWorker
+      type: decode
+      replicas: 1
+      sharedMemorySize: 64Gi
+      # runtimeVersionOverride: "1.4.0"   # uncomment for a non-semver custom TAG (see header)
+      multinode:
+        nodeCount: ${EP_DP_SIZE}
+      podTemplate:
+        spec:
+          nodeSelector: { node.kubernetes.io/instance-type: ${INSTANCE_TYPE_WORKER} }
+          tolerations:
+            - { key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
+            - { key: vpc.amazonaws.com/efa, operator: Exists, effect: NoSchedule }
+          affinity:
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      nvidia.com/dynamo-graph-deployment-name: ${DEPLOYMENT_NAME}
+                  topologyKey: kubernetes.io/hostname
+          volumes:
+            - { name: fsx-pvc, persistentVolumeClaim: { claimName: fsx-pvc } }
+            - { name: gdrdrv, hostPath: { path: /dev/gdrdrv, type: CharDevice } }
+          containers:
+            - name: main
+              image: ${REGISTRY}${IMAGE}${TAG}
+              imagePullPolicy: Always
+              securityContext: { capabilities: { add: ["IPC_LOCK"] } }
+              command: ["/bin/bash", "-c"]
+              args:
+                - |-
+                  set -u
+                  unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
+                        HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
+                  if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
+                  if [ -n "${DOLLAR}{POD_IP:-}" ] && [ "${DOLLAR}{POD_IP:-}" = "${DOLLAR}{NODE_IP:-}" ]; then
+                    echo "[decode] FATAL: pod IP ${DOLLAR}POD_IP == node IP ${DOLLAR}NODE_IP with hostNetwork=false."
+                    echo "[decode]        Cluster DNS cannot answer for this pod, so NATS/etcd are unreachable."
+                    echo "[decode]        RESTARTING WILL NOT HELP - the sandbox keeps the address. Remedy:"
+                    echo "[decode]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
+                    exit 1
+                  fi
+                  export GLOO_SOCKET_IFNAME=${DOLLAR}{GLOO_SOCKET_IFNAME:-${DOLLAR}(ip -o -4 route show default | awk '{print ${DOLLAR}5; exit}')}
+                  GLOO_BIND_IP=${DOLLAR}(ip -o -4 addr show dev "${DOLLAR}GLOO_SOCKET_IFNAME" 2>/dev/null | awk '{print ${DOLLAR}4; exit}' | cut -d/ -f1)
+                  echo "[decode] GLOO_SOCKET_IFNAME=${DOLLAR}GLOO_SOCKET_IFNAME bind=${DOLLAR}GLOO_BIND_IP"
+                  case "${DOLLAR}{GLOO_BIND_IP:-}" in
+                    ""|127.*) echo "[decode] FATAL: GLOO_SOCKET_IFNAME=${DOLLAR}GLOO_SOCKET_IFNAME has no routable IPv4 (got '${DOLLAR}GLOO_BIND_IP'); the cross-node DP-padding all-reduce would bind loopback. Exiting for a clean restart."; exit 1 ;;
+                  esac
+                  # No warmup subshell here, unlike lws-ep's decode leader - see header.
+                  exec python3 -m dynamo.vllm \
+                    --model ${MODEL_PATH} \
+                    --served-model-name ${MODEL_NAME} \
+                    --tensor-parallel-size ${GPU_PER_WORKER} \
+                    --data-parallel-size ${EP_DP_SIZE} \
+                    --enable-expert-parallel \
+                    --pipeline-parallel-size 1 \
+                    --max-model-len 8192 \
+                    --gpu-memory-utilization 0.92 \
+                    --enforce-eager \
+                    --trust-remote-code ${MOE_BACKEND_FLAG} \
+                    ${MAMBA_FLAGS} \
+                    --load-format runai_streamer \
+                    --disaggregation-mode decode \
+                    --kv-transfer-config '{"kv_connector":"NixlConnector","kv_role":"kv_both","kv_connector_extra_config":{"backends":["LIBFABRIC"],"kv_lease_duration":${KV_LEASE_DURATION}}}'
+              env:
+                # Read only by the duplicate-address preflight in args above.
+                - { name: POD_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
+                - { name: NODE_IP, valueFrom: { fieldRef: { fieldPath: status.hostIP } } }
+                - { name: VLLM_LOGGING_LEVEL, value: INFO }
+                - { name: VLLM_SSM_CONV_STATE_LAYOUT, value: DS }
+                - { name: VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS, value: "1800" }
+                # 550B BF16 weight loading from Lustre exceeds the default 600s engine timeout.
+                - { name: VLLM_ENGINE_READY_TIMEOUT_S, value: "2400" }
+                - { name: FLASHINFER_DISABLE_VERSION_CHECK, value: "1" }
+                # NVFP4 on sm100: vllm_omni's Quack/CuTeDSL FP8 scaled-mm monkey-patch defaults
+                # ON, but its tuned-compile helper cannot spawn inside vLLM's daemonic TP workers
+                # ("daemonic processes are not allowed to have children") -> exception + FlashInfer
+                # fallback on EVERY GEMM call, nothing caches, and decode crawls at ~0.05-0.1 tok/s
+                # while looking "stuck". Force it off; BF16 never enters this path (no-op there).
+                - { name: VLLM_OMNI_USE_QUACK_FP8, value: "0" }
+                - { name: FI_PROVIDER, value: efa }
+                - { name: FI_EFA_USE_DEVICE_RDMA, value: "1" }
+                - { name: FI_EFA_FORK_SAFE, value: "1" }
+                - { name: FI_HMEM_CUDA_USE_DMABUF, value: "1" }
+                - { name: NIXL_LIBFABRIC_MAX_RAILS, value: "1" }
+                - { name: NIXL_SKIP_TOPOLOGY_CHECK, value: "1" }
+                - { name: NCCL_NET_PLUGIN, value: ofi }
+                - { name: NCCL_TUNER_PLUGIN, value: ofi }
+                - { name: OFI_NCCL_FORCE_NUM_RAILS, value: "4" }
+                - { name: NCCL_RUNTIME_CONNECT, value: "0" }
+                - { name: NCCL_NVLS_ENABLE, value: "0" }
+                - { name: NCCL_CUMEM_ENABLE, value: "1" }
+                - { name: NCCL_SOCKET_IFNAME, value: "^lo,docker,veth,eni" }
+              # NOTE: no ports/startupProbe on a multinode component (see header).
+              volumeMounts:
+                - { name: fsx-pvc, mountPath: /shared }
+                - { name: gdrdrv, mountPath: /dev/gdrdrv }
+              resources:
+                requests: { cpu: "${CPU_PER_WORKER}", memory: ${MEM_PER_WORKER}, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
+                limits:   { cpu: "${CPU_PER_WORKER}", memory: ${MEM_PER_WORKER}, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
