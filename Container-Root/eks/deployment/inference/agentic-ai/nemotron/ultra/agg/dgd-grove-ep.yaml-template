@@ -153,16 +153,11 @@ spec:
           tolerations:
             - { key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
             - { key: vpc.amazonaws.com/efa, operator: Exists, effect: NoSchedule }
-          affinity:
-            # Belt-and-suspenders (full-node GPU requests already forbid co-location).
-            # Keyed to the operator-applied label — VERIFIED present on Grove-rendered
-            # pods; app.kubernetes.io/part-of passthrough onto Grove pods is not.
-            podAntiAffinity:
-              requiredDuringSchedulingIgnoredDuringExecution:
-                - labelSelector:
-                    matchLabels:
-                      nvidia.com/dynamo-graph-deployment-name: ${DEPLOYMENT_NAME}
-                  topologyKey: kubernetes.io/hostname
+          # No worker anti-affinity, deliberately: each worker requests all 8 GPUs,
+          # so two workers can never share a node anyway -- and a whole-DGD
+          # anti-affinity key makes the gang UNSCHEDULABLE on GPU-only clusters
+          # (4 workers + co-located frontend mutually anti-affine on 4 nodes;
+          # measured kai-scheduler reject, B200 HyperPod 2026-08-24).
           volumes:
             - { name: fsx-pvc, persistentVolumeClaim: { claimName: fsx-pvc } }
           containers:
