@@ -137,7 +137,7 @@ spec:
                 - { name: fsx-pvc, mountPath: /shared }
     # ---- Multinode aggregated wide-EP worker: ONE engine, one DP rank (TP8)
     # per node across ${EP_DP_SIZE} nodes, EP spanning them over EFA ----------
-    - name: VllmWorker
+    - name: worker
       type: worker
       replicas: 1
       # Operator-managed /dev/shm tmpfs (CRD field; the only knob the operator

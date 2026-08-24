@@ -134,7 +134,7 @@ spec:
               # NOTE: no readinessProbe here - the operator injects its own frontend probe.
     # ---- Prefill: DP${EP_DP_SIZE} x TP${GPU_PER_WORKER}, EP degree
     # EP_DP_SIZE * GPU_PER_WORKER; one DP rank per node, its own EP group ------
-    - name: VllmPrefillWorker
+    - name: prefill
       type: prefill
       replicas: 1
       # Operator-managed /dev/shm tmpfs (CRD field; the only knob the operator
@@ -246,7 +246,7 @@ spec:
                 limits:   { cpu: "${CPU_PER_WORKER}", memory: ${MEM_PER_WORKER}, nvidia.com/gpu: "${GPU_PER_WORKER}", vpc.amazonaws.com/efa: "${EFA_PER_WORKER}" }
     # ---- Decode: its OWN DP${EP_DP_SIZE} x TP${GPU_PER_WORKER} EP group, same
     # width, independent coordinator. PP stays 1 (EP does not need PP). --------
-    - name: VllmDecodeWorker
+    - name: decode
       type: decode
       replicas: 1
       sharedMemorySize: 64Gi

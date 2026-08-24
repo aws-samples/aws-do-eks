@@ -155,7 +155,7 @@ spec:
               # NOTE: no readinessProbe here - the operator injects its own frontend probe.
     # ---- Prefill: ONE engine, TP${GPU_PER_WORKER} x PP${NODE_COUNT_PER_WORKER}
     # across ${NODE_COUNT_PER_WORKER} nodes (leader + worker cliques) ----------
-    - name: VllmPrefillWorker
+    - name: prefill
       type: prefill
       replicas: 1
       # Operator-managed /dev/shm tmpfs (CRD field; the only knob the operator
@@ -271,7 +271,7 @@ spec:
     # across ${NODE_COUNT_PER_WORKER} nodes. PP2 decode is exactly what the
     # patched image + lws-pp2 proved; on stock 0.26 this component cannot start
     # (header). ---------------------------------------------------------------
-    - name: VllmDecodeWorker
+    - name: decode
       type: decode
       replicas: 1
       sharedMemorySize: 64Gi
