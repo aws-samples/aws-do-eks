@@ -18,7 +18,7 @@ version: 0.2
 #   REGISTRY=public.ecr.aws/hpc-cloud/
 #   IMAGE=dynamo-vllm-efa:1.4.0-patched
 #   GATE_SEVERITY=CRITICAL,HIGH
-#   MAX_HIGH=75
+#   MAX_HIGH=10
 #   BASE=nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.4.0-efa
 # =============================================================================
 
@@ -26,7 +26,7 @@ env:
   variables:
     BASE: "nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.4.0-efa"
     GATE_SEVERITY: "CRITICAL,HIGH"
-    MAX_HIGH: "75"
+    MAX_HIGH: "10"  # ratcheted from 75: measured 2 HIGH after the step-4 remediation pass (2026-08-25); headroom for newly-disclosed CVEs between rebuilds
     REGISTRY: "public.ecr.aws/hpc-cloud/"
     IMAGE: "dynamo-vllm-efa:1.4.0-patched"
 
