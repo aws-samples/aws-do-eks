@@ -148,11 +148,69 @@ assert hasattr(bw.NixlBaseConnectorWorker, "_representative_stage"), \
 print(f"[nixl-pp] patches applied; connector v{md.NIXL_CONNECTOR_VERSION}; PP>1 pull disagg (incl. symmetric PPxPP) enabled")
 PY
 
-# ---- 4) CVE remediation: drop worker-UNUSED /usr/bin/nats-server ----------------------
-#    STILL baked in 1.4.0-efa (17.5MB, measured 2026-08-21) — GA has not converged this.
-#    The deploy uses an EXTERNAL nats pod; removal (not .trivyignore) keeps the
-#    0-CRITICAL claim honest. Upstream: https://github.com/ai-dynamo/dynamo/issues/12356
+# ---- 4) CVE remediation: drop worker-UNUSED binaries + patch what remains -------------
+#    Same principle throughout: REMOVE (not .trivyignore) anything the workers never
+#    execute, so the CVE gate stays honest. Every line names the CVE(s) it clears
+#    (measured 2026-08-25, syft SBOM -> trivy sbom on 1.4.0-patched: 0 CRITICAL/44 HIGH
+#    before -> 0 CRITICAL/2 HIGH after; the 2 residuals ride the measured ray 2.55.1 pin,
+#    see the step-2 note).
+#
+# 4a) nats-server: STILL baked in 1.4.0-efa (17.5MB, measured 2026-08-21) — GA has not
+#     converged this. The deploy uses an EXTERNAL nats pod.
+#     Upstream: https://github.com/ai-dynamo/dynamo/issues/12356
 RUN rm -f /usr/bin/nats-server || true
+
+# 4b) etcd server binaries (etcd/etcdctl/etcdutl, 62MB): worker-unused — every template
+#     points DYN_ETCD at an EXTERNAL etcd pod, exactly like nats. Clears 7 HIGH riding
+#     the Go toolchain they were built with (stdlib go1.25.12 < 1.25.13: CVE-2026-33818,
+#     CVE-2026-39821, CVE-2026-56853, CVE-2026-56858..56862).
+RUN rm -rf /usr/local/bin/etcd
+
+# 4c) mooncake-transfer-engine: the OPTIONAL Mooncake KV connector — unused by every
+#     template in this tree (NIXL is the KV transport for agg, EP16, and disagg PP1/PP>1).
+#     Its bundled libetcd_wrapper.so (Go go1.25.9 + x/net v0.48.0 + x/text v0.32.0 +
+#     grpc v1.79.3) carries 22 HIGH (15x stdlib incl. CVE-2026-27145/-33811/-33814/-39820
+#     /-39836/-42499/-42504, 5x x/net CVE-2026-25681/-27136/-33814/-39821/-46600,
+#     x/text CVE-2026-56852, grpc GHSA-hrxh-6v49-42gf). The current PyPI wheel
+#     (0.3.12.post1) is built with go1.25.10 and would still carry most of these — so
+#     remove, don't bump. Restore path if a Mooncake scenario ever lands here:
+#     `pip install mooncake-transfer-engine` (and re-run the CVE gate).
+RUN pip uninstall -y mooncake-transfer-engine
+
+# 4d) baked uv wheel cache (/opt/uv/cache, 754MB): ships a SECOND copy of the mooncake
+#     wheel (duplicate findings) and is pure image bloat — a cache has no place in a
+#     shipped image.
+RUN rm -rf /opt/uv/cache
+
+# 4e) apt launchpadlib chain (python3-cryptography 41.0.7 / python3-jwt 2.7.0 /
+#     python3-httplib2 0.20.4 and their sole dependents python3-oauthlib,
+#     python3-lazr.restfulclient, python3-launchpadlib, software-properties-common):
+#     runtime-unused `add-apt-repository` support. Clears 8 HIGH (cryptography
+#     CVE-2023-50782, CVE-2024-26130, CVE-2026-26007, CVE-2026-69249,
+#     GHSA-537c-gmf6-5ccf; pyjwt CVE-2026-32597, CVE-2026-48526; httplib2
+#     CVE-2026-59939). The runtime python resolves /usr/local first, so these were
+#     shadowed anyway — removal just makes the gate agree with reality.
+RUN apt-get remove -y --purge \
+      python3-launchpadlib python3-lazr.restfulclient python3-oauthlib \
+      python3-jwt python3-httplib2 python3-cryptography \
+    && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
+
+# 4f) venv cryptography 49.0.0 -> >=50.0.0: CVE-2026-69247. pip-level bump only — does
+#     not touch the vllm/torch pins (verified: `pip check` delta vs stock is empty).
+RUN pip install --no-cache-dir "cryptography>=50.0.0"
+
+# 4g) ray_dist.jar (Ray's Java driver, inside ray/jars/): our templates drive ray from
+#     Python only (`--distributed-executor-backend ray`). The jar carries 4 HIGH
+#     (jackson-core GHSA-r7wm-3cxj-wff9, jackson-databind CVE-2026-54512/-54513,
+#     httpcore5 CVE-2026-54399). `import ray` + the step-5 assert stay green without it.
+RUN rm -f /usr/local/lib/python3.12/dist-packages/ray/jars/ray_dist.jar
+
+# KNOWN-OPEN (2 HIGH, deliberate): ray 2.55.1 CVE-2026-57516 (fixed 2.56.0) and its
+# vendored aiohttp 3.13.5 CVE-2026-69244 (ray/_private/runtime_env/agent/
+# thirdparty_files, fixed 3.14.3). Both clear with a ray >=2.56 bump — but 2.55.1 is the
+# PP2-PROVEN pin (step 2) and this image's own golden rule is measure-before-bump. The
+# bump is queued behind an E2E PP>1 smoke; do NOT fold it into a CVE pass.
 
 # ---- 5) Final assert: every scenario's prerequisites present in ONE image -------------
 RUN set -eux; \
@@ -165,8 +223,15 @@ b = importlib.util.find_spec("vllm").submodule_search_locations[0]
 assert os.path.isdir(os.path.join(b, "distributed/kv_transfer/kv_connector/v1/nixl")), "nixl connector package missing"
 assert os.path.exists("/opt/amazon/efa/bin/fi_info"), "EFA userspace missing"
 assert not os.path.exists("/usr/bin/nats-server"), "nats-server still present (CRITICAL CVE)"
+assert not os.path.exists("/usr/local/bin/etcd"), "etcd bins still present (step 4b)"
+assert not os.path.exists("/opt/uv/cache"), "uv cache still baked (step 4d)"
+try:
+    m.version("mooncake-transfer-engine"); raise AssertionError("mooncake still installed (step 4c)")
+except m.PackageNotFoundError:
+    pass
+import ray  # step 4g dropped only the Java jar — the Python driver must still import
 print("[golden-1.4.0] agg + EP16 + hybrid-disagg (PP1 and PP>1) prerequisites present; "
-      "EFA present; 0-CRITICAL precondition met")
+      "EFA present; 0-CRITICAL precondition met; worker-unused CVE carriers absent")
 PY
 
 # ---- 6) NVFP4 fix: make flashinfer's cubin package dir writable -----------------------
