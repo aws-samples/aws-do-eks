@@ -105,6 +105,74 @@ Every PP>1 `lws` shape passes byte-for-byte, which is what makes their ITL rows 
 
 21 of the 23 template × precision grid cells (14 BF16 templates, including the five `dgd-grove*` variants added since the last table, + 9 NVFP4 templates) were re-measured cold+warm in this campaign. The BF16 cells reproduce their earlier-campaign measures to ~1-6% ITL p50 across days, stacks, template revisions, and image builds; the NVFP4 cells do **not** — every previously-measured NVFP4 template runs slower than its 2026-08-16/17 measure on the then-current image build (~1.5× ITL p50 on the PP1 shapes, ~1.2× on `disagg/lws-pp2` and `disagg/lws-ep`), so cross-precision conclusions should be read as specific to the image build named above. The two holes are BF16 and NVFP4 `disagg/lws-2pp`: on this image build the template's decode pods fail engine init with CUDA out-of-memory during the vLLM sampler warmup (`_dummy_sampler_run`, 1024 dummy requests — the last allocation of an init sequence that ends with <0.5 GiB headroom per GPU), crash-loop re-streaming weights, and never reach Ready within the deployment budget (3 timed attempts per precision). The same template deployed and measured cleanly on the prior image build (those are the † rows above); lowering the decode role's `gpu_memory_utilization` or `max_num_seqs` is the template-side lever to re-fill these cells.
 
+## Newer-image re-verification: `disagg/lws-2pp` OOM fix (1.4.0-patched / vLLM 0.26, 2026-08-26)
+
+The rows above were measured on the 2026-08-14..18 image (vLLM **0.23**). When the fleet moved to
+`public.ecr.aws/hpc-cloud/dynamo-vllm-efa:1.4.0-patched` (vLLM **0.26**), the `disagg/lws-2pp` decode
+role began OOM-ing at end-of-init and the cell was reported as "gave up" on 2026-08-26. This section
+records the fix verified on that newer image; it does **not** replace row 17 (which remains a valid
+0.23 result).
+
+**Root cause (source-verified).** The decode role inherited vLLM's default `max_num_seqs=1024`, and
+`_dummy_sampler_run` casts the logits to fp32 unconditionally (`sampler.py:96`) → a
+`1024 × 131072 vocab × 4B = 512.0 MiB` transient allocated *after* `capture_model` + KV allocation, at
+gpu-util 0.98 with ~0.42 GiB/GPU free. The allocation is byte-identical v0.23.0→v0.28.0→main; what
+regressed 0.23→0.26 is the *slack* around it, so a template that cleared at 0.97 on 0.23 sits on the
+cliff on 1.4.0-patched. vLLM's own OOM handler at this site (`gpu_model_runner.py:6044-6050`) hardcodes
+the fix: *lower `max_num_seqs` or `gpu_memory_utilization`.*
+
+**Fix (single variable on the decode role, prefill PP2/8192/0.92 UNCHANGED):**
+`--max-num-seqs 16` (512 MiB → 8 MiB, the primary lever) `+ --gpu-memory-utilization 0.97`
+`+ --max-model-len 4096`.
+
+**Warm AIPerf row** — same harness, `--concurrency 10`, 100 requests, **`--warmup-request-count 30`**
+(so this row is not methodology-matched to the warmup=0 table above — compare to itself, not row 17),
+ISL 1024 (stddev 0) / OSL 512, `ignore_eos:true`, seed 42, on `iankouls-nemotron-ultra-validation`
+(4× ml.p6-b200):
+
+| precision | template | image | GPUs | TTFT p50 (ms) | TTST p50 (ms) | ITL p50 (ms) | tok/s/user p50 | tok/s total | tok/s per GPU | basis |
+|---|---|---|---|---|---|---|---|---|---|---|
+| BF16 | `disagg/lws-2pp` (OOM-fix) | 1.4.0-patched (vLLM 0.26) | 32 | 538.46 | 90.74 | 90.79 | 11.01 | 108.38 | 3.39 | raw aiperf export |
+| NVFP4 | `disagg/lws-2pp` (OOM-fix) | 1.4.0-patched (vLLM 0.26) | 32 | 1,039.78 | 182.17 | 193.32 | 5.17 | 50.41 | 1.58 | raw aiperf export |
+
+**Both precisions: 100/100 requests completed, 0 errors** (99 success records + 1 length-tie each) —
+the single fixed template serves at load on both published checkpoints of the model. BF16 duration
+472.39 s; NVFP4 1,015.62 s (NVFP4 is intrinsically slower per token on this model — see the ratio
+below).
+
+**BF16** matches the 0.23 row 17 within noise (TTFT p50 538 vs 546, ITL p50 90.8 vs 88.3) — the fix
+made the cell *runnable* on the new image without degrading per-token latency.
+
+**NVFP4** serves cleanly (ITL p50 193.32, a tight distribution: max 218.54, only +13% over p50, so the
+median is not hold-contaminated). Two things are worth stating honestly and neither is the OOM fix's
+doing:
+- **NVFP4 is ~2.13× slower per token than BF16 *on this same new image*** (ITL 193.32 vs 90.79), where
+  the 0.23 image showed ~1.50× (132.85 vs 88.32). Same-image ratio is the clean comparison; it says the
+  vLLM 0.23→0.26 decode regression (tracked separately) hits the NVFP4 path disproportionately. This is
+  a **single-run observation**, not a confirmed measured regression — the 0.23 NVFP4 rows used
+  `--warmup-request-count 0` while this row excludes 30, so an absolute cross-image delta is not
+  methodology-matched. Flagged for a repeat, not quoted as a verdict.
+- The OOM fix is precision-agnostic by construction: `--max-num-seqs 16` shrinks the fp32 sampler
+  buffer identically (512 MiB → 8 MiB) regardless of weight dtype, and NVFP4 weights (~41 GiB/GPU vs
+  BF16's larger footprint) leave *more* KV headroom — NVFP4 reported **Maximum concurrency 1213.11×**
+  for 4096 tokens vs BF16's 335.70×. So NVFP4 was never the tighter case; verifying it closes the
+  matrix, it does not stress it.
+
+**KV-over-EFA confirmed on both.** BF16: `Num successful transfers=16, Avg MB per transfer=30.41,
+Throughput (MB/s)=12313` → **486.6 MB** at **12.3 GB/s**. NVFP4 (clean single request):
+`Num successful transfers=16, Avg MB per transfer=30.41, Throughput (MB/s)=13272.3` → the same
+**486.6 MB** prefill→decode at **13.3 GB/s**, `Backend LIBFABRIC was instantiated` (sole transport),
+`TransferTopology(remote_tp=8, remote_pp=1, remote_block_len=16384)` = real cross-node pull via
+`NixlPullConnector`. The B200 EFA devices on this image expose no mlx-style `hw_counters`, so the
+per-request vLLM metric is the transport proof. The identical 486.6 MB / 16-transfer signature on both
+precisions is expected — KV cache size is set by sequence geometry (block count × block bytes), not
+weight dtype. Evidence: `nvfp4-kv-over-efa-proof-20260826T204358Z.log`.
+
+**Blast radius.** 16 of 17 templates in this tree set no `--max-num-seqs` and are latently exposed to
+the same 512 MiB warmup buffer; `lws-2pp` crashed first only because it was the sole template at
+gpu-util 0.98. The durable fix is a fleet-wide template-hygiene pass adding `--max-num-seqs <N>`
+(sized to benchmark concurrency) to every decode/agg role — tracked for PR aws-do-eks#104.
+
 ## Disclaimer
 
 The results here are provided for informational purposes only. They are not meant to guarantee best or minimum performance in your own environment. The purpose of this repository is to provide a framework and tooling that enables you to run your own experiments and evaluate performance of the Nemotron 3 Ultra and other models.
