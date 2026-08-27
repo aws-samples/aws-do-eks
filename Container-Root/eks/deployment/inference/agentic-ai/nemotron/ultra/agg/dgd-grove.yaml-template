@@ -192,6 +192,7 @@ spec:
                     --tensor-parallel-size ${GPU_PER_WORKER} \
                     --pipeline-parallel-size ${NODE_COUNT_PER_WORKER} \
                     --max-model-len 4096 --gpu-memory-utilization 0.97 --enforce-eager \
+                    --max-num-seqs 16 \
                     --trust-remote-code ${MOE_BACKEND_FLAG} \
                     --mamba-cache-mode align
               env:

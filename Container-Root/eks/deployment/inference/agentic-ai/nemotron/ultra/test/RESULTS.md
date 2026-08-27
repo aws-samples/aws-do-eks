@@ -1,42 +1,68 @@
-# Nemotron 3 Ultra 550B — measured AIPerf results (B200, re-measured 2026-08-24..26)
+# Nemotron 3 Ultra 550B — measured AIPerf results (B200 2026-08-24..26 · H200 2026-08-27)
 
 Benchmark results for every deployment template in this folder's `agg/` and `disagg/` directories, at both published precisions of the model, measured with the harness in this directory (`test-aiperf.sh` for the fixed-concurrency rows, `aiperf-sweep-run.sh` for the sweeps). Numbers marked *raw aiperf export* are parsed from the `profile_export_aiperf.json` that aiperf 0.9.0 wrote for that run — none are transcribed by hand.
 
-Common to every fixed-concurrency row: Input Sequence Length (ISL) 1024 (stddev 0) / Output Sequence Length (OSL) 512 with `ignore_eos:true`, 100 requests, `--concurrency 10`, `--random-seed 42`, `--warmup-request-count 0`, on a SageMaker HyperPod EKS cluster with 4× p6-b200 nodes (8× B200 each). Each row was run twice on the same stack: cold right after the pods went Ready, then again after a warm interval, and the **warm run is the published row**; the cold companion is kept as provenance. Runs carry a `run-meta.json` that records what actually served them (the observed workload kinds and DYN_NAMESPACE).
+Common to every fixed-concurrency row: Input Sequence Length (ISL) 1024 (stddev 0) / Output Sequence Length (OSL) 512 with `ignore_eos:true`, 100 requests, `--concurrency 10`, `--random-seed 42`, `--warmup-request-count 0`, on a SageMaker HyperPod EKS cluster with 4× p6-b200 nodes (8× B200 each) for the B200 rows, and on the p5en.48xlarge EKS cluster described below for the H200 rows. Each row was run twice on the same stack: cold right after the pods went Ready, then again after a warm interval, and the **warm run is the published row**; the cold companion is kept as provenance. Runs carry a `run-meta.json` that records what actually served them (the observed workload kinds and DYN_NAMESPACE).
 
 This table is a full re-measure of the grid (2026-08-24..26): 21 of the 23 template × precision cells were rebuilt end-to-end — deploy, cold run, warm run, teardown — serially on the **same image build** (`public.ecr.aws/hpc-cloud/dynamo-vllm-efa:1.4.0-patched`, node-recorded image digest `sha256:8332b609a2ed…` constant across the whole campaign) with the templates at their current revision, so every row is comparable to every other row with no image or template drift between cells. The two `disagg/lws-2pp` rows († below) could not be re-measured and retain their prior campaign's numbers — see Coverage.
 
+The H200 rows are the same 23-cell grid re-measured on 2026-08-27 on an Amazon EKS cluster with p5en.48xlarge nodes (8× H200 141 GB each), same harness, same ISL/OSL/concurrency/seed/warmup methodology, and the **same image build** — the node-recorded image digest on every H200 capture is byte-identical to the B200 campaign's (`sha256:8332b609a2ed…`), so cross-GPU pairs differ in silicon (and, where footnoted, kernel path), not software. The campaign ran as two parallel lanes (agg and disagg) with a shared benchmark-client mutex so no two AIPerf runs ever overlapped.
+
 ## Fixed-concurrency comparison (c=10)
 
-| precision | template | GPUs | TTFT p50 (ms) | TTST p50 (ms) | ITL p50 (ms) | tok/s/user p50 | tok/s total | tok/s per GPU | basis |
-|---|---|---|---|---|---|---|---|---|---|
-| BF16 | `agg/deployment` | 8 | 489.64 | 45.29 | 92.09 | 10.86 | 107.67 | 13.46 | raw aiperf export |
-| BF16 | `agg/dgd` | 8 | 467.43 | 122.66 | 91.44 | 10.94 | 108.36 | 13.54 | raw aiperf export |
-| BF16 | `agg/dgd-grove` | 16 | 352.81 | 163.54 | 51.97 | 19.24 | 189.26 | 11.83 | raw aiperf export |
-| BF16 | `agg/dgd-grove-ep` | 16 | 389.47 | 155.32 | 108.07 | 9.25 | 91.85 | 5.74 | raw aiperf export |
-| BF16 | `agg/lws` | 16 | 464.34 | 13.25 | 49.59 | 20.16 | 198.80 | 12.43 | raw aiperf export |
-| BF16 | `agg/lws-ep` | 16 | 381.88 | 139.96 | 107.23 | 9.33 | 92.66 | 5.79 | raw aiperf export |
-| BF16 | `disagg/deployment` | 16 | 548.68 | 91.58 | 91.40 | 10.94 | 107.48 | 6.72 | raw aiperf export |
-| BF16 | `disagg/dgd` | 16 | 549.50 | 91.88 | 91.59 | 10.92 | 107.87 | 6.74 | raw aiperf export |
-| BF16 | `disagg/dgd-grove` | 16 | 549.64 | 92.14 | 91.59 | 10.92 | 107.79 | 6.74 | raw aiperf export |
-| BF16 | `disagg/dgd-grove-ep` | 32 | 666.61 | 109.64 | 109.95 | 9.10 | 90.01 | 2.81 | raw aiperf export |
-| BF16 | `disagg/dgd-grove-pp2` | 32 | 364.24 | 52.00 | 52.18 | 19.16 | 188.73 | 5.90 | raw aiperf export |
-| BF16 | `disagg/lws-2pp`† | 32 | 546.13 | 88.22 | 88.32 | 11.32 | 110.94 | 3.47 | raw aiperf export |
-| BF16 | `disagg/lws-ep` | 32 | 745.77 | 108.01 | 107.53 | 9.30 | 91.44 | 2.86 | raw aiperf export |
-| BF16 | `disagg/lws-pp2` | 32 | 347.31 | 50.65 | 49.70 | 20.12 | 198.30 | 6.20 | raw aiperf export |
-| NVFP4 | `agg/deployment` | 8 | 644.29 | 186.07 | 186.21 | 5.37 | 51.28 | 6.41 | raw aiperf export |
-| NVFP4 | `agg/dgd` | 8 | 673.23 | 225.01 | 186.09 | 5.38 | 52.78 | 6.60 | raw aiperf export |
-| NVFP4 | `agg/lws` | 16 | 535.58 | 225.11 | 101.03 | 9.90 | 96.46 | 6.03 | raw aiperf export |
-| NVFP4 | `agg/lws-ep` | 16 | 740.31 | 233.75 | 263.71 | 3.79 | 37.96 | 2.37 | raw aiperf export |
-| NVFP4 | `disagg/deployment` | 16 | 1,068.46 | 179.76 | 186.74 | 5.36 | 50.16 | 3.13 | raw aiperf export |
-| NVFP4 | `disagg/dgd` | 16 | 1,048.05 | 173.77 | 187.42 | 5.34 | 51.28 | 3.21 | raw aiperf export |
-| NVFP4 | `disagg/lws-2pp`† | 32 | 742.68 | 123.78 | 132.85 | 7.53 | 47.36\* | 1.48\* | raw aiperf export |
-| NVFP4 | `disagg/lws-ep` | 32 | 1,604.70 | 238.89 | 286.17 | 3.49 | 35.27 | 1.10 | raw aiperf export |
-| NVFP4 | `disagg/lws-pp2` | 32 | 669.71 | 94.41 | 103.35 | 9.68 | 94.32 | 2.95 | raw aiperf export |
+| precision | template | GPU | GPUs | TTFT p50 (ms) | TTST p50 (ms) | ITL p50 (ms) | tok/s/user p50 | tok/s total | tok/s per GPU | basis |
+|---|---|---|---|---|---|---|---|---|---|---|
+| BF16 | `agg/deployment` | B200 | 8 | 489.64 | 45.29 | 92.09 | 10.86 | 107.67 | 13.46 | raw aiperf export |
+| BF16 | `agg/deployment` | H200 | 8 | 633.59 | 112.47 | 84.96 | 11.77 | 116.06 | 14.51 | raw aiperf export |
+| BF16 | `agg/dgd` | B200 | 8 | 467.43 | 122.66 | 91.44 | 10.94 | 108.36 | 13.54 | raw aiperf export |
+| BF16 | `agg/dgd` | H200 | 8 | 630.08 | 144.28 | 85.96 | 11.63 | 114.75 | 14.34 | raw aiperf export |
+| BF16 | `agg/dgd-grove` | B200 | 16 | 352.81 | 163.54 | 51.97 | 19.24 | 189.26 | 11.83 | raw aiperf export |
+| BF16 | `agg/dgd-grove-ep` | B200 | 16 | 389.47 | 155.32 | 108.07 | 9.25 | 91.85 | 5.74 | raw aiperf export |
+| BF16 | `agg/dgd-grove-ep` | H200 | 16 | 503.98 | 52.97 | 102.07 | 9.80 | 97.04 | 6.07 | raw aiperf export |
+| BF16 | `agg/lws` | B200 | 16 | 464.34 | 13.25 | 49.59 | 20.16 | 198.80 | 12.43 | raw aiperf export |
+| BF16 | `agg/lws` | H200 | 16 | 595.10 | 144.86 | 47.84 | 20.90 | 204.00 | 12.75 | raw aiperf export |
+| BF16 | `agg/lws-ep` | B200 | 16 | 381.88 | 139.96 | 107.23 | 9.33 | 92.66 | 5.79 | raw aiperf export |
+| BF16 | `agg/lws-ep` | H200 | 16 | 469.17 | 154.05 | 102.18 | 9.79 | 97.11 | 6.07 | raw aiperf export |
+| BF16 | `disagg/deployment` | B200 | 16 | 548.68 | 91.58 | 91.40 | 10.94 | 107.48 | 6.72 | raw aiperf export |
+| BF16 | `disagg/deployment` | H200 | 16 | 513.72 | 86.42 | 85.96 | 11.63 | 114.77 | 7.17 | raw aiperf export |
+| BF16 | `disagg/dgd` | B200 | 16 | 549.50 | 91.88 | 91.59 | 10.92 | 107.87 | 6.74 | raw aiperf export |
+| BF16 | `disagg/dgd` | H200 | 16 | 508.43 | 85.47 | 85.18 | 11.74 | 115.64 | 7.23 | raw aiperf export |
+| BF16 | `disagg/dgd-grove` | B200 | 16 | 549.64 | 92.14 | 91.59 | 10.92 | 107.79 | 6.74 | raw aiperf export |
+| BF16 | `disagg/dgd-grove` | H200 | 16 | 514.68 | 86.81 | 86.47 | 11.56 | 114.10 | 7.13 | raw aiperf export |
+| BF16 | `disagg/dgd-grove-ep` | B200 | 32 | 666.61 | 109.64 | 109.95 | 9.10 | 90.01 | 2.81 | raw aiperf export |
+| BF16 | `disagg/dgd-grove-ep` | H200 | 32 | 717.16 | 103.13 | 103.24 | 9.69 | 95.64 | 2.99 | raw aiperf export |
+| BF16 | `disagg/dgd-grove-pp2` | B200 | 32 | 364.24 | 52.00 | 52.18 | 19.16 | 188.73 | 5.90 | raw aiperf export |
+| BF16 | `disagg/dgd-grove-pp2` | H200 | 32 | 335.70 | 48.32 | 48.20 | 20.75 | 204.09 | 6.38 | raw aiperf export |
+| BF16 | `disagg/lws-2pp`† | B200 | 32 | 546.13 | 88.22 | 88.32 | 11.32 | 110.94 | 3.47 | raw aiperf export |
+| BF16 | `disagg/lws-2pp` | H200 | 32 | 518.34 | 84.80 | 85.36 | 11.71 | 116.14 | 3.63 | raw aiperf export |
+| BF16 | `disagg/lws-ep` | B200 | 32 | 745.77 | 108.01 | 107.53 | 9.30 | 91.44 | 2.86 | raw aiperf export |
+| BF16 | `disagg/lws-ep` | H200 | 32 | 713.47 | 102.81 | 102.68 | 9.74 | 95.84 | 3.00 | raw aiperf export |
+| BF16 | `disagg/lws-pp2` | B200 | 32 | 347.31 | 50.65 | 49.70 | 20.12 | 198.30 | 6.20 | raw aiperf export |
+| BF16 | `disagg/lws-pp2` | H200 | 32 | 329.93 | 47.36 | 47.63 | 21.00 | 205.58 | 6.42 | raw aiperf export |
+| NVFP4 | `agg/deployment` | B200 | 8 | 644.29 | 186.07 | 186.21 | 5.37 | 51.28 | 6.41 | raw aiperf export |
+| NVFP4 | `agg/deployment`§ | H200 | 8 | 639.46 | 147.64 | 94.46 | 10.59 | 104.59 | 13.07 | raw aiperf export |
+| NVFP4 | `agg/dgd` | B200 | 8 | 673.23 | 225.01 | 186.09 | 5.38 | 52.78 | 6.60 | raw aiperf export |
+| NVFP4 | `agg/dgd`§ | H200 | 8 | 643.51 | 148.13 | 96.32 | 10.38 | 102.54 | 12.82 | raw aiperf export |
+| NVFP4 | `agg/lws` | B200 | 16 | 535.58 | 225.11 | 101.03 | 9.90 | 96.46 | 6.03 | raw aiperf export |
+| NVFP4 | `agg/lws`§ | H200 | 16 | 676.12 | 52.89 | 53.47 | 18.70 | 183.18 | 11.45 | raw aiperf export |
+| NVFP4 | `agg/lws-ep` | B200 | 16 | 740.31 | 233.75 | 263.71 | 3.79 | 37.96 | 2.37 | raw aiperf export |
+| NVFP4 | `agg/lws-ep`§ | H200 | 16 | 657.08 | 56.79 | 114.27 | 8.75 | 86.89 | 5.43 | raw aiperf export |
+| NVFP4 | `disagg/deployment` | B200 | 16 | 1,068.46 | 179.76 | 186.74 | 5.36 | 50.16 | 3.13 | raw aiperf export |
+| NVFP4 | `disagg/deployment`§ | H200 | 16 | 574.71 | 96.19 | 95.73 | 10.45 | 102.95 | 6.43 | raw aiperf export |
+| NVFP4 | `disagg/dgd` | B200 | 16 | 1,048.05 | 173.77 | 187.42 | 5.34 | 51.28 | 3.21 | raw aiperf export |
+| NVFP4 | `disagg/dgd`§ | H200 | 16 | 569.20 | 95.25 | 95.38 | 10.48 | 103.39 | 6.46 | raw aiperf export |
+| NVFP4 | `disagg/lws-2pp`† | B200 | 32 | 742.68 | 123.78 | 132.85 | 7.53 | 47.36\* | 1.48\* | raw aiperf export |
+| NVFP4 | `disagg/lws-2pp`§ | H200 | 32 | 579.15 | 96.46 | 96.23 | 10.39 | 102.59 | 3.21 | raw aiperf export |
+| NVFP4 | `disagg/lws-ep` | B200 | 32 | 1,604.70 | 238.89 | 286.17 | 3.49 | 35.27 | 1.10 | raw aiperf export |
+| NVFP4 | `disagg/lws-ep`§ | H200 | 32 | 900.70 | 112.86 | 113.34 | 8.82 | 87.00 | 2.72 | raw aiperf export |
+| NVFP4 | `disagg/lws-pp2` | B200 | 32 | 669.71 | 94.41 | 103.35 | 9.68 | 94.32 | 2.95 | raw aiperf export |
+| NVFP4 | `disagg/lws-pp2`§ | H200 | 32 | 374.09 | 52.62 | 52.61 | 19.01 | 186.09 | 5.82 | raw aiperf export |
 
 † `disagg/lws-2pp` did not deploy on the 2026-08-24..26 image build (see Coverage); these two rows are the prior campaign's measure (2026-08-15..18) on the image build current at that time and are **not** directly comparable to the re-measured rows.
 
 \* total-throughput columns contaminated by stalls in that run's wall clock (applies only to the retained prior-campaign NVFP4 `disagg/lws-2pp` row).
+
+§ H200 (sm90) has no native FP4 compute: vLLM serves the NVFP4 checkpoint through its Marlin **weight-only** FP4 fallback (FP4-compressed weights, BF16 compute) — the worker logs "Your GPU does not have native support for FP4 computation … Weight-only FP4 compression will be used" at load. The B200 NVFP4 rows run native-FP4 kernels, so an H200-vs-B200 NVFP4 pair compares kernel paths as well as GPUs; that is why NVFP4 lands within ~10–12% of BF16 on H200 while trailing ~2× on B200.
 
 ### How to read this table
 
@@ -46,6 +72,7 @@ This table is a full re-measure of the grid (2026-08-24..26): 21 of the 23 templ
 4. **Cross-precision comparisons must hold the template fixed.** On this image build the same-shape non-EP pairs are remarkably consistent: NVFP4 runs 2.02–2.08× the BF16 ITL p50 across all six pairs (`agg/deployment` 92.09 vs 186.21, `agg/lws` 49.59 vs 101.03, …); the two expert-parallel pairs are wider (2.46–2.66×). BF16 is consistently faster per token on B200 for this model.
 5. **PP2 is the latency lever.** The TP8/PP2 shapes (`agg/lws`, `agg/dgd-grove`, `disagg/lws-pp2`, `disagg/dgd-grove-pp2`) run ITL 50–52 ms vs 91–92 ms for every TP8/PP1 shape at BF16 (same split at NVFP4: ~101 vs ~186 ms) — and the PP>1 correctness gate below is what makes those rows quotable.
 6. **The Grove-rendered DGD templates cost nothing.** Each `dgd-grove*` variant lands within ~5% ITL p50 of the hand-rolled template with the same engine shape (`agg/dgd-grove` 51.97 vs `agg/lws` 49.59, `disagg/dgd-grove-pp2` 52.18 vs `disagg/lws-pp2` 49.70, …), so the operator/Grove rendering path is not a latency decision at c=10.
+7. **Cross-GPU pairs hold the image build fixed but not the kernel path.** On the BF16 pairs measured on both GPUs, H200 ITL p50 runs 4–8% lower than B200 at this concurrency on this image build — read that as the state of this build's kernel tuning on each GPU (B200 carries the vLLM 0.26 MoE-backend regression documented below), not as a general silicon ranking. NVFP4 pairs additionally switch kernel paths entirely (§).
 
 ### Caveats measured on the cold+warm pairs
 
@@ -54,7 +81,7 @@ This table is a full re-measure of the grid (2026-08-24..26): 21 of the 23 templ
 
 ## Concurrency sweeps: aggregated vs disaggregated at equal GPU count
 
-Both sweeps are the same experiment as the table above (ISL 1024 / OSL 512, ignore_eos, seed 42, aiperf 0.9.0) with only concurrency varying — c = 1/4/8/16/32/64, 20 waves per phase, and a per-phase excluded warm-up (2 waves + 1). Because the warm-up is excluded, sweep rows are not directly comparable to the warmup=0 table rows; compare sweep to sweep. The pair holds GPU count fixed at 16: `agg/lws` (aggregated TP8/PP2 spanning 2 nodes) vs `disagg/deployment` (prefill TP8 + decode TP8, one node each). The sweeps were measured on 2026-08-17 and are not part of the 2026-08-24..26 re-measure; their within-pair comparison holds one image constant.
+Both sweeps are the same experiment as the table above (ISL 1024 / OSL 512, ignore_eos, seed 42, aiperf 0.9.0) with only concurrency varying — c = 1/4/8/16/32/64, 20 waves per phase, and a per-phase excluded warm-up (2 waves + 1). Because the warm-up is excluded, sweep rows are not directly comparable to the warmup=0 table rows; compare sweep to sweep. The pair holds GPU count fixed at 16: `agg/lws` (aggregated TP8/PP2 spanning 2 nodes) vs `disagg/deployment` (prefill TP8 + decode TP8, one node each). The sweeps were measured on 2026-08-17 **on the B200 cluster** and are not part of either fixed-concurrency re-measure; their within-pair comparison holds one image constant.
 
 ### BF16 agg/lws — aggregated TP8/PP2, 16 GPUs
 
@@ -99,7 +126,7 @@ Hybrid-Mamba models under pipeline parallelism are exposed to a class of KV-tran
 | `agg/dgd`, `disagg/dgd-grove`, `disagg/dgd-grove-ep` (PP1 shapes; `-ep` adds DP2) | diverge — one shared text |
 | `disagg/dgd` (TP8+TP8, PP1) | diverges — third text |
 
-Every PP>1 `lws` shape passes byte-for-byte, which is what makes their ITL rows quotable. The `dgd`/`dgd-grove` family produces a small set of alternative continuations — all coherent, all diverging from the control late in the completion — and critically the two PP>1 Grove shapes reproduce the **PP1** `agg/dgd` text exactly, so their divergence is the known dgd-template effect (first observed 2026-08-17 on `agg/dgd`, a PP1 shape), not a pipeline-parallel corruption signature. Why the dgd-rendered stacks settle on different greedy continuations than the hand-rolled manifests remains the open gate item. (`disagg/lws-2pp`, not deployable this campaign, passed this gate byte-for-byte in the 2026-08-18 campaign on its then-current build.) NVFP4 captures were taken on all eight re-measured NVFP4 stacks; at that precision there is no byte-stable reference across templates (completions pair up rather than agree globally), so the byte-parity gate is quotable for BF16 only.
+Every PP>1 `lws` shape passes byte-for-byte, which is what makes their ITL rows quotable. The `dgd`/`dgd-grove` family produces a small set of alternative continuations — all coherent, all diverging from the control late in the completion — and critically the two PP>1 Grove shapes reproduce the **PP1** `agg/dgd` text exactly, so their divergence is the known dgd-template effect (first observed 2026-08-17 on `agg/dgd`, a PP1 shape), not a pipeline-parallel corruption signature. Why the dgd-rendered stacks settle on different greedy continuations than the hand-rolled manifests remains the open gate item. (`disagg/lws-2pp`, not deployable this campaign, passed this gate byte-for-byte in the 2026-08-18 campaign on its then-current build.) NVFP4 captures were taken on all eight re-measured NVFP4 stacks; at that precision there is no byte-stable reference across templates (completions pair up rather than agree globally), so the byte-parity gate is quotable for BF16 only. **H200 gate (2026-08-27):** the same greedy capture was taken on every H200 stack; 11 of 14 BF16 stacks — including every PP>1 `lws` shape (`agg/lws`, `disagg/lws-pp2`, `disagg/lws-2pp`, `disagg/lws-ep`) and both Grove EP shapes — are **byte-identical** to the H200 PP1 `agg/deployment` control. Three stacks (`disagg/deployment`, `disagg/dgd-grove`, `disagg/dgd-grove-pp2`) share one alternative continuation that diverges 333 characters in and stays coherent — the same late-divergence class as the dgd-family divergences above, not a pipeline-parallel corruption signature.
 
 ## Coverage
 
@@ -172,6 +199,10 @@ weight dtype. Evidence: `nvfp4-kv-over-efa-proof-20260826T204358Z.log`.
 the same 512 MiB warmup buffer; `lws-2pp` crashed first only because it was the sole template at
 gpu-util 0.98. The durable fix is a fleet-wide template-hygiene pass adding `--max-num-seqs <N>`
 (sized to benchmark concurrency) to every decode/agg role — tracked for PR aws-do-eks#104.
+
+### H200 coverage (2026-08-27)
+
+22 of the 23 grid cells were measured cold+warm on p5en/H200 — including both cells that could not be re-measured on B200 (`disagg/lws-2pp` at both precisions deployed and measured cleanly on H200 with the #105 fix, first try). The one hole is BF16 `agg/dgd-grove`: three timed deploy attempts failed three different ways on H200 — (1) the sampler-warmup CUDA OOM (fixed in this PR with `--max-num-seqs 16`, after which the stack reaches Ready), then (2) a post-warmup stall in which the engine hangs after the FlashInfer autotune step, is relaunched in-process, and the relaunch breaks the cross-node Gloo rendezvous into a leader/follower restart loop (`torch.distributed.DistNetworkError` in `ProcessGroupGloo` at the 600 s connect timeout), and (3) on the one attempt that reached Ready and took load, a fatal scheduler/model-runner desync three requests into the first c=10 wave (`vllm/v1/core/sched/scheduler.py update_from_output` → `KeyError: <req_id>` → `EngineDeadError`). The same template measured cleanly on B200 (its row above stands); the same engine shape (TP8/PP2) measured cleanly on H200 via `agg/lws` (Ray executor), and the same operator/Grove multinode-PP bootstrap measured cleanly on H200 via `disagg/dgd-grove-pp2` — so the instability is specific to this one template × GPU pairing under this image build, not to Grove, PP2, or H200 in general. NVFP4 `agg/dgd-grove` has no historical row and was not part of the grid.
 
 ## Disclaimer
 
