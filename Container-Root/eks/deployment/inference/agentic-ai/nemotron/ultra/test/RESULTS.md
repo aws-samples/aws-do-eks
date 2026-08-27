@@ -186,14 +186,21 @@ doing:
   matrix, it does not stress it.
 
 **KV-over-EFA confirmed on both.** BF16: `Num successful transfers=16, Avg MB per transfer=30.41,
-Throughput (MB/s)=12313` → **486.6 MB** at **12.3 GB/s**. NVFP4 (clean single request):
-`Num successful transfers=16, Avg MB per transfer=30.41, Throughput (MB/s)=13272.3` → the same
-**486.6 MB** prefill→decode at **13.3 GB/s**, `Backend LIBFABRIC was instantiated` (sole transport),
-`TransferTopology(remote_tp=8, remote_pp=1, remote_block_len=16384)` = real cross-node pull via
-`NixlPullConnector`. The B200 EFA devices on this image expose no mlx-style `hw_counters`, so the
-per-request vLLM metric is the transport proof. The identical 486.6 MB / 16-transfer signature on both
-precisions is expected — KV cache size is set by sequence geometry (block count × block bytes), not
-weight dtype. Evidence: `nvfp4-kv-over-efa-proof-20260826T204358Z.log`.
+Throughput (MB/s)=12313` → **486.6 MB** at **12.3 GB/s** (a clean single-request line rate).
+NVFP4 (captured under AIPerf load, so a **cumulative since-start average**, not a clean single-request
+line rate): `Num successful transfers=176, Avg MB per transfer=30.41, Throughput (MB/s)=83.199,
+Avg xfer time (ms)=365.5` → the **30.41 MB/transfer** figure is identical to BF16, so per-request KV
+volume still matches BF16's **486.6 MB** (KV-cache size is set by sequence geometry — block count ×
+block bytes — not weight dtype). The `83.199 MB/s` is the 176-transfer running average under
+concurrent load and is **not** comparable to BF16's 12.3 GB/s clean-request snapshot; a clean
+single-request NVFP4 throughput snapshot is an optional follow-up. The transfer is a real cross-node
+pull via `NixlPullConnector` — `TransferTopology(remote_tp=8, remote_pp=1, remote_block_len=16384)` in
+the same log. LIBFABRIC is the transport **by construction**: NVFP4 runs the identical image + NIXL
+config as the BF16 stack that logged `Backend LIBFABRIC was instantiated`; a separate NVFP4
+`Backend … instantiated` line was not captured. The B200 EFA devices on this image expose no mlx-style
+`hw_counters`, so the per-request vLLM metric is the transport proof. Evidence:
+`nvfp4-kv-over-efa-proof-20260826T204358Z.log` (line 34: `176 transfers @ 83.199 MB/s`; topology at
+lines 29-33).
 
 **Blast radius.** 16 of 17 templates in this tree set no `--max-num-seqs` and are latently exposed to
 the same 512 MiB warmup buffer; `lws-2pp` crashed first only because it was the sole template at
