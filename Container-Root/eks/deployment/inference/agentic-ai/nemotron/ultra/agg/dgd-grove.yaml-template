@@ -185,6 +185,17 @@ spec:
                   # ${NODE_COUNT_PER_WORKER} clique members — the engine shape proven E2E for
                   # the 550B on lws.yaml-template. The rank bootstrap itself is the operator's
                   # (leader-clique hostname), not ours.
+                  #
+                  # --no-enable-flashinfer-autotune: in the distributed path vLLM's kernel
+                  # warmup runs a full FlashInfer autotune sweep on every rank and closes it
+                  # with a world-group gloo barrier. On H200 (sm90a) that phase killed engine
+                  # init: all 16 ranks logged autotune-end, then the barrier never converged
+                  # cross-pod and rank 0's gloo recv died at the 1800s timeout — leader exits,
+                  # and (Grove not gang-restarting) the clique doom-loops. The heuristic
+                  # tactics the engine falls back to are the same kernels memory profiling
+                  # already exercised; skipping the sweep removes the only gloo world
+                  # collective from init. See the livenessProbe note above for the doom-loop
+                  # mechanics this pairs with.
                   exec python3 -m dynamo.vllm \
                     --model ${MODEL_PATH} \
                     --served-model-name ${MODEL_NAME} \
@@ -193,6 +204,7 @@ spec:
                     --pipeline-parallel-size ${NODE_COUNT_PER_WORKER} \
                     --max-model-len 4096 --gpu-memory-utilization 0.97 --enforce-eager \
                     --max-num-seqs 16 \
+                    --no-enable-flashinfer-autotune \
                     --trust-remote-code ${MOE_BACKEND_FLAG} \
                     --mamba-cache-mode align
               env:
@@ -226,13 +238,33 @@ spec:
                 # NET/Libfabric/GDRDMA). Drop to WARN only after that check.
                 - { name: NCCL_DEBUG, value: INFO }
                 - { name: NCCL_DEBUG_SUBSYS, value: "INIT,NET" }
-              # NOTE: no explicit ports/startupProbe here, unlike dgd-v1beta1. In a
-              # multinode clique the SAME container spec lands on leader AND worker rank
-              # pods; only the leader answers the dyn-system health port, so a probe here
-              # would hold every worker rank NotReady forever. The operator injects
-              # multinode-aware probes (proven: DGD reached Ready=True in the smoke).
-              # A cold ~1 TB BF16 Lustre load has NOT been timed against those injected
-              # thresholds — watch the first 550B run before trusting them.
+              # NOTE: no explicit ports/startupProbe/readinessProbe here, unlike
+              # dgd-v1beta1. In a multinode clique the SAME container spec lands on
+              # leader AND worker rank pods; only the leader answers the dyn-system
+              # health port, so a readiness/startup probe here would hold every worker
+              # rank NotReady forever. The operator injects multinode-aware probes
+              # (proven: DGD reached Ready=True in the smoke).
+              #
+              # livenessProbe IS overridden, deliberately. When the podTemplate sets
+              # none, the 1.4.0 operator injects a SINGLE-STRIKE liveness probe
+              # (failureThreshold 1, period 5s, timeout 4s on /live:9090). On a loaded
+              # 550B leader one >4s /live stall kills the container — and Grove does
+              # NOT gang-restart the clique, so the surviving rank pods stay bound to
+              # the dead leader's TCPStore (:29500 broken-pipe spin) and every leader
+              # relaunch times out at half-world ("8/16 clients joined", 600s
+              # DistStoreError) — a permanent one-sided-restart crash loop. Observed
+              # killing this exact template on BOTH B200 (2026-08-27, leader 4-restart
+              # loop under a user bench) and H200 (same day, G16 matrix). The override
+              # keeps the operator's own endpoint but tolerates ~100s of unresponsiveness
+              # before the kill, which a gang-scheduled engine needs: transient /live
+              # stalls under load are recoverable, a one-sided leader kill is not.
+              # Same handler as the operator's (httpGet /live:9090) so the merge can
+              # never produce the "may not specify more than 1 handler type" rejection.
+              livenessProbe:
+                httpGet: { path: /live, port: 9090 }
+                periodSeconds: 10
+                timeoutSeconds: 8
+                failureThreshold: 10
               volumeMounts:
                 - { name: fsx-pvc, mountPath: /shared }
               resources:
