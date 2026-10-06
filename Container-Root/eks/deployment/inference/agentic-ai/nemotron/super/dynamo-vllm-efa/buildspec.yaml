@@ -1,0 +1,82 @@
+version: 0.2
+
+# =============================================================================
+# CodeBuild buildspec for the Nemotron 3.5 Super VL image (dynamo-vllm-efa recipe).
+#
+# Author: Anton Alexander
+#
+# Reproducible build from PUBLIC base: nvcr.io/nvidia/ai-dynamo/
+# vllm-runtime:1.5.0-efa (EFA 1.50 + NIXL LIBFABRIC + vLLM 0.28.0 baked).
+# No patch stage (see the Dockerfile header): every Super-VL shape is PP1
+# single-node-per-role, stock-covered on this base.
+#
+# Reuses build-sbom-scan.sh, so the CodeBuild path produces the SAME artifacts
+# as the local path: image + syft SBOM (SPDX+CycloneDX) + trivy CVE gate.
+#
+# Project env vars (PLAINTEXT unless noted):
+#   REGISTRY=public.ecr.aws/hpc-cloud/
+#   IMAGE=dynamo-vllm-efa:1.5.0-super-patched   # tag naming is the maintainer's call;
+#                                               # "-super-" disambiguates from ultra's
+#                                               # 1.x.y-patched line on the same repo
+#   GATE_SEVERITY=CRITICAL,HIGH
+#   MAX_HIGH=10
+#   BASE=nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.5.0-efa
+# =============================================================================
+
+env:
+  variables:
+    BASE: "nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.5.0-efa"
+    GATE_SEVERITY: "CRITICAL,HIGH"
+    MAX_HIGH: "10"  # unmeasured for this recipe until the first build's trivy report; ratchet it down then
+    REGISTRY: "public.ecr.aws/hpc-cloud/"
+    IMAGE: "dynamo-vllm-efa:1.5.0-super-patched"
+
+phases:
+  install:
+    commands:
+      # syft + trivy (the SBOM + CVE-gate tools build-sbom-scan.sh expects).
+      - curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+      - curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+      - syft version && trivy --version
+
+  pre_build:
+    commands:
+      - cd "${CODEBUILD_SRC_DIR}/Container-Root/eks/deployment/inference/agentic-ai/nemotron/super/dynamo-vllm-efa"
+      # NGC login ONLY if a key is supplied; public -efa tags pull anonymously.
+      - |
+        if [ -n "${NGC_API_KEY:-}" ]; then
+          echo "[ngc] logging in to nvcr.io"
+          echo "${NGC_API_KEY}" | docker login nvcr.io -u '$oauthtoken' --password-stdin
+        else
+          echo "[ngc] no NGC_API_KEY set - relying on anonymous pull of ${BASE}"
+        fi
+      - aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${REGISTRY}
+
+  build:
+    commands:
+      - cd "${CODEBUILD_SRC_DIR}/Container-Root/eks/deployment/inference/agentic-ai/nemotron/super/dynamo-vllm-efa"
+      # build -> syft SBOM -> trivy CVE gate.
+      # build-sbom-scan.sh exits NONZERO on any CRITICAL or a missing scan,
+      # which fails this phase (no false-pass - see the script's fail-loud guard).
+      - REGISTRY="${REGISTRY}" IMAGE="${IMAGE}" BASE="${BASE}" GATE_SEVERITY="${GATE_SEVERITY}" MAX_HIGH="${MAX_HIGH}" ./build-sbom-scan.sh
+
+  post_build:
+    commands:
+      # Push ONLY on a succeeding build (never push/preflight on a failed BUILD —
+      # it masks the real failure).
+      - |
+        if [ "${CODEBUILD_BUILD_SUCCEEDING:-0}" != "1" ]; then
+          echo "[post_build] BUILD/gate failed -  NOT pushing to ECR"
+          exit 0
+        fi
+      - export IMAGE_URI="${REGISTRY}${IMAGE}"
+      - docker tag "${IMAGE}" "${IMAGE_URI}"
+      - docker push "${IMAGE_URI}"
+      - echo "[post_build] pushed ${IMAGE_URI}"
+
+artifacts:
+  # Ship the SBOM + gate summary as build artifacts (provenance record).
+  base-directory: Container-Root/eks/deployment/inference/agentic-ai/nemotron/super/dynamo-vllm-efa/sbom
+  files:
+    - "*.json"
+    - "*.txt"
