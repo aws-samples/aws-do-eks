@@ -1,0 +1,36 @@
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: do-eks-yaml-auto-mode-gpu-efa
+  version: "1.35"
+  region: us-east-2
+  tags:
+    karpenter.sh/discovery: do-eks-yaml-auto-mode-gpu-efa
+
+availabilityZones:
+  - us-east-2a
+  - us-east-2b
+  - us-east-2c
+
+# EKS Auto Mode cluster. AWS manages the compute (built-in Karpenter), pod networking,
+# cluster DNS, block storage and the GPU drivers/plugins on Bottlerocket-based nodes.
+# There are no nodeGroups or managedNodeGroups in this file: the H200 (p5en.48xlarge)
+# or B200 (p6-b200.48xlarge) nodes with EFA are added after the cluster exists, with the
+# NodeClass + NodePool manifests in ./eks-auto-mode-gpu-efa/ (see the README.md there).
+# The capacity reservation id (cr-xxxxxxxxxxxxxxxxx) therefore goes in the NodeClass,
+# not in this file.
+# Requires eksctl 0.195.0 or newer.
+autoModeConfig:
+  enabled: true
+  # nodePools is left unspecified on purpose and defaults to [general-purpose, system].
+  # AWS: "AWS suggests not specifying any value for nodePools."
+  # The built-in pools give CoreDNS and other system pods a place to run, provision the
+  # `default` NodeClass and create the EC2 access entry for the Auto Mode node role, which
+  # the custom GPU NodeClass in ./eks-auto-mode-gpu-efa/ reuses.
+  #nodePools: []
+  # Omit nodeRoleARN on a first cluster; eksctl creates the Auto Mode node role.
+  #nodeRoleARN: arn:aws:iam::xxxxxxxxxxxx:role/<existing-auto-mode-node-role>
+
+iam:
+  withOIDC: true

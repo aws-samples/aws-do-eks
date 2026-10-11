@@ -1,0 +1,100 @@
+# NodeClass for EKS Auto Mode: H200 GPU nodes (p5en.48xlarge) with EFA on a capacity reservation
+#
+# THIS is where the capacity reservation id goes on Auto Mode. There are no nodeGroups, so the
+# `capacityReservation.capacityReservationTarget.capacityReservationID` field of the other
+# ClusterConfig examples does not exist here. The reservation is selected below and consumed by
+# the NodePool in nodepool-p5en-efa.yaml, which requires karpenter.sh/capacity-type: reserved.
+#
+# Replace the four placeholder values (role, subnet, security group, reservation) before applying;
+# README.md has the lookup commands.
+#
+# EFA interfaces: p5en.48xlarge has 16 network cards and supports 16 EFA interfaces
+# (aws ec2 describe-instance-types --instance-types p5en.48xlarge \
+#    --query 'InstanceTypes[].[NetworkInfo.MaximumNetworkCards,NetworkInfo.EfaInfo.MaximumEfaInterfaces]').
+# Card 0 carries the primary ENI (interfaceType: interface, required) plus one efa-only interface;
+# cards 1..15 carry one efa-only interface each.
+# For p5e.48xlarge (32 network cards / 32 EFA interfaces per the EC2 API) copy this file, change the instance type in the NodePool and extend the
+# efa-only list to networkCardIndex 31 (see README.md for a loop that renders it from the EC2 API).
+#
+# Do NOT add advancedCompute.hugepages.pages to this NodeClass: EFA and static hugepages cannot
+# coexist on one NodeClass (NodeClass validation fails), and pods that request vpc.amazonaws.com/efa
+# are not provisioned from a NodeClass with static hugepages.
+apiVersion: eks.amazonaws.com/v1
+kind: NodeClass
+metadata:
+  name: p5en-efa
+spec:
+  # Name (not ARN) of the Auto Mode node IAM role, so the EC2 access entry already exists:
+  #   aws eks describe-cluster --name do-eks-yaml-auto-mode-gpu-efa --query cluster.computeConfig.nodeRoleArn --output text | awk -F/ '{print $NF}'
+  role: REPLACE-WITH-AUTO-MODE-NODE-ROLE-NAME
+  # The ONE private cluster subnet in the availability zone of your capacity reservation.
+  # EFA peers must share an AZ; a second matching subnet would let Auto Mode spread nodes across AZs.
+  subnetSelectorTerms:
+    - id: subnet-xxxxxxxxxxxxxxxxx
+  # The EKS cluster security group already allows all traffic from itself (what EFA needs):
+  #   aws eks describe-cluster --name do-eks-yaml-auto-mode-gpu-efa --query cluster.resourcesVpcConfig.clusterSecurityGroupId --output text
+  securityGroupSelectorTerms:
+    - id: sg-xxxxxxxxxxxxxxxxx
+  # Your On-Demand Capacity Reservation or ML Capacity Block for p5en.48xlarge.
+  capacityReservationSelectorTerms:
+    - id: cr-xxxxxxxxxxxxxxxxx
+  advancedNetworking:
+    # With networkInterfaces set, Auto Mode attaches no additional IPs, prefixes or ENIs after
+    # launch, so the primary ENI must declare pod IP capacity up front:
+    # secondaryIPv4PrefixCount: 1 = one /28 = 16 pod IPs per node. Raise it if you run more pods per node.
+    networkInterfaces:
+      - networkCardIndex: 0
+        deviceIndex: 0
+        interfaceType: interface
+        secondaryIPv4PrefixCount: 1
+      - networkCardIndex: 0
+        deviceIndex: 1
+        interfaceType: efa-only
+      - networkCardIndex: 1
+        deviceIndex: 0
+        interfaceType: efa-only
+      - networkCardIndex: 2
+        deviceIndex: 0
+        interfaceType: efa-only
+      - networkCardIndex: 3
+        deviceIndex: 0
+        interfaceType: efa-only
+      - networkCardIndex: 4
+        deviceIndex: 0
+        interfaceType: efa-only
+      - networkCardIndex: 5
+        deviceIndex: 0
+        interfaceType: efa-only
+      - networkCardIndex: 6
+        deviceIndex: 0
+        interfaceType: efa-only
+      - networkCardIndex: 7
+        deviceIndex: 0
+        interfaceType: efa-only
+      - networkCardIndex: 8
+        deviceIndex: 0
+        interfaceType: efa-only
+      - networkCardIndex: 9
+        deviceIndex: 0
+        interfaceType: efa-only
+      - networkCardIndex: 10
+        deviceIndex: 0
+        interfaceType: efa-only
+      - networkCardIndex: 11
+        deviceIndex: 0
+        interfaceType: efa-only
+      - networkCardIndex: 12
+        deviceIndex: 0
+        interfaceType: efa-only
+      - networkCardIndex: 13
+        deviceIndex: 0
+        interfaceType: efa-only
+      - networkCardIndex: 14
+        deviceIndex: 0
+        interfaceType: efa-only
+      - networkCardIndex: 15
+        deviceIndex: 0
+        interfaceType: efa-only
+  tags:
+    Blueprint: do-eks-yaml-auto-mode-gpu-efa
+    NodeClass: p5en-efa
