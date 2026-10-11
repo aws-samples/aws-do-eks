@@ -9,6 +9,8 @@ On [EKS Auto Mode](https://docs.aws.amazon.com/eks/latest/userguide/automode.htm
 
 **The one thing that is not obvious:** the `cr-xxxxxxxxxxxxxxxxx` id goes into the `NodeClass` (`capacityReservationSelectorTerms`), not into the eksctl file. The `capacityReservation.capacityReservationTarget.capacityReservationID` field used by the other examples in this folder belongs to a nodegroup, and there are none here. The NodePool's `karpenter.sh/capacity-type: reserved` requirement is what binds the nodes to the reservation.
 
+The NodeClass and NodePool follow the AWS sample [sample-eks-docs b-200s-static](https://github.com/aws-samples/sample-eks-docs/tree/main/ai-ml/set-up-cluster/terraform/auto-mode/nodepools/b-200s-static) (static `p6-b200.48xlarge` NodePool with EFA on Auto Mode), adapted to this repository's naming and extended to `p5en.48xlarge`.
+
 ## Files
 
 | File | Purpose |
@@ -142,7 +144,7 @@ The static pool launches `replicas` nodes right away. If none appear, `kubectl d
 kubectl get nodes -l karpenter.sh/nodepool=p5en-efa -o custom-columns='NAME:.metadata.name,TYPE:.metadata.labels.node\.kubernetes\.io/instance-type,GPU:.status.allocatable.nvidia\.com/gpu,EFA:.status.allocatable.vpc\.amazonaws\.com/efa'
 ```
 
-A pod that requests `nvidia.com/gpu` and `vpc.amazonaws.com/efa` and tolerates the `nvidia.com/gpu` taint now schedules on these nodes. The NCCL tests in [/eks/deployment/nccl-test](../../../../../Container-Root/eks/deployment/nccl-test) are a ready-made workload: their worker pods already carry the toleration; set `INSTANCE_TYPE`, `GPU_PER_WORKER=8` and `EFA_PER_WORKER` (16 for p5en, 8 for p6-b200) in its `.env`.
+A pod that requests `nvidia.com/gpu` and `vpc.amazonaws.com/efa` and tolerates the `nvidia.com/gpu` taint now schedules on these nodes. The NCCL tests in [/eks/deployment/nccl-test](../../../../../Container-Root/eks/deployment/nccl-test) are a ready-made workload (they need the [Kubeflow MPI Operator](../../../../../Container-Root/eks/deployment/kubeflow/mpi-operator)): their worker pods already carry the toleration; set `INSTANCE_TYPE`, `GPU_PER_WORKER=8` and `EFA_PER_WORKER` (16 for p5en, 8 for p6-b200) in its `.env`, and remove the two `hugepages-2Mi` lines from the worker `resources` in the `*.yaml-template` you run, because this NodeClass cannot provide static hugepages (EFA and static hugepages cannot coexist on one NodeClass, see below). The AWS sample's [mpijob-nccl.yaml](https://github.com/aws-samples/sample-eks-docs/blob/main/ai-ml/set-up-cluster/terraform/auto-mode/nodepools/b-200s-static/mpijob-nccl.yaml) is the same kind of `all_reduce_perf` MPIJob and requests only `nvidia.com/gpu` and `vpc.amazonaws.com/efa` per worker.
 
 ### 6. Cleanup
 
