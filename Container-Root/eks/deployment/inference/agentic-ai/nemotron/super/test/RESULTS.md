@@ -1,6 +1,6 @@
 # Nemotron 3.5 Super VL 120B-A12B — AIPerf results
 
-**No cell has been measured yet.** Every template × precision combination below is
+**Measured so far: BF16 `agg/deployment` on H200 (one launch each, c=10 LLM workload; rows and footnotes below).** Every other template × precision combination below is
 PENDING. Two manifests, BF16 `agg/deployment` and BF16 `disagg/deployment`, have each served
 requests in a single smoke launch (see "Served-request smoke" below); the other manifests in
 `../agg` and `../disagg` have passed rendering and `kubectl apply --dry-run=client`
@@ -22,11 +22,11 @@ H200 (sm90): there is no native FP4 compute — vLLM serves the NVFP4 checkpoint
 its Marlin weight-only fallback (FP4-compressed weights, BF16 compute), so an H200
 NVFP4 row measures a different kernel path than a B200 one.
 
-## Fixed-concurrency grid (c=10) — all PENDING
+## Fixed-concurrency grid (c=10)
 
 | precision | template | GPU | GPUs | TTFT p50 (ms) | ITL p50 (ms) | tok/s/user p50 | tok/s total | status |
 |---|---|---|---|---|---|---|---|---|
-| BF16 | `agg/deployment` | | 8 | | | | | PENDING |
+| BF16 | `agg/deployment` | NVIDIA H200 | 8 | 348.46 | 87.30 | 11.45 | 113.56 | MEASURED ⁴ |
 | BF16 | `agg/dgd` | | 8 | | | | | PENDING |
 | BF16 | `agg/dgd-v1beta1` | | 8 | | | | | PENDING |
 | BF16 | `disagg/deployment` | | 16 | | | | | PENDING |
@@ -48,6 +48,8 @@ lightweight encoder-only path only for Qwen-VL families and full-loads every oth
 checkpoint via `AutoModel.from_pretrained` — the BF16 Super-VL checkpoint (~249 GB)
 cannot fit the template's default 1-GPU encode worker. See the header of
 `../disagg/epd.yaml-template`.
+
+⁴ 2026-10-12, window 20261012T193453Z, one server launch on one p5en.48xlarge (ip-10-240-90-190.ap-southeast-3.compute.internal), TP8 agg worker, image `nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.5.0-efa` (node-recorded digest `sha256:a1bc3d20ea2b…`), the same `--hf-overrides` alias and engine flags as ². Measured with this folder's `test-aiperf.sh` in its default LLM workload (ISL 1024 / OSL 512, `ignore_eos:true`, `--concurrency 10`, `--request-count 100`, `--random-seed 42`, no image flags) and `AIPERF_WARMUP_REQUESTS=0` (no `--warmup-request-count`), i.e. the `../../ultra/test/RESULTS.md` table methodology: a cold run right after the health gate (run id `cold`: TTFT p50 452.09, ITL p50 87.26, tok/s/user p50 11.46, tok/s total 113.09; `profile_export_aiperf.json` sha256 `cd88f74b7eafa756…`), then a warm run on the same launch (run id `warm`), and **the warm run is the row**; both runs completed 100/100 requests with no errors (aiperf 0.9.0). The weights are the Early-Access checkpoint `/shared/nemotron/super/bf16/nemotron_3_5_super_ga_candidate_mtp_boosted_20261001_vv0.1` (`MODEL_PATH` export, the .env's documented override) on a shared FSx this lane may only mount read-only, so the manifest ran with namespace, a private etcd/NATS in place of the platform services, a node pin, a read-only `fsx-pvc` mount, and a teardown label (the same five deployment-only changes as ²), and the aiperf client pod mounted `fsx-pvc` read-only with its artifact directory on an emptyDir (copied out before the pod was deleted) and was pinned to the worker's node; the `aiperf profile` command itself is byte-identical to this script's (only `--artifact-dir` differs). Row artifacts (sha256): `profile_export_aiperf.json` `da503c3049efcf95…`, `profile_export.jsonl` `8c2a9ad6a8dae258…`, `run-meta.json` `6350fbc3ce05abb6…` (`workload: llm`, `warmup_requests: 0`). n=1 launch: one server start, two client runs; reproducibility across launches, tail columns, throughput at saturation, MTP, NVFP4, dgd/epd manifests, B200 and long context are not established. An earlier launch of the same cell the same day (window 20261012T191525Z on ip-10-240-125-5) passed the health gate and had completed 40 of the cold run's 100 requests when that node received an owner-side instance reboot (19:28:47Z); the frontend logged `Engine was shut down during generation`, the remaining requests failed with 404/503, and the window tore the stack down. That launch is kept as provenance only and contributes nothing to the row.
 
 ## Spec-decode cells
 
