@@ -5,11 +5,16 @@ PENDING. Two manifests, BF16 `agg/deployment` and BF16 `disagg/deployment`, have
 requests in a single smoke launch (see "Served-request smoke" below); the other manifests in
 `../agg` and `../disagg` have passed rendering and `kubectl apply --dry-run=client`
 only.
-A row leaves PENDING only when a run through `test-aiperf.sh` (vision
-workload: synthetic 512×512 images, ISL 1024 / OSL 512, `--concurrency 10`,
-`--request-count 100`, `--random-seed 42`) produces a `profile_export_aiperf.json`
-and a `run-meta.json` whose observed workloads match the row's template — the same
-discipline as `../../ultra/test/RESULTS.md`.
+A row leaves PENDING only when a run through `test-aiperf.sh` in its default LLM workload
+(`AIPERF_WORKLOAD=llm`: the text profile identical to `../../ultra/test/test-aiperf.sh` —
+ISL 1024 / OSL 512, `--concurrency 10`, `--request-count 100`, `--random-seed 42`, no image
+flags — so a row here compares directly with the c=10 rows in `../../ultra/test/RESULTS.md`)
+produces a `profile_export_aiperf.json` and a `run-meta.json` whose observed workloads match
+the row's template and whose `workload` field reads `llm` — the same discipline as ultra's.
+Vision rows are optional and separately labelled: a run with `AIPERF_WORKLOAD=vl` (the same
+profile with synthetic 512×512 images added, `run-meta.json` `workload: vl`, artifacts under
+a `vl-` run id) is recorded as its own row with a `(vl)` suffix in the template column, and
+never moves an LLM row out of PENDING.
 
 The GPU column stays empty until a measurement exists; fill it with what actually
 served the run (e.g. H200 / B200), never with the intended target. Note for NVFP4 on

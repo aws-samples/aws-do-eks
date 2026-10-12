@@ -80,16 +80,19 @@ The checkpoint ships one MTP draft layer. vLLM 0.28.0 supports the family struct
 ```bash
 cd /eks/deployment/inference/agentic-ai/nemotron/super/test
 ./config.sh
-./models-list.sh          # names of the hosted models
-./models-health.sh        # deployment health + endpoints
-./test-completions.sh     # one text request to /v1/completions
+./models-list.sh            # names of the hosted models
+./models-health.sh          # deployment health + endpoints
+./test-completions.sh       # one text request to /v1/completions
 ./test-chat-completions.sh  # one text request to /v1/chat/completions
-./test-chat-image.sh      # ONE IMAGE PROMPT via image_url content
-./test-aiperf.sh          # aiperf vision workload: synthetic 512x512 images + text
+./test-chat-image.sh        # ONE IMAGE PROMPT via image_url content (single-request vision check)
+./test-aiperf.sh            # aiperf: the LLM text workload identical to ultra's (default)
+AIPERF_WORKLOAD=vl ./test-aiperf.sh   # optional: the same profile with synthetic 512x512 images
+./aiperf-sweep-run.sh       # the same text workload at concurrency 1,4,8,16,32,64
+./aiperf-clean-tail.sh      # splits an aiperf export into its stalled tail and its steady state
 ```
 
-`test-aiperf.sh` differs from ultra's in exactly one respect: it benchmarks the **vision path** (`--image-width-mean/--image-height-mean`, aiperf ≥ 0.9.0). Results and the measurement discipline live in [test/RESULTS.md](test/RESULTS.md) — currently a full PENDING grid with zero numbers.
+The default `./test-aiperf.sh` is the **LLM text workload identical to ultra's** `test-aiperf.sh` (chat endpoint, ISL 1024 / OSL 512, concurrency 10, 100 requests, seed 42, the same excluded warmup phase, no image flags), so a Super row compares directly with the c=10 rows in [ultra's RESULTS.md](../ultra/test/RESULTS.md). It writes its artifacts and `run-meta.json` to `${MODEL_PATH}/aiperf/${DEPLOYMENT_TYPE}/${MANIFEST_TYPE}/${AIPERF_RUN_ID}` exactly as ultra does. `AIPERF_WORKLOAD=vl ./test-aiperf.sh` is the optional vision run: the same profile with synthetic images added to every request (`--image-width-mean/--image-height-mean`, aiperf ≥ 0.9.0; `AIPERF_IMAGE_WIDTH/HEIGHT` in `test/.env`, default 512 = the checkpoint's `force_image_size`), written under a `vl-` run id and marked `"workload": "vl"` in `run-meta.json`, so it can never be read as an LLM row. `./test-chat-image.sh` is the single-request vision check. `aiperf-sweep-run.sh`/`-logs.sh`/`-stop.sh`/`-summary.sh` and `aiperf-clean-tail.sh` are ultra's tools with only the model label changed; the sweep runs the text workload (there is no vision sweep). Results and the measurement discipline live in [test/RESULTS.md](test/RESULTS.md) — a full PENDING grid plus two served-request smoke rows; no aiperf row has been measured.
 
 ## Relationship to nemotron/ultra
 
-This folder mirrors ultra's layout, scripts and conventions (`.env` + `envsubst` templates, `run.sh`/`stop.sh`, do-pods for download/test, a `dynamo-vllm-efa` golden-image recipe with a CVE gate). Deliberate differences, each stated where it applies: single-node matrix (no LWS/PP2/EP), stock-NGC default image, the `--hf-overrides` architecture alias, multimodal flags + TCP request plane, the EPD template, parameterized `MAX_MODEL_LEN`/`GPU_MEM_UTIL`, `SPEC_DECODE`, pod-network disagg (no host networking anywhere in this tree), and no `--moe-backend` pin (ultra's encodes a vLLM-0.26 measurement that has not been reproduced on 0.28/this model).
+This folder mirrors ultra's layout, scripts and conventions (`.env` + `envsubst` templates, `run.sh`/`stop.sh`, do-pods for download/test, a `dynamo-vllm-efa` golden-image recipe with a CVE gate). `download/` is ultra's Hugging Face download byte-for-byte except the model identifiers, and the default `test-aiperf.sh` benchmark is identical to ultra's, so the two trees' results compare directly; VL benchmarking is opt-in (`AIPERF_WORKLOAD=vl`). Deliberate differences, each stated where it applies: single-node matrix (no LWS/PP2/EP), stock-NGC default image, the `--hf-overrides` architecture alias, multimodal flags + TCP request plane, the EPD template, `test-chat-image.sh`, parameterized `MAX_MODEL_LEN`/`GPU_MEM_UTIL`, `SPEC_DECODE`, pod-network disagg (no host networking anywhere in this tree), no `--moe-backend` pin (ultra's encodes a vLLM-0.26 measurement that has not been reproduced on 0.28/this model), and no `kv-lease-check.sh` (ultra-specific).

@@ -3,13 +3,31 @@
 # Ref: https://github.com/ai-dynamo/aiperf
 # Ref: https://github.com/iankoulski/do-aiperf
 #
-# Vision workload: unlike ../../ultra, this profile sends SYNTHETIC IMAGES with every
-# chat request (--image-width-mean/--image-height-mean — aiperf generates random-noise
-# images at the requested dimensions; flags per aiperf v0.9.0 docs/tutorials/vision.md).
-# The default 512x512 matches the checkpoint's force_image_size; set
-# AIPERF_IMAGE_WIDTH/HEIGHT in .env to change it.
+# Default = the LLM text workload, flag-for-flag identical to ../../ultra/test/test-aiperf.sh
+# (chat endpoint, --concurrency 10, --request-count 100, ISL 1024 stddev 0 / OSL 512,
+# ignore_eos, --random-seed 42, same warmup phase), so a Super row compares directly with
+# the c=10 rows in ../../ultra/test/RESULTS.md. The vision workload is optional:
+# AIPERF_WORKLOAD=vl ./test-aiperf.sh adds synthetic images to every request
+# (--image-width-mean/--image-height-mean — aiperf generates random-noise images at the
+# requested dimensions; flags per aiperf v0.9.0 docs/tutorials/vision.md). The default
+# 512x512 matches the checkpoint's force_image_size; AIPERF_IMAGE_WIDTH/HEIGHT in .env
+# change it. A vl run is written under a vl- run id so it is never read as an LLM row.
 
 source .env
+
+# Workload selection. Validated here, BEFORE the do-aiperf pod is started, so a typo cannot
+# leave a pod behind. _IMAGE_ARGS carries its own leading space: with llm it is empty and
+# the rendered command is byte-identical to ultra's.
+export AIPERF_WORKLOAD="${AIPERF_WORKLOAD:-llm}"
+case "${AIPERF_WORKLOAD}" in
+  llm) _IMAGE_ARGS="" ;;
+  vl)  _IMAGE_ARGS=" --image-width-mean ${AIPERF_IMAGE_WIDTH} --image-height-mean ${AIPERF_IMAGE_HEIGHT}" ;;
+  *)
+    echo "ERROR: AIPERF_WORKLOAD='${AIPERF_WORKLOAD}' is not one of: llm (default, ultra-comparable text), vl (synthetic images)" >&2
+    exit 1
+    ;;
+esac
+echo "Workload: ${AIPERF_WORKLOAD}"
 
 # Every kubectl call that touches the do-aiperf pod passes the namespace explicitly, so a
 # kubeconfig context pinned to another namespace cannot strand the pod (or these lookups)
@@ -47,14 +65,22 @@ fi
 # every topology in a folder shares one DEPLOYMENT_TYPE, so two runs would overwrite each
 # other's profile_export.jsonl. Scoping by MANIFEST_TYPE and run id keeps every run
 # readable and comparable. AIPERF_RUN_ID can be set to any label ("cold", "warm").
+# llm runs use ultra's exact layout so the two folder trees read the same; a vl run id is
+# prefixed vl- so a vision report can never be mistaken for an LLM row.
 export AIPERF_RUN_ID="${AIPERF_RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
+if [ "${AIPERF_WORKLOAD}" == "vl" ]; then
+  case "${AIPERF_RUN_ID}" in
+    vl-*) ;;
+    *)    AIPERF_RUN_ID="vl-${AIPERF_RUN_ID}" ;;
+  esac
+fi
 export ARTIFACT_DIR="${MODEL_PATH}/aiperf/${DEPLOYMENT_TYPE}/${MANIFEST_TYPE}/${AIPERF_RUN_ID}"
 echo "Artifacts: ${ARTIFACT_DIR}"
 
 # Execute the aiperf command interactively
 echo "Executing aiperf command in do-aiperf pod ..."
 
-export CMD="kubectl ${_NS_ARG} exec -it do-aiperf -- aiperf profile --model \"${MODEL_NAME}\" --tokenizer \"${MODEL_PATH}\" --artifact-dir \"${ARTIFACT_DIR}\" --url \"${SERVICE_URL}\" --transport http --endpoint-type chat --streaming --concurrency 10 --request-count 100 ${_WARMUP_ARG} --image-width-mean ${AIPERF_IMAGE_WIDTH} --image-height-mean ${AIPERF_IMAGE_HEIGHT} --synthetic-input-tokens-mean 1024 --synthetic-input-tokens-stddev 0 --output-tokens-mean 512 --extra-inputs \"ignore_eos:true\" --random-seed 42"
+export CMD="kubectl ${_NS_ARG} exec -it do-aiperf -- aiperf profile --model \"${MODEL_NAME}\" --tokenizer \"${MODEL_PATH}\" --artifact-dir \"${ARTIFACT_DIR}\" --url \"${SERVICE_URL}\" --transport http --endpoint-type chat --streaming --concurrency 10 --request-count 100 ${_WARMUP_ARG}${_IMAGE_ARGS} --synthetic-input-tokens-mean 1024 --synthetic-input-tokens-stddev 0 --output-tokens-mean 512 --extra-inputs \"ignore_eos:true\" --random-seed 42"
 
 if [ ! "$VERBOSE" == "false" ]; then echo -e "\n${CMD}\n"; fi
 
@@ -96,6 +122,12 @@ case "${_WARMUP_COUNT}" in
   ''|*[!0-9]*) _WARMUP_JSON="\"${_WARMUP_COUNT}\"" ;;
   *)           _WARMUP_JSON="${_WARMUP_COUNT}" ;;
 esac
+# The image dimensions are recorded only when they were sent (vl); an llm run-meta.json has
+# the same keys as ultra's plus "workload".
+case "${AIPERF_WORKLOAD}" in
+  vl) _IMAGE_JSON=", \"image_width_mean\": ${AIPERF_IMAGE_WIDTH}, \"image_height_mean\": ${AIPERF_IMAGE_HEIGHT}" ;;
+  *)  _IMAGE_JSON="" ;;
+esac
 
 kubectl ${_NS_ARG} exec -i do-aiperf -- sh -c "mkdir -p '${ARTIFACT_DIR}' && cat > '${ARTIFACT_DIR}/run-meta.json'" <<EOF
 {
@@ -108,8 +140,7 @@ kubectl ${_NS_ARG} exec -i do-aiperf -- sh -c "mkdir -p '${ARTIFACT_DIR}' && cat
     "model_path": "${MODEL_PATH}",
     "service_url": "${SERVICE_URL}",
     "warmup_requests": ${_WARMUP_JSON},
-    "image_width_mean": ${AIPERF_IMAGE_WIDTH},
-    "image_height_mean": ${AIPERF_IMAGE_HEIGHT}
+    "workload": "${AIPERF_WORKLOAD}"${_IMAGE_JSON}
   },
   "observed": {
     "frontend_pod": "${_FE_POD}",
