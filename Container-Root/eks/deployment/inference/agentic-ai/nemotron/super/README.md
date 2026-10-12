@@ -4,7 +4,7 @@ This is a quickstart walkthrough of running NVIDIA Nemotron 3.5 Super VL 120B-A1
 
 To simplify the deployment and testing we follow the principles of the [do-framework](https://bit.ly/do-framework) and provide automation as part of the [aws-do-eks](https://bit.ly/do-eks) project.
 
-**Status: every deployment cell in this folder is UNTESTED until [test/RESULTS.md](test/RESULTS.md) says otherwise.** The manifests have passed rendering and `kubectl apply --dry-run=client` validation; no cell has served the model yet. The checkpoint facts below come from the Early-Access checkpoint's own `config.json`.
+**Status: every deployment cell in this folder is UNTESTED until [test/RESULTS.md](test/RESULTS.md) says otherwise.** The manifests have passed rendering and `kubectl apply --dry-run=client` validation; two cells (BF16 `agg/deployment` and BF16 `disagg/deployment`) have each served requests in one smoke launch, recorded in RESULTS.md, and no cell has been measured. The checkpoint facts below come from the Early-Access checkpoint's own `config.json`.
 
 ## The model, from its config.json
 
@@ -25,21 +25,15 @@ The manifests default to the **stock NGC runtime** `nvcr.io/nvidia/ai-dynamo/vll
 
 ## Download the model weights
 
-The Early-Access weights come from the NGC model registry (post-GA, the Hugging Face path in `../ultra/download` applies instead — kept as a commented alternative). In the `aws-do-eks` shell:
+Same pattern as [nemotron/ultra](../ultra/README.md#download-the-model-weights): an `iankoulski/do-hf` pod runs `hf download` onto the shared FSx volume, landing the checkpoint under `/shared/models/hf/<repo id>`, which is what the serving and test `.env` files default `MODEL_PATH` to. In the `aws-do-eks` shell, execute:
 
 ```bash
 cd /eks/deployment/inference/agentic-ai/nemotron/super/download
-kubectl create secret generic ngc-api-key --from-literal=NGC_API_KEY=<your key>   # once
-./config.sh    # set NGC_MODEL to the EA model string from your entitlement
+./config.sh          # set HF_TOKEN and, if needed, MODEL_PRECISION (BF16 default, NVFP4)
 ./model-download.sh
 ```
 
-`ngc registry model download-version` lands the checkpoint under `/shared/nemotron/super/{bf16,nvfp4}/<model>_v<version>/`; the serving `.env` files default `MODEL_PATH` to exactly that layout:
-
-```
-/shared/nemotron/super/bf16/nemotron_3_5_super_ga_candidate_mtp_boosted_20261001_vv0.1
-/shared/nemotron/super/nvfp4/nemotron_3_5_super_ga_candidate_mtp_boosted_nvfp4_20261001_vv0.1
-```
+The weights are downloaded from the public Hugging Face repo once the model is GA. The repo id in `download/.env` (`nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-{BF16,NVFP4}`) follows the Early-Access model-card names and ultra's naming; confirm it against the model card at GA — `MODEL_NAME` in `download/.env` is the one line to correct if the published id differs. Early-Access checkpoints already on an FSx volume are served by exporting `MODEL_PATH=<their directory>` before `./run.sh` (and before `./test-aiperf.sh`).
 
 ## Deploy the model
 

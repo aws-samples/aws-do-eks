@@ -1,8 +1,8 @@
 #!/bin/bash
 
 echo ""
-echo "Opening do-ngc shell ..."
+echo "Removing do-hf pod ..."
 
-export CMD="kubectl exec -it do-ngc -- bash"
+export CMD="kubectl delete pod do-hf --force --grace-period=0"
 if [ ! "$VERBOSE" == "false" ]; then echo -e "\n${CMD}\n"; fi
 eval "${CMD}"
