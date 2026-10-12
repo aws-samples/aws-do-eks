@@ -195,6 +195,73 @@ Set `odcr_id`. Set other variables as needed.
 ./eks-create.sh
 ```
 
+### 3. Create EKS Auto Mode cluster with H200 (p5en) or B200 (p6-b200) GPU nodes and EFA networking using eksctl and a capacity reservation
+
+On [EKS Auto Mode](https://docs.aws.amazon.com/eks/latest/userguide/automode.html) the cluster manifest has no nodegroups. The GPU nodes come from a `NodeClass` + `NodePool` pair that is applied after the cluster is created, and the capacity reservation id goes into the `NodeClass`. See [conf/eksctl/yaml/eks-auto-mode-gpu-efa/README.md](wd/conf/eksctl/yaml/eks-auto-mode-gpu-efa/README.md) for the full walkthrough.
+
+#### 3.1. Configure environment
+
+```bash
+./env-config.sh
+```
+
+Set:
+
+```bash
+export IMPL=impl/eksctl/yaml
+export CONF=conf/eksctl/yaml/eks-auto-mode-gpu-efa.yaml
+```
+
+#### 3.2. Create cluster
+
+```bash
+./eks-create.sh
+```
+
+#### 3.3. Add the GPU nodes
+
+```bash
+cd conf/eksctl/yaml/eks-auto-mode-gpu-efa
+```
+
+Fill in the node role, subnet, security group and `cr-xxxxxxxxxxxxxxxxx` placeholders in `nodeclass-p5en-efa.yaml` (or `nodeclass-p6-b200-efa.yaml`) and the availability zone in the matching `nodepool-*.yaml` as described in the [README](wd/conf/eksctl/yaml/eks-auto-mode-gpu-efa/README.md), then:
+
+```bash
+kubectl apply -f nodeclass-p5en-efa.yaml
+kubectl apply -f nodepool-p5en-efa.yaml
+helm repo add eks https://aws.github.io/eks-charts
+helm install efa eks/aws-efa-k8s-device-plugin -n kube-system -f efa-device-plugin-values.yaml
+```
+
+### 4. Create EKS Auto Mode cluster with H200 (p5en) or B200 (p6-b200) GPU nodes and EFA networking using Terraform and a capacity reservation
+
+#### 4.1. Configure environment
+
+```bash
+./env-config.sh
+```
+
+Set:
+
+```bash
+export IMPL=impl/terraform
+export CONF=conf/terraform/eks-auto-mode-gpu-efa/variables.tf
+```
+
+#### 4.2. Configure cluster
+
+```bash
+./eks-config.sh
+```
+
+Set `capacity_reservation_id`, `gpu_availability_zone` and `gpu_instance_type` (`p5en.48xlarge`, `p5e.48xlarge` or `p6-b200.48xlarge`). Set other variables as needed. See [conf/terraform/eks-auto-mode-gpu-efa/README.md](wd/conf/terraform/eks-auto-mode-gpu-efa/README.md).
+
+#### 4.3. Create cluster
+
+```bash
+./eks-create.sh
+```
+
 ## Troubleshooting
 * eksctl authentication errors - execute "aws configure --profile <profile_name>" and provide access key id and secret access key to configure access.
 

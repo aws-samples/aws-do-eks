@@ -1,0 +1,46 @@
+# NodePool for EKS Auto Mode: static pool of B200 GPU nodes (p6-b200.48xlarge) on the capacity
+# reservation selected by nodeclass-p6-b200-efa.yaml.
+#
+# karpenter.sh/capacity-type: reserved is what binds the nodes to the reservation. Without it a
+# node may still launch as plain on-demand from a NodeClass that could have used the reservation.
+# replicas makes this a STATIC pool: it holds the nodes whether or not pods are pending, which is
+# the right shape for reserved capacity you are already paying for. Static pools are never
+# consolidated, only limits.nodes is honored, weight cannot be set, and once replicas is set it
+# cannot be removed again. Keep limits.nodes above replicas so a node can be replaced (weekly
+# Auto Mode AMI drift) without first dropping below the desired count.
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: p6-b200-efa
+spec:
+  # Number of reserved instances to keep running. Match your reservation.
+  replicas: 2
+  limits:
+    nodes: 3
+  template:
+    spec:
+      nodeClassRef:
+        group: eks.amazonaws.com
+        kind: NodeClass
+        name: p6-b200-efa
+      # Keeps non-GPU pods off the reserved GPU nodes. GPU pods (and the EFA device plugin) need a
+      # matching toleration; remove the taint if you prefer not to edit your workload manifests.
+      taints:
+        - key: nvidia.com/gpu
+          effect: NoSchedule
+      requirements:
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["reserved"]
+        - key: node.kubernetes.io/instance-type
+          operator: In
+          values: ["p6-b200.48xlarge"]
+        # Pin to the availability zone of the capacity reservation (same AZ as the NodeClass subnet).
+        - key: topology.kubernetes.io/zone
+          operator: In
+          values: ["us-east-2a"]
+  disruption:
+    # No consolidationPolicy: static pools are not consolidated. The budget still applies to
+    # drift/AMI replacement and keeps it to one node at a time.
+    budgets:
+      - nodes: "1"

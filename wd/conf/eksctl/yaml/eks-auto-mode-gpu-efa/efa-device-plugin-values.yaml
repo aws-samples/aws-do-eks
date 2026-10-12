@@ -1,0 +1,9 @@
+# Helm values for the AWS EFA Kubernetes device plugin (chart aws-efa-k8s-device-plugin from
+# https://aws.github.io/eks-charts). EKS Auto Mode bundles the NVIDIA GPU drivers and device
+# plugin but not the EFA device plugin, which advertises vpc.amazonaws.com/efa on the nodes.
+# The GPU NodePools in this folder taint their nodes nvidia.com/gpu:NoSchedule, so the plugin's
+# DaemonSet needs this toleration to land on them.
+tolerations:
+  - key: nvidia.com/gpu
+    operator: Exists
+    effect: NoSchedule
