@@ -1,0 +1,35 @@
+# NodePool for EKS Auto Mode: static pool of 4 x p5e.48xlarge on a capacity block
+#
+# replicas: 4 — keeps 4 nodes running once the capacity block is active (starts 2026-10-13 11:30 UTC).
+# Karpenter will attempt to launch nodes immediately; they will succeed once the block activates.
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: p5e-efa
+spec:
+  replicas: 4
+  limits:
+    nodes: 5
+  template:
+    spec:
+      nodeClassRef:
+        group: eks.amazonaws.com
+        kind: NodeClass
+        name: p5e-efa
+      taints:
+        - key: nvidia.com/gpu
+          effect: NoSchedule
+      requirements:
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["reserved"]
+        - key: node.kubernetes.io/instance-type
+          operator: In
+          values: ["p5e.48xlarge"]
+        - key: topology.kubernetes.io/zone
+          operator: In
+          values: ["us-west-2c"]
+  disruption:
+    consolidateAfter: Never
+    budgets:
+      - nodes: "1"

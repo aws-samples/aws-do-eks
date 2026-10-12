@@ -1,0 +1,20 @@
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: eks-auto-nemotron-super-vl
+  version: "1.35"
+  region: us-west-2
+  tags:
+    karpenter.sh/discovery: eks-auto-nemotron-super-vl
+
+availabilityZones:
+  - us-west-2a
+  - us-west-2b
+  - us-west-2c
+
+autoModeConfig:
+  enabled: true
+
+iam:
+  withOIDC: true

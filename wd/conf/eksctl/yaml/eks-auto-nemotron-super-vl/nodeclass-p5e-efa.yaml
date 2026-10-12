@@ -1,0 +1,123 @@
+# NodeClass for EKS Auto Mode: H200 GPU nodes (p5e.48xlarge) with EFA on a capacity block
+#
+# p5e.48xlarge has 32 network cards and 32 EFA interfaces.
+# Card 0 carries the primary ENI (interfaceType: interface) plus one efa-only interface;
+# cards 1..31 carry one efa-only interface each.
+#
+# Placeholders are filled in after cluster creation using the lookup commands in the README.
+apiVersion: eks.amazonaws.com/v1
+kind: NodeClass
+metadata:
+  name: p5e-efa
+spec:
+  role: REPLACE-WITH-AUTO-MODE-NODE-ROLE-NAME
+  subnetSelectorTerms:
+    - id: subnet-xxxxxxxxxxxxxxxxx
+  securityGroupSelectorTerms:
+    - id: sg-xxxxxxxxxxxxxxxxx
+  capacityReservationSelectorTerms:
+    - id: cr-REPLACE-WITH-CAPACITY-RESERVATION-ID
+  advancedNetworking:
+    networkInterfaces:
+      # Card 0: primary ENI + efa-only
+      - networkCardIndex: 0
+        deviceIndex: 0
+        interfaceType: interface
+        secondaryIPv4PrefixCount: 1
+      - networkCardIndex: 0
+        deviceIndex: 1
+        interfaceType: efa-only
+      # Cards 1..31: efa-only
+      - networkCardIndex: 1
+        deviceIndex: 0
+        interfaceType: efa-only
+      - networkCardIndex: 2
+        deviceIndex: 0
+        interfaceType: efa-only
+      - networkCardIndex: 3
+        deviceIndex: 0
+        interfaceType: efa-only
+      - networkCardIndex: 4
+        deviceIndex: 0
+        interfaceType: efa-only
+      - networkCardIndex: 5
+        deviceIndex: 0
+        interfaceType: efa-only
+      - networkCardIndex: 6
+        deviceIndex: 0
+        interfaceType: efa-only
+      - networkCardIndex: 7
+        deviceIndex: 0
+        interfaceType: efa-only
+      - networkCardIndex: 8
+        deviceIndex: 0
+        interfaceType: efa-only
+      - networkCardIndex: 9
+        deviceIndex: 0
+        interfaceType: efa-only
+      - networkCardIndex: 10
+        deviceIndex: 0
+        interfaceType: efa-only
+      - networkCardIndex: 11
+        deviceIndex: 0
+        interfaceType: efa-only
+      - networkCardIndex: 12
+        deviceIndex: 0
+        interfaceType: efa-only
+      - networkCardIndex: 13
+        deviceIndex: 0
+        interfaceType: efa-only
+      - networkCardIndex: 14
+        deviceIndex: 0
+        interfaceType: efa-only
+      - networkCardIndex: 15
+        deviceIndex: 0
+        interfaceType: efa-only
+      - networkCardIndex: 16
+        deviceIndex: 0
+        interfaceType: efa-only
+      - networkCardIndex: 17
+        deviceIndex: 0
+        interfaceType: efa-only
+      - networkCardIndex: 18
+        deviceIndex: 0
+        interfaceType: efa-only
+      - networkCardIndex: 19
+        deviceIndex: 0
+        interfaceType: efa-only
+      - networkCardIndex: 20
+        deviceIndex: 0
+        interfaceType: efa-only
+      - networkCardIndex: 21
+        deviceIndex: 0
+        interfaceType: efa-only
+      - networkCardIndex: 22
+        deviceIndex: 0
+        interfaceType: efa-only
+      - networkCardIndex: 23
+        deviceIndex: 0
+        interfaceType: efa-only
+      - networkCardIndex: 24
+        deviceIndex: 0
+        interfaceType: efa-only
+      - networkCardIndex: 25
+        deviceIndex: 0
+        interfaceType: efa-only
+      - networkCardIndex: 26
+        deviceIndex: 0
+        interfaceType: efa-only
+      - networkCardIndex: 27
+        deviceIndex: 0
+        interfaceType: efa-only
+      - networkCardIndex: 28
+        deviceIndex: 0
+        interfaceType: efa-only
+      - networkCardIndex: 29
+        deviceIndex: 0
+        interfaceType: efa-only
+      - networkCardIndex: 30
+        deviceIndex: 0
+        interfaceType: efa-only
+      - networkCardIndex: 31
+        deviceIndex: 0
+        interfaceType: efa-only
