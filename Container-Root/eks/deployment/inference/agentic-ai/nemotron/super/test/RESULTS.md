@@ -1,6 +1,6 @@
 # Nemotron 3.5 Super VL 120B-A12B — AIPerf results
 
-**Measured so far: BF16 `agg/deployment` and BF16 `disagg/deployment` on H200 — the c=10 LLM rows (one launch each; rows and footnotes below) and, for the same two cells, a concurrency sweep c = 1 → 128 with the latency-vs-throughput charts ("Concurrency sweeps" below, one launch each).** Every other template × precision combination below is
+**Measured so far on H200: the c=10 LLM rows of BF16 `agg/deployment`, BF16 `disagg/deployment`, NVFP4 `agg/deployment` and NVFP4 `disagg/deployment` (one launch each; rows and footnotes below), and for the two BF16 cells a concurrency sweep c = 1 → 128 with the latency-vs-throughput charts ("Concurrency sweeps" below, one launch each). Attempted and not measured: the two BF16 spec-decode cells (the engine rejects `--speculative-config` for this architecture; "Spec-decode cells" below). Not run: dgd / dgd-v1beta1, epd, the vision row (footnotes 12-14).** Every other template × precision combination below is
 PENDING. Two manifests, BF16 `agg/deployment` and BF16 `disagg/deployment`, have each served
 requests in a single smoke launch (see "Served-request smoke" below); the other manifests in
 `../agg` and `../disagg` have passed rendering and `kubectl apply --dry-run=client`
@@ -27,18 +27,18 @@ NVFP4 row measures a different kernel path than a B200 one.
 | precision | template | GPU | GPUs | TTFT p50 (ms) | ITL p50 (ms) | tok/s/user p50 | tok/s total | status |
 |---|---|---|---|---|---|---|---|---|
 | BF16 | `agg/deployment` | NVIDIA H200 | 8 | 348.46 | 87.30 | 11.45 | 113.56 | MEASURED ⁴ |
-| BF16 | `agg/dgd` | | 8 | | | | | PENDING |
-| BF16 | `agg/dgd-v1beta1` | | 8 | | | | | PENDING |
+| BF16 | `agg/dgd` | | 8 | | | | | PENDING ¹² |
+| BF16 | `agg/dgd-v1beta1` | | 8 | | | | | PENDING ¹² |
 | BF16 | `disagg/deployment` | NVIDIA H200 | 16 | 509.73 | 86.68 | 11.54 | 114.33 | MEASURED ⁵ |
-| BF16 | `disagg/dgd` | | 16 | | | | | PENDING |
-| BF16 | `disagg/dgd-v1beta1` | | 16 | | | | | PENDING |
+| BF16 | `disagg/dgd` | | 16 | | | | | PENDING ¹² |
+| BF16 | `disagg/dgd-v1beta1` | | 16 | | | | | PENDING ¹² |
 | BF16 | `disagg/epd` | | 8+enc | | | | | PENDING¹ |
-| NVFP4 | `agg/deployment` | | 8 | | | | | PENDING |
-| NVFP4 | `agg/dgd` | | 8 | | | | | PENDING |
-| NVFP4 | `agg/dgd-v1beta1` | | 8 | | | | | PENDING |
-| NVFP4 | `disagg/deployment` | | 16 | | | | | PENDING |
-| NVFP4 | `disagg/dgd` | | 16 | | | | | PENDING |
-| NVFP4 | `disagg/dgd-v1beta1` | | 16 | | | | | PENDING |
+| NVFP4 | `agg/deployment` | NVIDIA H200 | 8 | 387.85 | 97.93 | 10.21 | 101.51 | MEASURED ¹⁰ |
+| NVFP4 | `agg/dgd` | | 8 | | | | | PENDING ¹² |
+| NVFP4 | `agg/dgd-v1beta1` | | 8 | | | | | PENDING ¹² |
+| NVFP4 | `disagg/deployment` | NVIDIA H200 | 16 | 576.36 | 96.77 | 10.33 | 102.16 | MEASURED ¹¹ |
+| NVFP4 | `disagg/dgd` | | 16 | | | | | PENDING ¹² |
+| NVFP4 | `disagg/dgd-v1beta1` | | 16 | | | | | PENDING ¹² |
 | NVFP4 | `disagg/epd` | | 8+enc | | | | | PENDING¹ |
 
 ¹ `disagg/epd` carries a verified structural caveat before any run is attempted: at
@@ -105,6 +105,25 @@ These are readings of the two n=1 curves with fixed thresholds (10% ITL, 80% of 
 The `SPEC_DECODE=1` toggle (MTP, `num_speculative_tokens=1`) is OFF in every row above.
 When a cell is measured with it on, record it as a SEPARATE row — never fold a
 spec-decode number into a non-spec row.
+
+| precision | template | GPU | GPUs | TTFT p50 (ms) | ITL p50 (ms) | tok/s/user p50 | tok/s total | status |
+|---|---|---|---|---|---|---|---|---|
+| BF16 | `agg/deployment` | | 8 | | | | | NOT MEASURED ⁸ |
+| BF16 | `disagg/deployment` | | 16 | | | | | NOT MEASURED ⁹ |
+
+⁸ 2026-10-13, window 20261013T072830Z: the BF16 `agg/deployment` cell with `SPEC_DECODE=1` (the scaffold's own toggle: `--speculative-config '{"method":"mtp","num_speculative_tokens":1}'` on the worker) was attempted on one p5en.48xlarge, TP8 worker and did **not** reach the measurement: window verdict FAIL at `c-worker-healthy` (worker CRASHED: nemotron35-super-vl-120b-agg-worker-6644df759f-xchqg: restarts=1 terminated=[{'exitCode': 1, 'finishedAt': '2026-10-13T07:30:02Z', 'reason': 'Error', 'startedAt': '2026-10-13T07:29:24Z'}] waiting=[]). The worker's crashed container logged: `ValidationError: 1 validation error for SpeculativeConfig   Value error, Model architectures ['NemotronH_Omni_Reasoning_V3'] are not supported for now. Supported architectures: dict_keys(['AfmoeForCausalLM', 'ApertusForCausalLM', 'ArceeForCausalLM', 'ArcticForCausalLM', 'AXK1ForCausalLM', 'BailingMoeForCausalLM', 'BailingMoeV2ForCausalLM', 'BailingMoeV2_5ForCausalLM', 'BailingMoeV3ForCausalLM', 'B`. The scaffold's `.env` already marks the MTP path UNVERIFIED on this architecture; at vLLM 0.28.0 (the engine in `vllm-runtime:1.5.0-efa`) `SpeculativeConfig` rejects the checkpoint's architecture, so no spec-decode number exists for this cell and the engine was torn down (0 GPU idle). The row stays PENDING.
+
+⁹ 2026-10-13, window 20261013T073103Z: the BF16 `disagg/deployment` cell with `SPEC_DECODE=1` (the scaffold's own toggle: `--speculative-config '{"method":"mtp","num_speculative_tokens":1}'` on prefill and decode) was attempted on two p5en.48xlarge, TP8 prefill on one node and TP8 decode on the other (KV prefill→decode via vLLM `NixlConnector`, LIBFABRIC backend over EFA) and did **not** reach the measurement: window verdict FAIL at `c-worker-healthy` (prefill CRASHED: nemotron35-super-vl-120b-disagg-prefill-7547bb8589-vzx6w: restarts=1 terminated=[{'exitCode': 1, 'finishedAt': '2026-10-13T07:33:03Z', 'reason': 'Error', 'startedAt': '2026-10-13T07:32:26Z'}] waiting=[]). The worker's crashed container logged: `ValidationError: 1 validation error for SpeculativeConfig   Value error, Model architectures ['NemotronH_Omni_Reasoning_V3'] are not supported for now. Supported architectures: dict_keys(['AfmoeForCausalLM', 'ApertusForCausalLM', 'ArceeForCausalLM', 'ArcticForCausalLM', 'AXK1ForCausalLM', 'BailingMoeForCausalLM', 'BailingMoeV2ForCausalLM', 'BailingMoeV2_5ForCausalLM', 'BailingMoeV3ForCausalLM', 'B`. The scaffold's `.env` already marks the MTP path UNVERIFIED on this architecture; at vLLM 0.28.0 (the engine in `vllm-runtime:1.5.0-efa`) `SpeculativeConfig` rejects the checkpoint's architecture, so no spec-decode number exists for this cell and the engine was torn down (0 GPU idle). The row stays PENDING.
+
+¹⁰ 2026-10-13, window 20261013T073500Z, one server launch on one p5en.48xlarge, TP8 worker, image `nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.5.0-efa` (node-recorded digest `sha256:a1bc3d20ea2b…`), with `MODEL_VARIANT=NVFP4` and `MODEL_PATH=/shared/nemotron/super/nvfp4/nemotron_3_5_super_ga_candidate_mtp_boosted_nvfp4_20261001_vv0.1` (the Early-Access NVFP4 checkpoint; served name `nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-NVFP4`; on H200 vLLM serves it through the Marlin weight-only FP4 fallback, BF16 compute, and `WARMUP_ENABLED=auto` turns the frontend warmer on); every other engine flag and deployment-only change as the BF16 row of the same template (namespace, private etcd/NATS, node pin, read-only `fsx-pvc`, teardown label). Measured with this folder's `test-aiperf.sh` default LLM workload (ISL 1024 / OSL 512, `ignore_eos:true`, `--concurrency 10`, `--request-count 100`, `--random-seed 42`) and `AIPERF_WARMUP_REQUESTS=0`: cold run right after the health gate (run id `cold`: TTFT p50 411.81, ITL p50 96.46, tok/s/user p50 10.37, tok/s total 103.24), then a warm run on the same launch (run id `warm`), **the warm run is the row**; both runs 100/100 requests, no errors (aiperf 0.9.0). Row artifacts (sha256): `profile_export_aiperf.json` `125915aaa5c18c35…`, `profile_export.jsonl` `717bb679b87e8547…`, `run-meta.json` `8c0a06c243a310e0…`. n=1 launch; reproducibility across launches, tails, saturation and the other precisions/manifests are not established.
+
+¹¹ 2026-10-13, window 20261013T080334Z, one server launch on two p5en.48xlarge, TP8 prefill on one node and TP8 decode on the other (KV prefill→decode via vLLM `NixlConnector`, LIBFABRIC backend over EFA), image `nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.5.0-efa` (node-recorded digest `sha256:a1bc3d20ea2b…`), with `MODEL_VARIANT=NVFP4` and `MODEL_PATH=/shared/nemotron/super/nvfp4/nemotron_3_5_super_ga_candidate_mtp_boosted_nvfp4_20261001_vv0.1` (the Early-Access NVFP4 checkpoint; served name `nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-NVFP4`; on H200 vLLM serves it through the Marlin weight-only FP4 fallback, BF16 compute, and `WARMUP_ENABLED=auto` turns the frontend warmer on); every other engine flag and deployment-only change as the BF16 row of the same template (namespace, private etcd/NATS, node pin, read-only `fsx-pvc`, teardown label). Measured with this folder's `test-aiperf.sh` default LLM workload (ISL 1024 / OSL 512, `ignore_eos:true`, `--concurrency 10`, `--request-count 100`, `--random-seed 42`) and `AIPERF_WARMUP_REQUESTS=0`: cold run right after the health gate (run id `cold`: TTFT p50 587.69, ITL p50 97.89, tok/s/user p50 10.22, tok/s total 101.14), then a warm run on the same launch (run id `warm`), **the warm run is the row**; both runs 100/100 requests, no errors (aiperf 0.9.0). Row artifacts (sha256): `profile_export_aiperf.json` `576862e49931d528…`, `profile_export.jsonl` `cff1b37d5478cb3a…`, `run-meta.json` `f47feb6406ef8ae1…`. n=1 launch; reproducibility across launches, tails, saturation and the other precisions/manifests are not established.
+
+¹² 2026-10-13: the `agg/dgd`, `agg/dgd-v1beta1`, `disagg/dgd` and `disagg/dgd-v1beta1` cells were **not run** in this campaign. Read-only facts gathered first: the cluster's Dynamo operator (`dynamo-system/dynamo-platform-dynamo-operator-controller-manager`, image `kubernetes-operator:1.4.0`) is cluster-scoped (manager ClusterRoleBinding, no namespace restriction in its `OperatorConfiguration`) and the `dynamographdeployments.nvidia.com` CRD serves `v1alpha1` (storage) and `v1beta1`, so a DGD in this namespace would be reconciled without any platform change. The cells were still not attempted because (1) these templates target a Dynamo **1.5.0** platform (`dgd-v1beta1` is storage-native only there) while the installed operator is 1.4.0, an untested version skew for the 1.5.0 `vllm-runtime` image; (2) operator-managed pods use the platform's shared etcd/NATS, which every measured cell above avoided by design with a private control plane; and (3) the campaign's time budget went to the sweeps and the spec-decode/NVFP4 cells. No DGD object was created. The rows stay PENDING.
+
+¹³ 2026-10-13: `disagg/epd` (BF16 and NVFP4) stays **not run**, per the verified structural caveat in footnote 1 (the encode worker full-loads the VL checkpoint on one GPU at dynamo v1.5.0); nothing was attempted. The rows stay PENDING.
+
+¹⁴ 2026-10-13: the optional vision row (`AIPERF_WORKLOAD=vl`, synthetic 512×512 images on the c=10 profile) was **not run** for any cell in this campaign; the LLM rows and sweeps above exercise the text path only. No `(vl)` row is added.
 
 ## Served-request smoke (not a benchmark)
 
