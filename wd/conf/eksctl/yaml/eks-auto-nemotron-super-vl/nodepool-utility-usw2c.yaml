@@ -1,0 +1,31 @@
+# Utility NodePool: one small on-demand node in us-west-2c for downloading model weights to FSx.
+# Uses the built-in "default" NodeClass (no custom NodeClass needed).
+# No CriticalAddonsOnly taint so regular pods (download jobs) can schedule here.
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: utility-usw2c
+spec:
+  replicas: 1
+  limits:
+    nodes: 2
+  template:
+    spec:
+      nodeClassRef:
+        group: eks.amazonaws.com
+        kind: NodeClass
+        name: default
+      requirements:
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values: ["on-demand"]
+        - key: node.kubernetes.io/instance-type
+          operator: In
+          values: ["m7i.xlarge"]
+        - key: topology.kubernetes.io/zone
+          operator: In
+          values: ["us-west-2c"]
+  disruption:
+    consolidateAfter: Never
+    budgets:
+      - nodes: "1"
