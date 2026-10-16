@@ -30,11 +30,10 @@ else
 	pod_name=nvtop-${host_name}
 	has_pod=$(kubectl get pods | grep ${pod_name} | wc -l)
 	if [ "$has_pod" == "0" ]; then
-		CMD="kubectl run -it --rm $pod_name --image iankoulski/do-nvtop:latest --overrides='{\"apiVersion\": \"v1\", \"spec\": {\"nodeSelector\": { \"kubernetes.io/hostname\": \"$full_node_name\" }}}' --command -- nvtop"
+		CMD="kubectl run -it --rm $pod_name --image iankoulski/do-nvtop:latest --overrides='{\"apiVersion\": \"v1\", \"spec\": {\"nodeName\": \"$full_node_name\", \"tolerations\": [{\"key\": \"nvidia.com/gpu\", \"operator\": \"Exists\", \"effect\": \"NoSchedule\"}], \"containers\": [{\"name\": \"$pod_name\", \"image\": \"iankoulski/do-nvtop:latest\", \"command\": [\"nvtop\"], \"stdin\": true, \"tty\": true, \"securityContext\": {\"privileged\": true}}]}}' --command -- nvtop"
         else
 		CMD="kubectl exec -it $pod_name -- nvtop"
 	fi
 	if [ ! "$VERBOSE" == "false" ]; then echo -e "\n${CMD}\n"; fi
 	eval "$CMD"
 fi
-
