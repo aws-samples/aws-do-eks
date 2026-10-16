@@ -30,11 +30,10 @@ else
         pod_name=efatop-${short_node_name:-4}	
 	has_pod=$(kubectl get pods | grep ${pod_name} | wc -l)
 	if [ "$has_pod" == "0" ]; then
-        	CMD="kubectl run -it --rm --privileged=true $pod_name --image iankoulski/efatop:latest --overrides='{\"apiVersion\": \"v1\", \"spec\": { \"nodeSelector\": { \"kubernetes.io/hostname\": \"$full_node_name\" }, \"volumes\": [ {\"name\": \"sys-vol\", \"hostPath\": { \"path\": \"/sys\", \"type\": \"\" }}], \"containers\":  [ { \"name\": \"efatop\", \"image\": \"iankoulski/efatop:latest\", \"tty\": true, \"stdin\": true, \"command\": [\"bash\",\"-c\",\"efatop\"], \"volumeMounts\": [{ \"name\": \"sys-vol\", \"mountPath\": \"/sys\"}] } ] } }'"
+        	CMD="kubectl run -it --rm $pod_name --image iankoulski/efatop:latest --overrides='{\"apiVersion\": \"v1\", \"spec\": { \"nodeName\": \"$full_node_name\", \"tolerations\": [{\"key\": \"nvidia.com/gpu\", \"operator\": \"Exists\", \"effect\": \"NoSchedule\"}, {\"key\": \"aws.amazon.com/neuron\", \"operator\": \"Exists\", \"effect\": \"NoSchedule\"}], \"volumes\": [ {\"name\": \"sys-vol\", \"hostPath\": { \"path\": \"/sys\", \"type\": \"\" }}], \"containers\":  [ { \"name\": \"efatop\", \"image\": \"iankoulski/efatop:latest\", \"tty\": true, \"stdin\": true, \"command\": [\"bash\",\"-c\",\"efatop\"], \"securityContext\": {\"privileged\": true}, \"volumeMounts\": [{ \"name\": \"sys-vol\", \"mountPath\": \"/sys\"}] } ] } }'"
 	else
 		CMD="kubectl exec -it ${pod_name} -- efatop"
 	fi
         if [ ! "$VERBOSE" == "false" ]; then echo -e "\n${CMD}\n"; fi
         eval "$CMD"
 fi
-

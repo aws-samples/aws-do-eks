@@ -30,11 +30,10 @@ else
 	pod_name=neurontop-${host_name}
 	has_pod=$(kubectl get pods | grep ${pod_name} | wc -l)
 	if [ "$has_pod" == "0" ]; then
-		CMD="kubectl run -it --rm --privileged --pod-running-timeout=6m30s $pod_name --image 763104351884.dkr.ecr.us-east-2.amazonaws.com/pytorch-training-neuronx:2.1.2-neuronx-py310-sdk2.19.1-ubuntu20.04 --overrides='{\"apiVersion\": \"v1\", \"spec\": {\"nodeSelector\": { \"kubernetes.io/hostname\": \"$full_node_name\" }}}' --command -- neuron-top"
+		CMD="kubectl run -it --rm --privileged --pod-running-timeout=6m30s $pod_name --image 763104351884.dkr.ecr.us-east-2.amazonaws.com/pytorch-training-neuronx:2.1.2-neuronx-py310-sdk2.19.1-ubuntu20.04 --overrides='{\"apiVersion\": \"v1\", \"spec\": {\"nodeName\": \"$full_node_name\", \"tolerations\": [{\"key\": \"nvidia.com/gpu\", \"operator\": \"Exists\", \"effect\": \"NoSchedule\"}, {\"key\": \"aws.amazon.com/neuron\", \"operator\": \"Exists\", \"effect\": \"NoSchedule\"}]}}' --command -- neuron-top"
 	else
 		CMD="kubectl exec -it $pod_name -- neuron-top"
 	fi
 	if [ ! "$VERBOSE" == "false" ]; then echo -e "\n${CMD}\n"; fi
 	eval "$CMD"
 fi
-
