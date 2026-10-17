@@ -27,18 +27,38 @@ NVFP4 row measures a different kernel path than a B200 one.
 | precision | template | GPU | GPUs | TTFT p50 (ms) | ITL p50 (ms) | tok/s/user p50 | tok/s total | status |
 |---|---|---|---|---|---|---|---|---|
 | BF16 | `agg/deployment` | NVIDIA H200 | 8 | 348.46 | 87.30 | 11.45 | 113.56 | MEASURED ⁴ |
+| BF16 | `agg/lws` | | 16 | | | | | PENDING ¹⁵ |
+| BF16 | `agg/lws-ep` | | 16 | | | | | PENDING ¹⁵ |
 | BF16 | `agg/dgd` | | 8 | | | | | PENDING ¹² |
 | BF16 | `agg/dgd-v1beta1` | | 8 | | | | | PENDING ¹² |
+| BF16 | `agg/dgd-grove` | | 16 | | | | | PENDING ¹⁵ |
+| BF16 | `agg/dgd-grove-ep` | | 16 | | | | | PENDING ¹⁵ |
 | BF16 | `disagg/deployment` | NVIDIA H200 | 16 | 509.73 | 86.68 | 11.54 | 114.33 | MEASURED ⁵ |
+| BF16 | `disagg/lws-2pp` | | 32 | | | | | PENDING ¹⁵ |
+| BF16 | `disagg/lws-pp2` | | 32 | | | | | PENDING ¹⁵ |
+| BF16 | `disagg/lws-ep` | | 32 | | | | | PENDING ¹⁵ |
 | BF16 | `disagg/dgd` | | 16 | | | | | PENDING ¹² |
 | BF16 | `disagg/dgd-v1beta1` | | 16 | | | | | PENDING ¹² |
+| BF16 | `disagg/dgd-grove` | | 16 | | | | | PENDING ¹⁵ |
+| BF16 | `disagg/dgd-grove-pp2` | | 32 | | | | | PENDING ¹⁵ |
+| BF16 | `disagg/dgd-grove-ep` | | 32 | | | | | PENDING ¹⁵ |
 | BF16 | `disagg/epd` | | 8+enc | | | | | PENDING¹ |
 | NVFP4 | `agg/deployment` | NVIDIA H200 | 8 | 387.85 | 97.93 | 10.21 | 101.51 | MEASURED ¹⁰ |
+| NVFP4 | `agg/lws` | | 16 | | | | | PENDING ¹⁵ |
+| NVFP4 | `agg/lws-ep` | | 16 | | | | | PENDING ¹⁵ |
 | NVFP4 | `agg/dgd` | | 8 | | | | | PENDING ¹² |
 | NVFP4 | `agg/dgd-v1beta1` | | 8 | | | | | PENDING ¹² |
+| NVFP4 | `agg/dgd-grove` | | 16 | | | | | PENDING ¹⁵ |
+| NVFP4 | `agg/dgd-grove-ep` | | 16 | | | | | PENDING ¹⁵ |
 | NVFP4 | `disagg/deployment` | NVIDIA H200 | 16 | 576.36 | 96.77 | 10.33 | 102.16 | MEASURED ¹¹ |
+| NVFP4 | `disagg/lws-2pp` | | 32 | | | | | PENDING ¹⁵ |
+| NVFP4 | `disagg/lws-pp2` | | 32 | | | | | PENDING ¹⁵ |
+| NVFP4 | `disagg/lws-ep` | | 32 | | | | | PENDING ¹⁵ |
 | NVFP4 | `disagg/dgd` | | 16 | | | | | PENDING ¹² |
 | NVFP4 | `disagg/dgd-v1beta1` | | 16 | | | | | PENDING ¹² |
+| NVFP4 | `disagg/dgd-grove` | | 16 | | | | | PENDING ¹⁵ |
+| NVFP4 | `disagg/dgd-grove-pp2` | | 32 | | | | | PENDING ¹⁵ |
+| NVFP4 | `disagg/dgd-grove-ep` | | 32 | | | | | PENDING ¹⁵ |
 | NVFP4 | `disagg/epd` | | 8+enc | | | | | PENDING¹ |
 
 ¹ `disagg/epd` carries a verified structural caveat before any run is attempted: at
@@ -124,6 +144,8 @@ spec-decode number into a non-spec row.
 ¹³ 2026-10-13: `disagg/epd` (BF16 and NVFP4) stays **not run**, per the verified structural caveat in footnote 1 (the encode worker full-loads the VL checkpoint on one GPU at dynamo v1.5.0); nothing was attempted. The rows stay PENDING.
 
 ¹⁴ 2026-10-13: the optional vision row (`AIPERF_WORKLOAD=vl`, synthetic 512×512 images on the c=10 profile) was **not run** for any cell in this campaign; the LLM rows and sweeps above exercise the text path only. No `(vl)` row is added.
+
+¹⁵ 2026-10-17: the ten multinode and Grove templates (`agg/lws`, `agg/lws-ep`, `agg/dgd-grove`, `agg/dgd-grove-ep`, `disagg/lws-2pp`, `disagg/lws-pp2`, `disagg/lws-ep`, `disagg/dgd-grove`, `disagg/dgd-grove-pp2`, `disagg/dgd-grove-ep`) were added for `MANIFEST_TYPE` parity with `../../ultra` and were **not run** in this change: no cluster was available to it, so the templates are render-validated only (`run.sh` driven with a stubbed `kubectl` for every type × BF16/NVFP4, YAML parse, landed-value asserts, `kubectl apply --dry-run=client`; server-side validation was not possible). GPU counts are the `.env` defaults (`EP_DP_SIZE=2`, `NODE_COUNT_PER_WORKER=2`). Each template is ultra's with only the Super delta applied; the PP>1 disagg cells (`lws-2pp`, `lws-pp2`, `dgd-grove-pp2`) additionally carry the stock-vLLM-0.28 caveat from their template headers (on ultra those shapes required the `:1.4.0-patched` image). The rows stay PENDING.
 
 ## Served-request smoke (not a benchmark)
 
