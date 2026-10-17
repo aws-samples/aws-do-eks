@@ -1,0 +1,147 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: gdrcopy-installer
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: "gdrcopy-installer"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: "gdrcopy-installer"
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: "gdrcopy-installer"
+      name: "gdrcopy-installer"
+    spec:
+      hostPID: true
+      tolerations:
+      - operator: "Exists"
+      nodeSelector:
+        eks.amazonaws.com/nodeclass: "p5e-efa"
+      initContainers:
+      - name: installer
+        image: alpine:latest
+        securityContext:
+          privileged: true
+        command:
+        - sh
+        - -c
+        - |
+          KVER=$(cat /host-proc/version | awk '{print $3}')
+          echo "GDRCopy installer — Kernel: ${KVER}"
+
+          # Check if already loaded
+          if grep -q gdrdrv /host-proc/modules && [ -c /host-dev/gdrdrv ]; then
+              echo "gdrdrv already loaded and /dev/gdrdrv exists"
+              exit 0
+          fi
+
+          # Copy pre-built module from kernel-kit
+          DEST="/host-modules/${KVER}/kernel/drivers/extra/video/nvidia/gdrcopy/open-gpu"
+          mkdir -p "${DEST}"
+          cp /module/gdrdrv.ko "${DEST}/gdrdrv.ko"
+          chmod 644 "${DEST}/gdrdrv.ko"
+          echo "Copied gdrdrv.ko to ${DEST}"
+
+          # Load the module
+          if ! grep -q gdrdrv /host-proc/modules; then
+              nsenter -t 1 -m -p -- insmod "/lib/modules/${KVER}/kernel/drivers/extra/video/nvidia/gdrcopy/open-gpu/gdrdrv.ko" 2>&1
+              if ! grep -q gdrdrv /host-proc/modules; then
+                  echo "insmod failed, trying depmod + modprobe..."
+                  nsenter -t 1 -m -p -- depmod -a 2>/dev/null
+                  nsenter -t 1 -m -p -- modprobe gdrdrv 2>&1
+              fi
+          fi
+
+          # Verify
+          if ! grep -q gdrdrv /host-proc/modules; then
+              echo "FAILED to load gdrdrv"
+              nsenter -t 1 -m -p -- dmesg 2>/dev/null | tail -5
+              exit 1
+          fi
+          echo "Module loaded: $(grep gdrdrv /host-proc/modules | awk '{print $1, $2, "bytes"}')"
+
+          # Create device node
+          if [ ! -c /host-dev/gdrdrv ]; then
+              MAJOR=$(awk '$2=="gdrdrv" {print $1}' /host-proc/devices)
+              if [ -n "${MAJOR}" ]; then
+                  nsenter -t 1 -m -p -- mknod /dev/gdrdrv c ${MAJOR} 0
+                  nsenter -t 1 -m -p -- chmod 666 /dev/gdrdrv
+                  echo "Created /dev/gdrdrv (major=${MAJOR})"
+              else
+                  echo "FAILED: no gdrdrv in /proc/devices"
+                  exit 1
+              fi
+          else
+              nsenter -t 1 -m -p -- chmod 666 /dev/gdrdrv 2>/dev/null
+              echo "/dev/gdrdrv exists"
+          fi
+          echo "DONE"
+        volumeMounts:
+        - name: host-proc
+          mountPath: /host-proc
+          readOnly: true
+        - name: host-modules
+          mountPath: /host-modules
+        - name: host-dev
+          mountPath: /host-dev
+        - name: module
+          mountPath: /module
+          readOnly: true
+      containers:
+      - name: monitor
+        image: alpine:latest
+        securityContext:
+          privileged: true
+        command:
+        - sh
+        - -c
+        - |
+          echo "GDRCopy monitor started"
+          while true; do
+            KVER=$(cat /host-proc/version | awk '{print $3}')
+            if grep -q gdrdrv /host-proc/modules; then
+              if [ -c /host-dev/gdrdrv ]; then
+                echo "$(date) OK gdrdrv loaded, /dev/gdrdrv present"
+              else
+                echo "$(date) WARN /dev/gdrdrv missing — recreating"
+                MAJOR=$(awk '$2=="gdrdrv" {print $1}' /host-proc/devices)
+                [ -n "${MAJOR}" ] && nsenter -t 1 -m -p -- mknod /dev/gdrdrv c ${MAJOR} 0 2>/dev/null
+                nsenter -t 1 -m -p -- chmod 666 /dev/gdrdrv 2>/dev/null
+              fi
+            else
+              echo "$(date) WARN gdrdrv NOT loaded — reloading"
+              nsenter -t 1 -m -p -- insmod "/lib/modules/${KVER}/kernel/drivers/extra/video/nvidia/gdrcopy/open-gpu/gdrdrv.ko" 2>/dev/null || \
+                nsenter -t 1 -m -p -- modprobe gdrdrv 2>/dev/null
+              if ! [ -c /host-dev/gdrdrv ]; then
+                MAJOR=$(awk '$2=="gdrdrv" {print $1}' /host-proc/devices)
+                [ -n "${MAJOR}" ] && nsenter -t 1 -m -p -- mknod /dev/gdrdrv c ${MAJOR} 0 2>/dev/null
+                nsenter -t 1 -m -p -- chmod 666 /dev/gdrdrv 2>/dev/null
+              fi
+            fi
+            sleep 60
+          done
+        volumeMounts:
+        - name: host-proc
+          mountPath: /host-proc
+          readOnly: true
+        - name: host-modules
+          mountPath: /host-modules
+          readOnly: true
+        - name: host-dev
+          mountPath: /host-dev
+      volumes:
+      - name: host-proc
+        hostPath:
+          path: /proc
+      - name: host-modules
+        hostPath:
+          path: /lib/modules
+      - name: host-dev
+        hostPath:
+          path: /dev
+      - name: module
+        configMap:
+          name: gdrdrv-module
