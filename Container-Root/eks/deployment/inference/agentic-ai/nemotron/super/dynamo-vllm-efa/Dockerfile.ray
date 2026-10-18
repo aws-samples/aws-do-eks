@@ -1,0 +1,127 @@
+# Nemotron 3.5 Super VL on Dynamo 1.5.0 (-efa base) + vLLM 0.28.0 + Ray + PP patches.
+#
+# Extends the golden image recipe to add Ray for multi-node PP2 templates (agg/lws,
+# disagg/lws-2pp, disagg/lws-pp2) and patches to enable pipeline parallelism for the
+# NemotronH_Super_Omni_Reasoning_V3 multimodal architecture.
+#
+#   patch 1 (SupportsPP): The NemotronH_Nano_VL_V2 model class (resolved from the
+#            NemotronH_Super_Omni_Reasoning_V3 --hf-overrides alias) wraps
+#            NemotronHForCausalLM which already implements SupportsPP, but the VL
+#            wrapper itself does not inherit SupportsPP. Its forward() already
+#            accepts and delegates intermediate_tensors to the language model.
+#            The patch adds SupportsPP to the class bases so verify_with_parallel_config
+#            passes the registry.is_pp_supported_model() check.
+#
+# Ray 2.55.1 is the PP2-proven pin from the ultra golden image (import-verified
+# with vllm 0.28.0).
+#
+# Build:
+#   docker build -f Dockerfile.ray -t dynamo-vllm-efa:1.5.0-super-ray .
+#
+# ---------------------------------------------------------------------------------------
+ARG BASE=nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.5.0-efa
+FROM ${BASE}
+
+USER root
+SHELL ["/bin/bash", "-c"]
+
+# ---- 0) Assert the base is what we think it is ---------------------------------------
+RUN set -eux; \
+    python3 - <<'PY'
+import importlib.metadata as m
+v = m.version("vllm");      assert v.startswith("0.28"), f"base vllm {v} != 0.28.x"
+d = m.version("ai-dynamo"); assert d.startswith("1.5"),  f"base ai-dynamo {d} != 1.5.x"
+t = tuple(int(x) for x in m.version("transformers").split(".")[:2])
+assert t >= (5, 13), f"base transformers {m.version('transformers')} < 5.13 (NemotronH inspection)"
+fi_py  = m.version("flashinfer-python")
+fi_jit = m.version("flashinfer-jit-cache").split("+")[0]
+assert fi_py == fi_jit, f"flashinfer skew {fi_py} != {fi_jit}"
+m.version("runai-model-streamer")
+from vllm.model_executor.models.registry import ModelRegistry
+archs = ModelRegistry.get_supported_archs()
+assert "NemotronH_Super_Omni_Reasoning_V3" in archs, \
+    "Super Omni arch alias missing from the vLLM registry"
+import typing
+from vllm.config.speculative import MTPModelTypes
+assert "nemotron_h_mtp" in typing.get_args(MTPModelTypes), \
+    "nemotron_h_mtp missing from MTPModelTypes"
+print(f"[base] vllm={v} ai-dynamo={d} transformers={m.version('transformers')} "
+      f"flashinfer={fi_py} super-omni-arch+mtp OK")
+PY
+
+# ---- 1) AWS EFA userspace + NIXL LIBFABRIC: assert from base -------------------------
+ARG EFA_INSTALLER_MIN=1.50.0
+RUN set -eux; \
+    test -x /opt/amazon/efa/bin/fi_info || { echo "FAIL: base has no /opt/amazon/efa"; exit 1; }; \
+    VER="$(grep -oE '[0-9]+\.[0-9]+\.[0-9]+' /opt/amazon/efa_installed_packages | head -1)"; \
+    printf '%s\n%s\n' "${EFA_INSTALLER_MIN}" "${VER}" | sort -V -C || { echo "FAIL: base EFA ${VER} < ${EFA_INSTALLER_MIN}"; exit 1; }; \
+    test -f /opt/amazon/ofi-nccl/lib/libnccl-net-ofi.so || { echo "FAIL: aws-ofi-nccl plugin missing"; exit 1; }; \
+    ls /usr/local/lib/python3.12/dist-packages/nixl_cu*.libs/nixl/libplugin_LIBFABRIC.so >/dev/null 2>&1 \
+      || { echo "FAIL: NIXL LIBFABRIC plugin missing"; exit 1; }; \
+    echo "${VER}" > /opt/efa-installer.version; \
+    /opt/amazon/efa/bin/fi_info --version
+
+# ---- 2) Ray for multi-node PP2 templates ----------------------------------------------
+#    ray: PP>1 agg needs `--distributed-executor-backend ray`. ABSENT from every NGC base.
+#    2.55.1 is the PP2-proven pin from the ultra golden image. Import-verified below.
+RUN set -eux; \
+    pip install --no-cache-dir "ray[default]==2.55.1"; \
+    python3 - <<'PY'
+import importlib.metadata as m
+assert m.version("ray") == "2.55.1", m.version("ray")
+assert m.version("vllm").startswith("0.28"), "ray install drifted vllm off 0.28.x"
+import ray  # import, not just metadata
+print("[deps] ray=2.55.1 installed, vllm intact")
+PY
+
+# ---- 3) VL wrapper PP patch: NemotronH_Nano_VL_V2 SupportsPP + make_empty_intermediate_tensors
+#    MEASURED (2026-10-18, 4x p5e.48xlarge EKS Auto Mode): agg/lws with PP2 + Ray crashes
+#    at verify_with_parallel_config (SupportsPP missing) and then at the profile_run
+#    (make_empty_intermediate_tensors missing). The patch:
+#      a) Adds SupportsPP to the imports and class bases.
+#      b) Adds make_empty_intermediate_tensors() returning {"hidden_states", "residual"}
+#         matching what NemotronHModel.forward() yields on intermediate PP ranks.
+COPY patches/apply_pp_patch.py /opt/vllm-patches/apply_pp_patch.py
+RUN python3 /opt/vllm-patches/apply_pp_patch.py
+
+# ---- 4) CVE remediation: drop worker-UNUSED binaries ----------------------------------
+# 3a) nats-server (17 MB)
+RUN rm -f /usr/bin/nats-server || true
+# 3b) etcd server binaries (61 MB)
+RUN rm -rf /usr/local/bin/etcd
+# 3c) apt launchpadlib chain
+RUN apt-get remove -y --purge \
+      python3-launchpadlib python3-lazr.restfulclient python3-oauthlib \
+      python3-jwt python3-httplib2 python3-cryptography \
+    && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
+# 3d) ray_dist.jar — Java driver CVEs, Python-only usage
+RUN rm -f /usr/local/lib/python3.12/dist-packages/ray/jars/ray_dist.jar
+
+# ---- 5) Final assert ------------------------------------------------------------------
+RUN set -eux; \
+    python3 - <<'PY'
+import importlib.metadata as m, os, subprocess
+for p, want in {"vllm": "0.28", "ai-dynamo": "1.5", "ray": "2.55.1"}.items():
+    got = m.version(p); assert got.startswith(want), f"{p} {got} !~ {want}"
+assert os.path.exists("/opt/amazon/efa/bin/fi_info"), "EFA userspace missing"
+assert not os.path.exists("/usr/bin/nats-server"), "nats-server still present"
+assert not os.path.exists("/usr/local/bin/etcd"), "etcd bins still present"
+try:
+    m.version("mooncake-transfer-engine"); raise AssertionError("mooncake re-appeared")
+except m.PackageNotFoundError:
+    pass
+assert not os.path.exists("/opt/uv/cache"), "uv cache re-appeared"
+cv = tuple(int(x) for x in m.version("cryptography").split(".")[:1])
+assert cv >= (50,), f"venv cryptography {m.version('cryptography')} < 50"
+import flashinfer_cubin
+d = os.path.join(os.path.dirname(flashinfer_cubin.__file__), "cubins")
+rc = subprocess.run(["su", "dynamo", "-s", "/bin/bash", "-c", f"mkdir '{d}/.writetest' && rmdir '{d}/.writetest'"]).returncode
+assert rc == 0, f"{d} not writable by the dynamo user"
+import ray
+print(f"[golden-1.5.0-super-ray] all prerequisites OK: vllm={m.version('vllm')} "
+      f"ai-dynamo={m.version('ai-dynamo')} ray={m.version('ray')}")
+PY
+
+USER dynamo
+LABEL org.opencontainers.image.description="Golden-image 1.5.0 for Nemotron 3.5 Super VL + Ray + PP: Dynamo 1.5.0 (-efa base, EFA 1.50 + NIXL LIBFABRIC baked) + vLLM 0.28.0 + Ray 2.55.1 + NemotronH_Nano_VL_V2 SupportsPP patch (multi-node PP2) + CVE remediation"

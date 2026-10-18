@@ -1,0 +1,503 @@
+# ==================================================================================
+# LeaderWorkerSet for Nemotron 3.5 Super VL 120B-A12B agg worker (TP${GPU_PER_WORKER} x PP2 over 2 nodes)
+#
+# Author: Anton Alexander
+#
+# Ported from ../../ultra/agg/lws.yaml-template for manifest parity with the ultra tree. A
+# single 8-GPU node already holds this model (BF16 ~249 GB), so this two-node engine shape is
+# OPTIONAL here - it exists so the same MANIFEST_TYPE renders in both trees. Ray bootstraps the
+# PP group exactly as in ultra; the engine is TP${GPU_PER_WORKER} inside each node, PP2 across
+# the two nodes over EFA.
+# Multimodal: the leader runs with --enable-multimodal and DYN_REQUEST_PLANE=tcp - both from
+# dynamo v1.5.0's launch/agg_multimodal.sh (TCP avoids the NATS 1 MB payload limit that base64
+# images exceed). Pods run on the POD NETWORK (no hostNetwork anywhere in the super tree); the
+# EFA device plugin injects the NICs via the vpc.amazonaws.com/efa resource.
+#
+# UNTESTED: this template has NOT been applied to a live cluster or served. It is ultra's
+# template with only the Super delta applied (model identity + .env knobs, --hf-overrides alias,
+# multimodal flags, stock 1.5.0-efa image, pod network, CPU/MEM knobs, 60-min probe ceiling);
+# it has passed rendering + kubectl --dry-run=client only. Every date, measurement and
+# 'PROVEN'/'MEASURED' statement kept below is ULTRA's provenance for the value next to it, not
+# a claim about this model. See ../test/RESULTS.md (PENDING rows).
+# ==================================================================================
+apiVersion: leaderworkerset.x-k8s.io/v1
+kind: LeaderWorkerSet
+metadata:
+  name: ${DEPLOYMENT_NAME}-worker
+  namespace: ${NAMESPACE}
+  labels:
+    app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
+    app.kubernetes.io/component: worker
+spec:
+  replicas: 1
+  startupPolicy: LeaderCreated
+  rolloutStrategy:
+    type: RollingUpdate
+  leaderWorkerTemplate:
+    restartPolicy: None
+    size: 2
+    leaderTemplate:
+      metadata:
+        labels:
+          app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
+          app.kubernetes.io/component: worker
+          dynamo-role: leader
+      spec:
+        nodeSelector:
+          node.kubernetes.io/instance-type: ${INSTANCE_TYPE_WORKER}
+        tolerations:
+          - { key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
+          - { key: vpc.amazonaws.com/efa, operator: Exists, effect: NoSchedule }
+        affinity:
+          podAntiAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
+                topologyKey: kubernetes.io/hostname
+        volumes:
+          - name: dshm
+            emptyDir: { medium: Memory, sizeLimit: 64Gi }
+          - name: shared
+            persistentVolumeClaim: { claimName: fsx-pvc }
+          - name: gdrdrv
+            hostPath: { path: /dev/gdrdrv, type: CharDevice }
+        containers:
+          - name: vllm
+            image: ${REGISTRY}${IMAGE}${TAG}
+            imagePullPolicy: Always
+            securityContext:
+              capabilities:
+                add: ["IPC_LOCK"]
+            command: ["/bin/bash", "-c"]
+            args:
+              - |-
+                set -eu
+                # The dynamo-efa image preset HPCX_* env breaks libfabric - must clear.
+                unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
+                      HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
+                if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
+                if [ -n "${DOLLAR}{POD_IP:-}" ] && [ "${DOLLAR}{POD_IP:-}" = "${DOLLAR}{NODE_IP:-}" ]; then
+                  echo "[leader] FATAL: pod IP ${DOLLAR}POD_IP == node IP ${DOLLAR}NODE_IP on the pod network."
+                  echo "[leader]        Cluster DNS cannot answer for this pod, so NATS/etcd are unreachable."
+                  echo "[leader]        RESTARTING WILL NOT HELP - the sandbox keeps the address. Remedy:"
+                  echo "[leader]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
+                  exit 1
+                fi
+                # Wait for own DNS to be resolvable (LWS pods come up simultaneously)
+                # Resolve in ONE getent per attempt and break only on a NON-EMPTY address.
+                for i in ${DOLLAR}(seq 1 150); do
+                  LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk 'NR==1{print ${DOLLAR}1; exit}')
+                  if [ -n "${DOLLAR}LEADER_IP" ]; then break; fi
+                  echo "[leader] waiting for DNS LWS_LEADER_ADDRESS=${DOLLAR}LWS_LEADER_ADDRESS (${DOLLAR}i)"
+                  sleep 2
+                done
+                echo "[leader] LWS_LEADER_ADDRESS=${DOLLAR}LWS_LEADER_ADDRESS LEADER_IP=${DOLLAR}LEADER_IP"
+                if [ -z "${DOLLAR}LEADER_IP" ]; then
+                  echo "[leader] FATAL: ${DOLLAR}LWS_LEADER_ADDRESS did not resolve within 300s; exiting for a clean restart (do NOT proceed with an empty leader address)"
+                  exit 1
+                fi
+                # Gloo needs a SINGLE concrete iface name (not NCCL's ^exclude list).
+                # On the LEADER, "ip route get $LEADER_IP" resolves to `lo` because
+                # it's routing to itself.  Instead, look up which iface *carries* the
+                # pod IP so Gloo advertises the routable address.
+                export GLOO_SOCKET_IFNAME=${DOLLAR}(ip -o -4 addr show 2>/dev/null | awk -v ip="${DOLLAR}LEADER_IP" '{split(${DOLLAR}4,a,"/"); if(a[1]==ip){print ${DOLLAR}2; exit}}')
+                [ -z "${DOLLAR}GLOO_SOCKET_IFNAME" ] && export GLOO_SOCKET_IFNAME=${DOLLAR}(ip -4 route get 1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if(${DOLLAR}i=="dev"){print ${DOLLAR}(i+1); exit}}')
+                echo "[leader] GLOO_SOCKET_IFNAME=${DOLLAR}GLOO_SOCKET_IFNAME"
+                # Start Ray head
+                ray start --head --port=6379 --node-ip-address="${DOLLAR}LEADER_IP" --num-gpus=${GPU_PER_WORKER}
+                # Wait for worker to join
+                for i in ${DOLLAR}(seq 1 120); do
+                  N=${DOLLAR}(ray status 2>/dev/null | awk '/Active:/{flag=1; next} /Pending:|Recent failures:|Resources/{flag=0} flag' | grep -c node_ || true)
+                  echo "[leader] ray nodes seen: ${DOLLAR}N (target 2)"
+                  if [ "${DOLLAR}{N:-0}" -ge 2 ]; then break; fi
+                  sleep 5
+                done
+                # Cold-start warmup (detached)
+                (
+                  FE="http://${DEPLOYMENT_NAME}-frontend.${NAMESPACE}.svc.cluster.local:8000"
+                  # Gate on the LEADER's own dyn-system /health (localhost:${DYN_SYSTEM_PORT}),
+                  LH="http://localhost:${DOLLAR}{DYN_SYSTEM_PORT:-9090}/health"
+                  WARMUP_CONCURRENCY=${DOLLAR}{WARMUP_CONCURRENCY:-10}
+                  WARMUP_ENABLED=${DOLLAR}{WARMUP_ENABLED:-auto}
+                  case "${DOLLAR}WARMUP_ENABLED" in
+                    auto) case "${MODEL_NAME}" in
+                            *NVFP4*|*nvfp4*) : ;;
+                            *) echo "[warmup] ${MODEL_NAME} is not NVFP4; warmup not needed, skipping (non-fatal)"; exit 0 ;;
+                          esac ;;
+                    0|false|no) echo "[warmup] WARMUP_ENABLED=${DOLLAR}WARMUP_ENABLED; skipping (non-fatal)"; exit 0 ;;
+                  esac
+                  if ! command -v curl >/dev/null 2>&1; then
+                    echo "[warmup] curl not present; skipping cold-start warmup (non-fatal)"
+                  else
+                    warmed=0
+                    for i in ${DOLLAR}(seq 1 360); do
+                      # Engine ready = leader /health is 200 AND the frontend lists this model
+                      # (the model only appears in /v1/models once the backend has registered).
+                      if curl -sf -o /dev/null --max-time 5 "${DOLLAR}LH" 2>/dev/null \
+                         && curl -sf --max-time 5 "${DOLLAR}FE/v1/models" 2>/dev/null | grep -q "${MODEL_NAME}"; then
+                        echo "[warmup] engine ready (leader /health 200 + model registered); priming batch=1 Mamba decode kernel (one-time JIT)"
+                        curl -s -o /dev/null --max-time 900 "${DOLLAR}FE/v1/completions" \
+                          -H 'Content-Type: application/json' \
+                          -d "{\"model\":\"${MODEL_NAME}\",\"prompt\":\"warmup\",\"max_tokens\":4,\"temperature\":0}" \
+                          && echo "[warmup] batch=1 warm; priming concurrent batch buckets 1..${DOLLAR}WARMUP_CONCURRENCY" \
+                          || echo "[warmup] batch=1 warmup returned non-zero (non-fatal)"
+                        # Concurrent burst: compile the decode-kernel variants a concurrent
+                        # benchmark will hit, so its opening doesn't pay that JIT.
+                        for j in ${DOLLAR}(seq 1 "${DOLLAR}WARMUP_CONCURRENCY"); do
+                          curl -s -o /dev/null --max-time 900 "${DOLLAR}FE/v1/completions" \
+                            -H 'Content-Type: application/json' \
+                            -d "{\"model\":\"${MODEL_NAME}\",\"prompt\":\"warmup\",\"max_tokens\":4,\"temperature\":0}" &
+                        done
+                        wait
+                        echo "[warmup] concurrent batch buckets warm; benchmark opening will be fast"
+                        warmed=1
+                        break
+                      fi
+                      sleep 5
+                    done
+                    # Fail LOUD if the gate never opened (still non-fatal to the pod): falling out of
+                    # this loop silently is indistinguishable from "warmed up fine", and the next
+                    # benchmark would quietly pay the JIT tax again.
+                    [ "${DOLLAR}warmed" = 1 ] || echo "[warmup] gave up after 30min waiting for ${DOLLAR}LH 200 + ${MODEL_NAME} in ${DOLLAR}FE/v1/models; the FIRST benchmark requests will pay the Mamba JIT (non-fatal)"
+                  fi
+                ) &
+                # Launch Dynamo vLLM worker
+                exec python3 -m dynamo.vllm \
+                  --model ${MODEL_PATH} \
+                  --served-model-name ${MODEL_NAME} \
+                  --load-format ${LOAD_FORMAT} \
+                  --enable-multimodal \
+                  --tensor-parallel-size ${GPU_PER_WORKER} \
+                  --pipeline-parallel-size 2 \
+                  --distributed-executor-backend ray \
+                  --max-model-len ${MAX_MODEL_LEN} \
+                  --gpu-memory-utilization ${GPU_MEM_UTIL} \
+                  --enforce-eager \
+                  --trust-remote-code ${MAMBA_FLAGS} ${SPEC_DECODE_FLAG} \
+                  --hf-overrides '{"architectures":["${HF_OVERRIDE_ARCH}"]}'
+            env:
+              - { name: DYNAMO_BACKEND, value: vllm }
+              - { name: DYN_NAMESPACE, value: dynamo }
+              - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }
+              - { name: NATS_SERVER, value: "${NATS_URL}" }
+              - { name: DYN_SYSTEM_ENABLED, value: "true" }
+              - { name: DYN_SYSTEM_PORT, value: "9090" }
+              # TCP request plane for multimodal payloads (base64 images exceed the NATS 1 MB
+              # limit) - dynamo v1.5.0 launch/agg_multimodal.sh sets exactly this.
+              - { name: DYN_REQUEST_PLANE, value: tcp }
+              # The warmup subshell above reads these INSIDE the container, so they have to be
+              # passed through here - without these two lines the knobs in .env are inert and the
+              # ladder is always 1..10 no matter what you set in your shell.
+              - { name: WARMUP_ENABLED, value: "${WARMUP_ENABLED}" }
+              - { name: WARMUP_CONCURRENCY, value: "${WARMUP_CONCURRENCY}" }
+              # Raise the multiproc-executor RPC deadline (default 300s) so a JIT-heavy first
+              # concurrent decode step (per-batch-size Mamba kernel Triton compile under an
+              # aiperf --concurrency N opening) cannot trip the timeout and kill EngineCore
+              # ("TimeoutError: RPC call to execute_model timed out" -> EngineDeadError -> pod
+              # restart loop). Harmless in steady state — real decode steps are ms.
+              - { name: VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS, value: "1800" }
+              # Read by the duplicate-address preflight in args above (pod network).
+              - { name: POD_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
+              - { name: NODE_IP, valueFrom: { fieldRef: { fieldPath: status.hostIP } } }
+              - { name: HF_HOME, value: /tmp/hf_cache }
+              - { name: HF_MODULES_CACHE, value: /tmp/hf_cache/modules }
+              - { name: FLASHINFER_CUBIN_DIR, value: /tmp/flashinfer_cubins }
+              - { name: VLLM_LOGGING_LEVEL, value: INFO }
+              # NVFP4 on sm100: vllm_omni's Quack/CuTeDSL FP8 scaled-mm monkey-patch defaults
+              # ON, but its tuned-compile helper cannot spawn inside vLLM's daemonic TP workers
+              # ("daemonic processes are not allowed to have children") -> exception + FlashInfer
+              # fallback on EVERY GEMM call, nothing caches, and decode crawls at ~0.05-0.1 tok/s
+              # while looking "stuck". Force it off; BF16 never enters this path (no-op there).
+              - { name: VLLM_OMNI_USE_QUACK_FP8, value: "0" }
+              # EFA / libfabric
+              - { name: FI_PROVIDER, value: efa }
+              - { name: FI_EFA_USE_DEVICE_RDMA, value: "1" }
+              - { name: FI_EFA_FORK_SAFE, value: "1" }
+              # NCCL_NET_PLUGIN / NCCL_TUNER_PLUGIN intentionally UNSET so NCCL
+              # auto-discovers libnccl-net.so (aws-ofi-nccl) via ldconfig →
+              # NET/OFI over EFA rdma devices. Setting them to "" disables
+              # discovery and forces NET/Socket fallback on eth0 (TCP, no RDMA).
+              # PP=2 spans two nodes, so the PP group is the FIRST cross-node NCCL collective
+              # (TP groups are intra-node/NVLink and init fine). NVLS must be OFF or that first
+              # all-reduce dies with "NCCL error: remote process exited or there was a network
+              # error".
+              - { name: NCCL_NVLS_ENABLE, value: "0" }
+              - { name: NCCL_DEBUG, value: INFO }
+              - { name: NCCL_DEBUG_SUBSYS, value: "INIT,NET" }
+              # NCCL accepts the ^exclude list; Gloo does NOT (it needs a single concrete
+              # iface name — a "^lo" value fails with "Unable to find address for: ^lo").
+              # GLOO_SOCKET_IFNAME is therefore exported at runtime in the launch script
+              # (resolved from the route to the leader), NOT set here.
+              # MUST exclude pod-id-link0: EKS Pod Identity adds a link-local NIC
+              # (169.254.170.x) that NCCL otherwise enumerates as a net device; cross-node
+              # it then tries to connect to 169.254.170.23 -> "Connection refused" and the
+              # PP all-reduce dies with "remote process exited". Excluding it leaves only
+              # the routable primary VPC NIC (enp73s0:10.x).
+              - { name: NCCL_SOCKET_IFNAME, value: "^lo,docker,veth,eni,pod-id-link0" }
+            ports:
+              - { containerPort: 9090, name: dyn-system }
+            startupProbe:
+              httpGet: { path: /health, port: 9090 }
+              periodSeconds: 30
+              timeoutSeconds: 10
+              failureThreshold: 120  # 60 min ceiling for a cold ~249 GB BF16 Lustre load; harmless once ready
+            readinessProbe:
+              httpGet: { path: /health, port: 9090 }
+              periodSeconds: 30
+              timeoutSeconds: 10
+              failureThreshold: 10
+            resources:
+              requests:
+                cpu: "${CPU_PER_WORKER}"
+                memory: ${MEM_PER_WORKER}
+                nvidia.com/gpu: "${GPU_PER_WORKER}"
+                vpc.amazonaws.com/efa: "${EFA_PER_WORKER}"
+              limits:
+                cpu: "${CPU_PER_WORKER}"
+                memory: ${MEM_PER_WORKER}
+                nvidia.com/gpu: "${GPU_PER_WORKER}"
+                vpc.amazonaws.com/efa: "${EFA_PER_WORKER}"
+            volumeMounts:
+              - { name: dshm, mountPath: /dev/shm }
+              - { name: shared, mountPath: /shared }
+              - { name: gdrdrv, mountPath: /dev/gdrdrv }
+    workerTemplate:
+      metadata:
+        labels:
+          app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
+          app.kubernetes.io/component: worker
+          dynamo-role: worker
+      spec:
+        nodeSelector:
+          node.kubernetes.io/instance-type: ${INSTANCE_TYPE_WORKER}
+        tolerations:
+          - { key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
+          - { key: vpc.amazonaws.com/efa, operator: Exists, effect: NoSchedule }
+        affinity:
+          podAntiAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
+                topologyKey: kubernetes.io/hostname
+        volumes:
+          - name: dshm
+            emptyDir: { medium: Memory, sizeLimit: 64Gi }
+          - name: shared
+            persistentVolumeClaim: { claimName: fsx-pvc }
+          - name: gdrdrv
+            hostPath: { path: /dev/gdrdrv, type: CharDevice }
+        containers:
+          - name: vllm
+            image: ${REGISTRY}${IMAGE}${TAG}
+            imagePullPolicy: Always
+            securityContext:
+              capabilities:
+                add: ["IPC_LOCK"]
+            command: ["/bin/bash", "-c"]
+            args:
+              - |-
+                set -eu
+                unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
+                      HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
+                if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
+                if [ -n "${DOLLAR}{POD_IP:-}" ] && [ "${DOLLAR}{POD_IP:-}" = "${DOLLAR}{NODE_IP:-}" ]; then
+                  echo "[worker] FATAL: pod IP ${DOLLAR}POD_IP == node IP ${DOLLAR}NODE_IP on the pod network."
+                  echo "[worker]        Cluster DNS cannot answer for this pod, so NATS/etcd are unreachable."
+                  echo "[worker]        RESTARTING WILL NOT HELP - the sandbox keeps the address. Remedy:"
+                  echo "[worker]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
+                  exit 1
+                fi
+                for i in ${DOLLAR}(seq 1 150); do
+                  LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk 'NR==1{print ${DOLLAR}1; exit}')
+                  if [ -n "${DOLLAR}LEADER_IP" ]; then break; fi
+                  echo "[worker] waiting for DNS LWS_LEADER_ADDRESS=$LWS_LEADER_ADDRESS (${DOLLAR}i)"
+                  sleep 2
+                done
+                if [ -z "${DOLLAR}LEADER_IP" ]; then
+                  echo "[worker] FATAL: ${DOLLAR}LWS_LEADER_ADDRESS did not resolve within 300s; exiting for a clean restart (do NOT proceed with an empty leader address)"
+                  exit 1
+                fi
+                # Resolve MY_IP on the SAME interface that routes to the leader (the pod's
+                # primary NIC); `hostname -i` is only the fallback.
+                MY_IP=${DOLLAR}(ip -4 route get "${DOLLAR}LEADER_IP" 2>/dev/null | awk '{for(i=1;i<=NF;i++) if(${DOLLAR}i=="src"){print ${DOLLAR}(i+1); exit}}')
+                [ -z "${DOLLAR}MY_IP" ] && MY_IP=${DOLLAR}(hostname -i | awk '{print ${DOLLAR}1}')
+                echo "[worker] LEADER_IP=${DOLLAR}LEADER_IP MY_IP=${DOLLAR}MY_IP"
+                # Gloo needs a SINGLE concrete iface name (not NCCL's ^exclude list). Resolve the
+                # iface that routes to the leader (same primary VPC NIC as MY_IP above).
+                export GLOO_SOCKET_IFNAME=${DOLLAR}(ip -4 route get "${DOLLAR}LEADER_IP" 2>/dev/null | awk '{for(i=1;i<=NF;i++) if(${DOLLAR}i=="dev"){print ${DOLLAR}(i+1); exit}}')
+                echo "[worker] GLOO_SOCKET_IFNAME=${DOLLAR}GLOO_SOCKET_IFNAME"
+                # Wait for Ray head to be reachable
+                for i in ${DOLLAR}(seq 1 60); do
+                  if (echo > /dev/tcp/${DOLLAR}LEADER_IP/6379) 2>/dev/null; then break; fi
+                  echo "[worker] waiting for Ray head ${DOLLAR}LEADER_IP:6379 (${DOLLAR}i)"
+                  sleep 5
+                done
+                exec ray start --address="${DOLLAR}LEADER_IP:6379" --node-ip-address="${DOLLAR}MY_IP" --num-gpus=${GPU_PER_WORKER} --block
+            env:
+              - { name: DYNAMO_BACKEND, value: vllm }
+              - { name: DYN_NAMESPACE, value: dynamo }
+              - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }
+              - { name: NATS_SERVER, value: "${NATS_URL}" }
+              # Match the leader: raise the execute_model RPC deadline so a JIT-heavy first
+              # concurrent decode step can't trip the 300s default and kill this worker's shard.
+              - { name: VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS, value: "1800" }
+              # Read by the duplicate-address preflight in args above (pod network).
+              - { name: POD_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
+              - { name: NODE_IP, valueFrom: { fieldRef: { fieldPath: status.hostIP } } }
+              # NVFP4 on sm100: same Quack/CuTeDSL FP8 fix as the leader — engine ranks the
+              # raylet spawns on this node inherit this container's env. The measured failure
+              # was in multiproc TP workers; keep the Quack patch off on every rank so NVFP4
+              # behavior is uniform across shapes. BF16 never enters this path (no-op there).
+              - { name: VLLM_OMNI_USE_QUACK_FP8, value: "0" }
+              - { name: HF_HOME, value: /tmp/hf_cache }
+              - { name: HF_MODULES_CACHE, value: /tmp/hf_cache/modules }
+              - { name: FLASHINFER_CUBIN_DIR, value: /tmp/flashinfer_cubins }
+              - { name: FI_PROVIDER, value: efa }
+              - { name: FI_EFA_USE_DEVICE_RDMA, value: "1" }
+              - { name: FI_EFA_FORK_SAFE, value: "1" }
+              # NCCL_NET_PLUGIN / NCCL_TUNER_PLUGIN intentionally UNSET so NCCL
+              # auto-discovers libnccl-net.so (aws-ofi-nccl) via ldconfig →
+              # NET/OFI over EFA rdma devices. Setting them to "" disables
+              # discovery and forces NET/Socket fallback on eth0 (TCP, no RDMA).
+              # PP=2 spans two nodes, so the PP group is the FIRST cross-node NCCL collective
+              # (TP groups are intra-node/NVLink and init fine). NVLS must be OFF or that first
+              # all-reduce dies with "NCCL error: remote process exited or there was a network
+              # error".
+              - { name: NCCL_NVLS_ENABLE, value: "0" }
+              - { name: NCCL_DEBUG, value: INFO }
+              - { name: NCCL_DEBUG_SUBSYS, value: "INIT,NET" }
+              # NCCL accepts the ^exclude list; Gloo does NOT (it needs a single concrete
+              # iface name — a "^lo" value fails with "Unable to find address for: ^lo").
+              # GLOO_SOCKET_IFNAME is therefore exported at runtime in the launch script
+              # (resolved from the route to the leader), NOT set here.
+              # MUST exclude pod-id-link0: EKS Pod Identity adds a link-local NIC
+              # (169.254.170.x) that NCCL otherwise enumerates as a net device; cross-node
+              # it then tries to connect to 169.254.170.23 -> "Connection refused" and the
+              # PP all-reduce dies with "remote process exited". Excluding it leaves only
+              # the routable primary VPC NIC (enp73s0:10.x).
+              - { name: NCCL_SOCKET_IFNAME, value: "^lo,docker,veth,eni,pod-id-link0" }
+            resources:
+              requests:
+                cpu: "${CPU_PER_WORKER}"
+                memory: ${MEM_PER_WORKER}
+                nvidia.com/gpu: "${GPU_PER_WORKER}"
+                vpc.amazonaws.com/efa: "${EFA_PER_WORKER}"
+              limits:
+                cpu: "${CPU_PER_WORKER}"
+                memory: ${MEM_PER_WORKER}
+                nvidia.com/gpu: "${GPU_PER_WORKER}"
+                vpc.amazonaws.com/efa: "${EFA_PER_WORKER}"
+            volumeMounts:
+              - { name: dshm, mountPath: /dev/shm }
+              - { name: shared, mountPath: /shared }
+              - { name: gdrdrv, mountPath: /dev/gdrdrv }
+---
+# Frontend Deployment (separate from LWS, runs on m5).
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ${DEPLOYMENT_NAME}-frontend
+  namespace: ${NAMESPACE}
+  labels:
+    app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
+    app.kubernetes.io/component: frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
+      app.kubernetes.io/component: frontend
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
+        app.kubernetes.io/component: frontend
+    spec:
+      # PREFER the small CPU node when the cluster has one, but stay schedulable when it
+      # does not (all-GPU cluster): a hard nodeSelector on an absent instance type pins
+      # this pod to Pending. Tolerations let it land on a GPU node as the fallback.
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - { key: node.kubernetes.io/instance-type, operator: In, values: [ "${INSTANCE_TYPE_FRONTEND}" ] }
+      tolerations:
+        - { key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
+        - { key: vpc.amazonaws.com/efa, operator: Exists, effect: NoSchedule }
+      volumes:
+        - name: shared
+          persistentVolumeClaim: { claimName: fsx-pvc }
+      containers:
+        - name: frontend
+          image: ${REGISTRY}${IMAGE}${TAG}
+          imagePullPolicy: Always
+          command: ["/bin/bash", "-c"]
+          # Older images ship plain python3 and have NO /opt/dynamo/venv - activate only when
+          # present (1.5.0-efa verified 2026-10-06: no venv, system python).
+          args:
+            - |-
+              set -eu
+              if [ -n "${DOLLAR}{POD_IP:-}" ] && [ "${DOLLAR}{POD_IP:-}" = "${DOLLAR}{NODE_IP:-}" ]; then
+                echo "[frontend] FATAL: pod IP ${DOLLAR}POD_IP == node IP ${DOLLAR}NODE_IP on the pod network."
+                echo "[frontend]        Cluster DNS cannot answer for this pod, so NATS/etcd are unreachable."
+                echo "[frontend]        RESTARTING WILL NOT HELP - the sandbox keeps the address. Remedy:"
+                echo "[frontend]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
+                exit 1
+              fi
+              # dynamo.frontend calls DistributedRuntime() which connects to NATS immediately
+              # with NO retry, so a transient cold-start DNS miss (EAI_AGAIN, "Temporary failure
+              # in name resolution") is fatal and CrashLoops the pod even though NATS is healthy.
+              NATS_HOST=${DOLLAR}{NATS_SERVER#*://}; NATS_HOST=${DOLLAR}{NATS_HOST%%:*}
+              for i in ${DOLLAR}(seq 1 60); do
+                if getent hosts "${DOLLAR}NATS_HOST" >/dev/null 2>&1; then break; fi
+                echo "[frontend] waiting for DNS NATS_HOST=${DOLLAR}NATS_HOST (${DOLLAR}i)"
+                sleep 2
+              done
+              if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
+              exec python3 -m dynamo.frontend --http-port 8000 --http-host 0.0.0.0
+          env:
+            - { name: DYNAMO_BACKEND, value: vllm }
+            - { name: DYN_NAMESPACE, value: dynamo }
+            - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }
+            # Read only by the duplicate-address preflight in args above. The worker templates
+            # call the same value MY_IP because vLLM/ray also consume it; nothing else reads it
+            # here, so it keeps the field's own name.
+            - { name: POD_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
+            - { name: NODE_IP, valueFrom: { fieldRef: { fieldPath: status.hostIP } } }
+            - { name: NATS_SERVER, value: "${NATS_URL}" }
+            # TCP request plane for multimodal payloads (base64 images exceed the NATS 1 MB
+            # limit) - dynamo v1.5.0 launch/agg_multimodal.sh sets exactly this.
+            - { name: DYN_REQUEST_PLANE, value: tcp }
+            - { name: HF_HOME, value: /tmp/hf_cache }
+          ports:
+            - { containerPort: 8000, name: http }
+          readinessProbe:
+            tcpSocket: { port: 8000 }
+            periodSeconds: 10
+            failureThreshold: 30
+          resources:
+            requests: { cpu: "2", memory: 4Gi }
+            limits: { cpu: "4", memory: 8Gi }
+          volumeMounts:
+            - { name: shared, mountPath: /shared }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ${DEPLOYMENT_NAME}-frontend
+  namespace: $NAMESPACE
+  labels:
+    app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
+    app.kubernetes.io/component: frontend
+spec:
+  selector:
+    app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
+    app.kubernetes.io/component: frontend
+  ports:
+    - port: 8000
+      targetPort: 8000
+      name: http
