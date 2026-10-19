@@ -29,12 +29,14 @@
 # been built, so whether stock vLLM 0.28 accepts PP>1 disagg on this hybrid-Mamba checkpoint
 # is UNVERIFIED until a live run - it is neither assumed to work nor assumed to fail here.
 #
-# UNTESTED: this template has NOT been applied to a live cluster or served. It is ultra's
+# NOT SUPPORTED on stock vLLM 0.28.0 (both precisions): same NIXL connector gate as lws-2pp, plus decode-side PP>1
+# is rejected too (../test/RESULTS.md footnotes 26, 42).
+# It is ultra's
 # template with only the Super delta applied (model identity + .env knobs, --hf-overrides alias,
 # multimodal flags, stock 1.5.0-efa image, pod network, CPU/MEM knobs, 60-min probe ceiling);
-# it has passed rendering + kubectl --dry-run=client only. Every date, measurement and
+# it passed rendering + kubectl --dry-run before the live runs. Every date, measurement and
 # 'PROVEN'/'MEASURED' statement kept below is ULTRA's provenance for the value next to it, not
-# a claim about this model. See ../test/RESULTS.md (PENDING rows).
+# a claim about this model; the Super measurements live in ../test/RESULTS.md.
 # =============================================================================
 ---
 apiVersion: leaderworkerset.x-k8s.io/v1

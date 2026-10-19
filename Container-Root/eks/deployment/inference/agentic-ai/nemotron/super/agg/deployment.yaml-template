@@ -16,7 +16,8 @@
 # sound_config is null, so audio inputs are disabled by the model itself; image and
 # video inputs go through the registered nano_nemotron_vl implementation.
 #
-# UNTESTED: no cell of this matrix has been served yet — see ../test/RESULTS.md.
+# LIVE-VALIDATED 2026-10-19 on H200 (p5en.48xlarge, Dynamo 1.4.0 platform): served and measured at BF16 and NVFP4 with
+# ../test/test-aiperf.sh as shipped — ../test/RESULTS.md footnotes 35 (BF16) and 38 (NVFP4).
 #
 # API call example (image prompts go to /v1/chat/completions as image_url content):
 #   FE=$(kubectl get svc ${DEPLOYMENT_NAME}-frontend -o jsonpath='{.spec.clusterIP}')

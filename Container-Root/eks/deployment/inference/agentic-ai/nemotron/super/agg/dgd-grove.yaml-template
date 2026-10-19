@@ -70,12 +70,14 @@
 # trees. Multimodal: --enable-multimodal on the worker and DYN_REQUEST_PLANE=tcp graph-wide,
 # both from dynamo v1.5.0's launch/agg_multimodal.sh.
 #
-# UNTESTED: this template has NOT been applied to a live cluster or served. It is ultra's
+# LIVE-VALIDATED 2026-10-19 on H200 (p5en.48xlarge, Dynamo 1.4.0 platform): served and measured at BF16 and NVFP4 with
+# ../test/test-aiperf.sh as shipped — ../test/RESULTS.md footnotes 21 (BF16) and 32 (NVFP4).
+# It is ultra's
 # template with only the Super delta applied (model identity + .env knobs, --hf-overrides alias,
 # multimodal flags, stock 1.5.0-efa image, pod network, CPU/MEM knobs, 60-min probe ceiling);
-# it has passed rendering + kubectl --dry-run=client only. Every date, measurement and
+# it passed rendering + kubectl --dry-run before the live runs. Every date, measurement and
 # 'PROVEN'/'MEASURED' statement kept below is ULTRA's provenance for the value next to it, not
-# a claim about this model. See ../test/RESULTS.md (PENDING rows).
+# a claim about this model; the Super measurements live in ../test/RESULTS.md.
 # =============================================================================
 ---
 apiVersion: nvidia.com/v1beta1

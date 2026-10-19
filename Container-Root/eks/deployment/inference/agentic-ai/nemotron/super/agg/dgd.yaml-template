@@ -20,7 +20,8 @@
 # version is v1beta1 (v1.5.0 release notes) and v1alpha1 applies with a
 # deprecation warning; use dgd-v1beta1.yaml-template to be storage-native there.
 #
-# UNTESTED: no cell of this matrix has been served yet — see ../test/RESULTS.md.
+# LIVE-VALIDATED 2026-10-19 on H200 (p5en.48xlarge, Dynamo 1.4.0 platform): served and measured at BF16 and NVFP4 with
+# ../test/test-aiperf.sh as shipped — ../test/RESULTS.md footnotes 16 (BF16) and 23 (NVFP4).
 # =============================================================================
 ---
 apiVersion: nvidia.com/v1alpha1

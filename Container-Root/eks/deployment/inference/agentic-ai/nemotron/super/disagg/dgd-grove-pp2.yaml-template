@@ -107,12 +107,14 @@
 # follows dynamo v1.5.0's launch/disagg_multimodal_p_d.sh: prefill runs --enable-multimodal,
 # decode adds --enable-mm-embeds; no TCP request plane on the P/D path.
 #
-# UNTESTED: this template has NOT been applied to a live cluster or served. It is ultra's
+# NOT SUPPORTED on stock vLLM 0.28.0 (both precisions): same NIXL connector gate as lws-2pp under the operator's
+# multinode bootstrap (../test/RESULTS.md footnotes 26, 42).
+# It is ultra's
 # template with only the Super delta applied (model identity + .env knobs, --hf-overrides alias,
 # multimodal flags, stock 1.5.0-efa image, pod network, CPU/MEM knobs, 60-min probe ceiling);
-# it has passed rendering + kubectl --dry-run=client only. Every date, measurement and
+# it passed rendering + kubectl --dry-run before the live runs. Every date, measurement and
 # 'PROVEN'/'MEASURED' statement kept below is ULTRA's provenance for the value next to it, not
-# a claim about this model. See ../test/RESULTS.md (PENDING rows).
+# a claim about this model; the Super measurements live in ../test/RESULTS.md.
 # =============================================================================
 ---
 apiVersion: nvidia.com/v1beta1

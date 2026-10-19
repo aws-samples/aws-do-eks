@@ -26,7 +26,9 @@
 # exact caveat. The P/D and agg templates do not have this constraint (the prefill worker
 # encodes internally).
 #
-# UNTESTED: no cell of this matrix has been served yet — see ../test/RESULTS.md.
+# NOT SUPPORTED at dynamo 1.5.0 (both precisions): after full-loading the checkpoint the encode worker raises
+# NotImplementedError("Model not supported") — get_encoder_components knows only the LLaVA and Qwen-VL families
+# (../test/RESULTS.md footnotes 19, 42). The PD worker itself comes up.
 # ==========================================================================================
 ---
 apiVersion: apps/v1
