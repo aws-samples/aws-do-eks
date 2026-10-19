@@ -81,17 +81,21 @@ spec:
           - { name: dshm,        emptyDir: { medium: Memory, sizeLimit: 64Gi } }
           - { name: gdrdrv,      hostPath: { path: /dev/gdrdrv, type: CharDevice } }
           - { name: shared,      persistentVolumeClaim: { claimName: fsx-pvc } }
+          - name: runtime-bootstrap
+            configMap: { name: ${DEPLOYMENT_NAME}-runtime-bootstrap, optional: true }
         containers:
           - name: vllm
             image: ${REGISTRY}${IMAGE}${TAG}
             imagePullPolicy: Always
-            securityContext: { capabilities: { add: ["IPC_LOCK"] } }
+            securityContext: { capabilities: { add: ["IPC_LOCK"] }${RUNTIME_BOOTSTRAP_SECURITY_CONTEXT} }
             command: ["/bin/bash", "-c"]
             args:
               - |-
                 set -u
                 unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
                       HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
+                # RUNTIME_BOOTSTRAP (test-only, see .env): ':' unless RUNTIME_BOOTSTRAP=1.
+                ${RUNTIME_BOOTSTRAP_RAY_CMD}
                 LOG_DIR=/shared
                 if ! ( : > "${DOLLAR}LOG_DIR/.wtest-${DOLLAR}HOSTNAME" ) 2>/dev/null; then
                   echo "[prefill-leader p5en] ${DOLLAR}LOG_DIR not writable; logging to /tmp instead"
@@ -215,6 +219,7 @@ spec:
               - { name: dshm,       mountPath: /dev/shm }
               - { name: gdrdrv,     mountPath: /dev/gdrdrv }
               - { name: shared,     mountPath: /shared }
+              - { name: runtime-bootstrap, mountPath: /opt/runtime-bootstrap, readOnly: true }
     workerTemplate:
       metadata:
         labels:
@@ -243,17 +248,21 @@ spec:
           - { name: dshm,       emptyDir: { medium: Memory, sizeLimit: 64Gi } }
           - { name: gdrdrv,     hostPath: { path: /dev/gdrdrv, type: CharDevice } }
           - { name: shared,     persistentVolumeClaim: { claimName: fsx-pvc } }
+          - name: runtime-bootstrap
+            configMap: { name: ${DEPLOYMENT_NAME}-runtime-bootstrap, optional: true }
         containers:
           - name: vllm
             image: ${REGISTRY}${IMAGE}${TAG}
             imagePullPolicy: Always
-            securityContext: { capabilities: { add: ["IPC_LOCK"] } }
+            securityContext: { capabilities: { add: ["IPC_LOCK"] }${RUNTIME_BOOTSTRAP_SECURITY_CONTEXT} }
             command: ["/bin/bash", "-c"]
             args:
               - |-
                 set -u
                 unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
                       HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
+                # RUNTIME_BOOTSTRAP (test-only, see .env): ':' unless RUNTIME_BOOTSTRAP=1.
+                ${RUNTIME_BOOTSTRAP_RAY_CMD}
                 # Activate only when venv present
                 if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
                 if [ -n "${DOLLAR}{MY_IP:-}" ] && [ "${DOLLAR}{MY_IP:-}" = "${DOLLAR}{NODE_IP:-}" ]; then
@@ -317,6 +326,7 @@ spec:
               - { name: dshm,       mountPath: /dev/shm }
               - { name: gdrdrv,     mountPath: /dev/gdrdrv }
               - { name: shared,     mountPath: /shared }
+              - { name: runtime-bootstrap, mountPath: /opt/runtime-bootstrap, readOnly: true }
 ---
 apiVersion: leaderworkerset.x-k8s.io/v1
 kind: LeaderWorkerSet
@@ -360,17 +370,21 @@ spec:
           - { name: dshm,       emptyDir: { medium: Memory, sizeLimit: 64Gi } }
           - { name: gdrdrv,     hostPath: { path: /dev/gdrdrv, type: CharDevice } }
           - { name: shared,     persistentVolumeClaim: { claimName: fsx-pvc } }
+          - name: runtime-bootstrap
+            configMap: { name: ${DEPLOYMENT_NAME}-runtime-bootstrap, optional: true }
         containers:
           - name: vllm
             image: ${REGISTRY}${IMAGE}${TAG}
             imagePullPolicy: Always
-            securityContext: { capabilities: { add: ["IPC_LOCK"] } }
+            securityContext: { capabilities: { add: ["IPC_LOCK"] }${RUNTIME_BOOTSTRAP_SECURITY_CONTEXT} }
             command: ["/bin/bash", "-c"]
             args:
               - |-
                 set -u
                 unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
                       HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
+                # RUNTIME_BOOTSTRAP (test-only, see .env): ':' unless RUNTIME_BOOTSTRAP=1.
+                ${RUNTIME_BOOTSTRAP_RAY_CMD}
                 if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
                 # Same writable-log-dir probe as the prefill leader: keep /shared when the PVC
                 # accepts our writes, fall back to /tmp instead of losing the log to EACCES.
@@ -544,6 +558,7 @@ spec:
               - { name: dshm,       mountPath: /dev/shm }
               - { name: gdrdrv,     mountPath: /dev/gdrdrv }
               - { name: shared,     mountPath: /shared }
+              - { name: runtime-bootstrap, mountPath: /opt/runtime-bootstrap, readOnly: true }
     workerTemplate:
       metadata:
         labels:
@@ -570,17 +585,21 @@ spec:
           - { name: dshm,       emptyDir: { medium: Memory, sizeLimit: 64Gi } }
           - { name: gdrdrv,     hostPath: { path: /dev/gdrdrv, type: CharDevice } }
           - { name: shared,     persistentVolumeClaim: { claimName: fsx-pvc } }
+          - name: runtime-bootstrap
+            configMap: { name: ${DEPLOYMENT_NAME}-runtime-bootstrap, optional: true }
         containers:
           - name: vllm
             image: ${REGISTRY}${IMAGE}${TAG}
             imagePullPolicy: Always
-            securityContext: { capabilities: { add: ["IPC_LOCK"] } }
+            securityContext: { capabilities: { add: ["IPC_LOCK"] }${RUNTIME_BOOTSTRAP_SECURITY_CONTEXT} }
             command: ["/bin/bash", "-c"]
             args:
               - |-
                 set -u
                 unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
                       HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
+                # RUNTIME_BOOTSTRAP (test-only, see .env): ':' unless RUNTIME_BOOTSTRAP=1.
+                ${RUNTIME_BOOTSTRAP_RAY_CMD}
                 # Activate only when venv present.
                 if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
                 if [ -n "${DOLLAR}{MY_IP:-}" ] && [ "${DOLLAR}{MY_IP:-}" = "${DOLLAR}{NODE_IP:-}" ]; then
@@ -644,6 +663,7 @@ spec:
               - { name: dshm,       mountPath: /dev/shm }
               - { name: gdrdrv,     mountPath: /dev/gdrdrv }
               - { name: shared,     mountPath: /shared }
+              - { name: runtime-bootstrap, mountPath: /opt/runtime-bootstrap, readOnly: true }
 ---
 # Frontend Deployment (separate from LWS, runs on cpu).
 apiVersion: apps/v1

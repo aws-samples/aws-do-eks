@@ -177,17 +177,20 @@ spec:
                   topologyKey: kubernetes.io/hostname
           volumes:
             - { name: fsx-pvc, persistentVolumeClaim: { claimName: fsx-pvc } }
+            - { name: runtime-bootstrap, configMap: { name: ${DEPLOYMENT_NAME}-runtime-bootstrap, optional: true } }
           containers:
             - name: main
               image: ${REGISTRY}${IMAGE}${TAG}
               imagePullPolicy: Always
-              securityContext: { capabilities: { add: ["IPC_LOCK"] } }
+              securityContext: { capabilities: { add: ["IPC_LOCK"] }${RUNTIME_BOOTSTRAP_SECURITY_CONTEXT} }
               command: ["/bin/bash", "-c"]
               args:
                 - |-
                   set -u
                   unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
                         HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
+                  # RUNTIME_BOOTSTRAP (test-only, see .env): ':' unless RUNTIME_BOOTSTRAP=1.
+                  ${RUNTIME_BOOTSTRAP_PATCH_CMD}
                   if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
                   if [ -n "${DOLLAR}{POD_IP:-}" ] && [ "${DOLLAR}{POD_IP:-}" = "${DOLLAR}{NODE_IP:-}" ]; then
                     echo "[worker] FATAL: pod IP ${DOLLAR}POD_IP == node IP ${DOLLAR}NODE_IP on the pod network."
@@ -284,6 +287,7 @@ spec:
                 failureThreshold: 10
               volumeMounts:
                 - { name: fsx-pvc, mountPath: /shared }
+                - { name: runtime-bootstrap, mountPath: /opt/runtime-bootstrap, readOnly: true }
               resources:
                 requests:
                   cpu: "${CPU_PER_WORKER}"

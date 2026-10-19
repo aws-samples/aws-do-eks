@@ -1,0 +1,40 @@
+--- a/vllm/model_executor/models/nano_nemotron_vl.py
++++ b/vllm/model_executor/models/nano_nemotron_vl.py
+@@ -29,6 +29,7 @@
+ from vllm.model_executor.models.interfaces import (
+     HasInnerState,
+     IsHybrid,
++    SupportsPP,
+     MultiModalEmbeddings,
+     SupportsMultiModal,
+     SupportsMultiModalPruning,
+@@ -902,7 +903,7 @@
+     dummy_inputs=NanoNemotronVLDummyInputsBuilder,
+ )
+ class NemotronH_Nano_VL_V2(
+-    nn.Module, HasInnerState, IsHybrid, SupportsMultiModal, SupportsMultiModalPruning
++    nn.Module, HasInnerState, IsHybrid, SupportsPP, SupportsMultiModal, SupportsMultiModalPruning
+ ):
+     requires_sequential_video_encoding = True
+     """Temporarily needed for dynamic res video w/ conv3d, doesn't support bs>1 yet"""
+@@ -910,6 +911,18 @@
+         },
+     )
+ 
++    def make_empty_intermediate_tensors(
++        self, batch_size: int, dtype: "torch.dtype", device: "torch.device"
++    ) -> "IntermediateTensors":
++        """Create empty intermediate tensors for non-first PP ranks.
++
++        Must match the keys returned by NemotronHModel.forward() on
++        intermediate ranks: {"hidden_states", "residual"}.
++        """
++        from vllm.sequence import IntermediateTensors
++        hs = self.language_model.config.hidden_size
++        return IntermediateTensors({
++            "hidden_states": torch.zeros(batch_size, hs, dtype=dtype, device=device),
++            "residual": torch.zeros(batch_size, hs, dtype=dtype, device=device),
++        })
++
+     @classmethod
+     def get_placeholder_str(cls, modality: str, i: int) -> str | None:

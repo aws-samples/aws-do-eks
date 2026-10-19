@@ -60,13 +60,15 @@ spec:
             emptyDir: { medium: Memory, sizeLimit: 64Gi }
           - name: shared
             persistentVolumeClaim: { claimName: fsx-pvc }
+          - name: runtime-bootstrap
+            configMap: { name: ${DEPLOYMENT_NAME}-runtime-bootstrap, optional: true }
+          - name: gdrdrv
+            hostPath: { path: /dev/gdrdrv, type: CharDevice }
         containers:
           - name: vllm
             image: ${REGISTRY}${IMAGE}${TAG}
             imagePullPolicy: Always
-            securityContext:
-              capabilities:
-                add: ["IPC_LOCK"]
+            securityContext: { capabilities: { add: ["IPC_LOCK"] }${RUNTIME_BOOTSTRAP_SECURITY_CONTEXT} }
             command: ["/bin/bash", "-c"]
             args:
               - |-
@@ -74,6 +76,8 @@ spec:
                 # The dynamo-efa image preset HPCX_* env breaks libfabric - must clear.
                 unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
                       HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
+                # RUNTIME_BOOTSTRAP (test-only, see .env): ':' unless RUNTIME_BOOTSTRAP=1.
+                ${RUNTIME_BOOTSTRAP_RAY_CMD}
                 if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
                 if [ -n "${DOLLAR}{POD_IP:-}" ] && [ "${DOLLAR}{POD_IP:-}" = "${DOLLAR}{NODE_IP:-}" ]; then
                   echo "[leader] FATAL: pod IP ${DOLLAR}POD_IP == node IP ${DOLLAR}NODE_IP on the pod network."
@@ -95,10 +99,12 @@ spec:
                   echo "[leader] FATAL: ${DOLLAR}LWS_LEADER_ADDRESS did not resolve within 300s; exiting for a clean restart (do NOT proceed with an empty leader address)"
                   exit 1
                 fi
-                # Gloo needs a SINGLE concrete iface name (not NCCL's ^exclude list). Resolve the
-                # iface that routes to the leader (the primary VPC NIC) so Gloo advertises the
-                # routable 10.x IP instead of falling back to loopback.
-                export GLOO_SOCKET_IFNAME=${DOLLAR}(ip -4 route get "${DOLLAR}LEADER_IP" 2>/dev/null | awk '{for(i=1;i<=NF;i++) if(${DOLLAR}i=="dev"){print ${DOLLAR}(i+1); exit}}')
+                # Gloo needs a SINGLE concrete iface name (not NCCL's ^exclude list).
+                # On the LEADER, "ip route get $LEADER_IP" resolves to `lo` because
+                # it's routing to itself.  Instead, look up which iface *carries* the
+                # pod IP so Gloo advertises the routable address.
+                export GLOO_SOCKET_IFNAME=${DOLLAR}(ip -o -4 addr show 2>/dev/null | awk -v ip="${DOLLAR}LEADER_IP" '{split(${DOLLAR}4,a,"/"); if(a[1]==ip){print ${DOLLAR}2; exit}}')
+                [ -z "${DOLLAR}GLOO_SOCKET_IFNAME" ] && export GLOO_SOCKET_IFNAME=${DOLLAR}(ip -4 route get 1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if(${DOLLAR}i=="dev"){print ${DOLLAR}(i+1); exit}}')
                 echo "[leader] GLOO_SOCKET_IFNAME=${DOLLAR}GLOO_SOCKET_IFNAME"
                 # Start Ray head
                 ray start --head --port=6379 --node-ip-address="${DOLLAR}LEADER_IP" --num-gpus=${GPU_PER_WORKER}
@@ -214,6 +220,9 @@ spec:
               # (NIXL KV transfer). agg doesn't use NIXL; the proven cross-node EP16
               # agg template omits them. Kept out here so libfabric provider
               # enumeration matches the known-working env.
+              # Explicit aws-ofi-nccl selection, as in every other EFA template of this tree and
+              # ../../ultra: 1.5.0-efa ships /opt/amazon/ofi-nccl/lib/{libnccl-net.so,libnccl-net-ofi.so}
+              # on an ld.so.conf.d path, so "ofi" resolves; the leader log must show NET/OFI, not NET/Socket.
               - { name: NCCL_NET_PLUGIN, value: ofi }
               - { name: NCCL_TUNER_PLUGIN, value: ofi }
               # PP=2 spans two nodes, so the PP group is the FIRST cross-node NCCL collective
@@ -259,6 +268,8 @@ spec:
             volumeMounts:
               - { name: dshm, mountPath: /dev/shm }
               - { name: shared, mountPath: /shared }
+              - { name: gdrdrv, mountPath: /dev/gdrdrv }
+              - { name: runtime-bootstrap, mountPath: /opt/runtime-bootstrap, readOnly: true }
     workerTemplate:
       metadata:
         labels:
@@ -283,19 +294,23 @@ spec:
             emptyDir: { medium: Memory, sizeLimit: 64Gi }
           - name: shared
             persistentVolumeClaim: { claimName: fsx-pvc }
+          - name: runtime-bootstrap
+            configMap: { name: ${DEPLOYMENT_NAME}-runtime-bootstrap, optional: true }
+          - name: gdrdrv
+            hostPath: { path: /dev/gdrdrv, type: CharDevice }
         containers:
           - name: vllm
             image: ${REGISTRY}${IMAGE}${TAG}
             imagePullPolicy: Always
-            securityContext:
-              capabilities:
-                add: ["IPC_LOCK"]
+            securityContext: { capabilities: { add: ["IPC_LOCK"] }${RUNTIME_BOOTSTRAP_SECURITY_CONTEXT} }
             command: ["/bin/bash", "-c"]
             args:
               - |-
                 set -eu
                 unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
                       HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
+                # RUNTIME_BOOTSTRAP (test-only, see .env): ':' unless RUNTIME_BOOTSTRAP=1.
+                ${RUNTIME_BOOTSTRAP_RAY_CMD}
                 if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
                 if [ -n "${DOLLAR}{POD_IP:-}" ] && [ "${DOLLAR}{POD_IP:-}" = "${DOLLAR}{NODE_IP:-}" ]; then
                   echo "[worker] FATAL: pod IP ${DOLLAR}POD_IP == node IP ${DOLLAR}NODE_IP on the pod network."
@@ -356,6 +371,9 @@ spec:
               # (NIXL KV transfer). agg doesn't use NIXL; the proven cross-node EP16
               # agg template omits them. Kept out here so libfabric provider
               # enumeration matches the known-working env.
+              # Explicit aws-ofi-nccl selection, as in every other EFA template of this tree and
+              # ../../ultra: 1.5.0-efa ships /opt/amazon/ofi-nccl/lib/{libnccl-net.so,libnccl-net-ofi.so}
+              # on an ld.so.conf.d path, so "ofi" resolves; the leader log must show NET/OFI, not NET/Socket.
               - { name: NCCL_NET_PLUGIN, value: ofi }
               - { name: NCCL_TUNER_PLUGIN, value: ofi }
               # PP=2 spans two nodes, so the PP group is the FIRST cross-node NCCL collective
@@ -389,6 +407,8 @@ spec:
             volumeMounts:
               - { name: dshm, mountPath: /dev/shm }
               - { name: shared, mountPath: /shared }
+              - { name: gdrdrv, mountPath: /dev/gdrdrv }
+              - { name: runtime-bootstrap, mountPath: /opt/runtime-bootstrap, readOnly: true }
 ---
 # Frontend Deployment (separate from LWS, runs on m5).
 apiVersion: apps/v1

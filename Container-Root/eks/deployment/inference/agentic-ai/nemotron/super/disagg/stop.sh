@@ -15,8 +15,9 @@ eval "$CMD"
 
 # 2. Sweep by label: catches resources from a previous MANIFEST_TYPE, edited yamls,
 #    or operator-generated children - kubectl delete -f alone leaves those behind.
-#    Everything this stack creates carries app.kubernetes.io/part-of=${DEPLOYMENT_NAME}.
-export CMD="kubectl -n ${NAMESPACE} delete dgd,lws,deploy,sts,svc,pods --selector app.kubernetes.io/part-of=${DEPLOYMENT_NAME} --ignore-not-found"
+#    Everything this stack creates carries app.kubernetes.io/part-of=${DEPLOYMENT_NAME} (cm = the
+#    optional RUNTIME_BOOTSTRAP ConfigMap run.sh publishes).
+export CMD="kubectl -n ${NAMESPACE} delete dgd,lws,deploy,sts,svc,pods,cm --selector app.kubernetes.io/part-of=${DEPLOYMENT_NAME} --ignore-not-found"
 if [ ! "$VERBOSE" == "false" ]; then echo -e "\n${CMD}\n"; fi
 eval "$CMD"
 
@@ -24,5 +25,5 @@ eval "$CMD"
 kubectl -n ${NAMESPACE} wait --for=delete pods --selector app.kubernetes.io/part-of=${DEPLOYMENT_NAME} --timeout=180s 2>/dev/null
 echo ""
 echo "Verifying teardown (the following should be empty):"
-kubectl -n ${NAMESPACE} get dgd,lws,deploy,sts,svc,pods --selector app.kubernetes.io/part-of=${DEPLOYMENT_NAME} 2>/dev/null
+kubectl -n ${NAMESPACE} get dgd,lws,deploy,sts,svc,pods,cm --selector app.kubernetes.io/part-of=${DEPLOYMENT_NAME} 2>/dev/null
 echo "Done."
