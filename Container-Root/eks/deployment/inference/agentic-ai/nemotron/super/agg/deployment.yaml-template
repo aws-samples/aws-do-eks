@@ -1,0 +1,268 @@
+# =============================================================================
+# Nemotron 3.5 Super VL 120B-A12B — AGGREGATED (single node)
+# =============================================================================
+#
+# Author: Anton Alexander
+#
+# Single-node aggregated (prefill+decode) Super-VL 120B-A12B: TP=${GPU_PER_WORKER}/PP=1,
+# intra-node NVLink. BF16 is a ~249 GB checkpoint (~31 GB/GPU at TP8 on 141 GB H200),
+# so one 8-GPU node holds it with KV headroom — no multinode shapes needed (contrast
+# ../../ultra). No EFA needed for the model itself (single node); the EFA taint is
+# tolerated so the pod can land on an EFA-labeled node.
+#
+# Multimodal: the worker runs with --enable-multimodal and DYN_REQUEST_PLANE=tcp —
+# both taken from dynamo v1.5.0's examples/backends/vllm/launch/agg_multimodal.sh
+# (TCP avoids the NATS 1 MB payload limit that base64 images exceed). The checkpoint's
+# sound_config is null, so audio inputs are disabled by the model itself; image and
+# video inputs go through the registered nano_nemotron_vl implementation.
+#
+# UNTESTED: no cell of this matrix has been served yet — see ../test/RESULTS.md.
+#
+# API call example (image prompts go to /v1/chat/completions as image_url content):
+#   FE=$(kubectl get svc ${DEPLOYMENT_NAME}-frontend -o jsonpath='{.spec.clusterIP}')
+#   curl http://${DOLLAR}FE:8000/v1/chat/completions -d '{"model":"${MODEL_NAME}","messages":[{"role":"user","content":"Hello"}],"max_tokens":16}'
+#
+# =============================================================================
+
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ${DEPLOYMENT_NAME}-frontend
+  namespace: ${NAMESPACE}
+  labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}, app.kubernetes.io/component: frontend }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}, app.kubernetes.io/component: frontend } }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}, app.kubernetes.io/component: frontend }
+    spec:
+      # PREFER the small CPU node when the cluster has one, but stay schedulable when it
+      # does not (all-GPU cluster): a hard nodeSelector on an absent instance type pins
+      # this pod to Pending. Tolerations let it land on a GPU node as the fallback.
+      affinity:
+        nodeAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              preference:
+                matchExpressions:
+                  - { key: node.kubernetes.io/instance-type, operator: In, values: [ "${INSTANCE_TYPE_FRONTEND}" ] }
+      tolerations:
+        - { key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
+        - { key: vpc.amazonaws.com/efa, operator: Exists, effect: NoSchedule }
+      volumes:
+        - name: shared
+          persistentVolumeClaim: { claimName: fsx-pvc }
+      containers:
+        - name: frontend
+          image: ${REGISTRY}${IMAGE}${TAG}
+          imagePullPolicy: Always
+          command: ["/bin/bash","-c"]
+          # Older images ship plain python3 and have NO /opt/dynamo/venv - activate only when
+          # present (1.5.0-efa verified 2026-10-06: no venv, system python).
+          args:
+            - |-
+              if [ -n "${DOLLAR}{POD_IP:-}" ] && [ "${DOLLAR}{POD_IP:-}" = "${DOLLAR}{NODE_IP:-}" ]; then
+                echo "[frontend] FATAL: pod IP ${DOLLAR}POD_IP == node IP ${DOLLAR}NODE_IP on the pod network."
+                echo "[frontend]        Cluster DNS cannot answer for this pod, so NATS/etcd are unreachable."
+                echo "[frontend]        RESTARTING WILL NOT HELP - the sandbox keeps the address. Remedy:"
+                echo "[frontend]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
+                exit 1
+              fi
+              NATS_HOST=${DOLLAR}{NATS_SERVER#*://}; NATS_HOST=${DOLLAR}{NATS_HOST%%:*}
+              for i in ${DOLLAR}(seq 1 60); do
+                if getent hosts "${DOLLAR}NATS_HOST" >/dev/null 2>&1; then break; fi
+                echo "[frontend] waiting for DNS NATS_HOST=${DOLLAR}NATS_HOST (${DOLLAR}i)"
+                sleep 2
+              done
+              if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
+              exec python3 -m dynamo.frontend --http-port 8000 --http-host 0.0.0.0
+          env:
+            - { name: DYNAMO_BACKEND, value: vllm }
+            - { name: DYN_NAMESPACE, value: dynamo-agg }
+            # TCP request plane for multimodal payloads (base64 images exceed the NATS 1 MB
+            # limit) — dynamo v1.5.0 launch/agg_multimodal.sh sets exactly this.
+            - { name: DYN_REQUEST_PLANE, value: tcp }
+            - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }
+            - { name: POD_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
+            - { name: NODE_IP, valueFrom: { fieldRef: { fieldPath: status.hostIP } } }
+            - { name: NATS_SERVER, value: "${NATS_URL}" }
+            - { name: HF_HOME, value: /tmp/hf_cache }
+          ports: [ { containerPort: 8000, name: http } ]
+          readinessProbe: { tcpSocket: { port: 8000 }, periodSeconds: 10, failureThreshold: 30 }
+          resources: { requests: { cpu: "2", memory: 4Gi }, limits: { cpu: "4", memory: 8Gi } }
+          volumeMounts:
+            - { name: shared, mountPath: /shared, readOnly: true }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ${DEPLOYMENT_NAME}-frontend
+  namespace: ${NAMESPACE}
+  labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}, app.kubernetes.io/component: frontend }
+spec:
+  selector: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}, app.kubernetes.io/component: frontend }
+  ports: [ { port: 8000, targetPort: 8000, name: http } ]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ${DEPLOYMENT_NAME}-worker
+  namespace: ${NAMESPACE}
+  labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}, app.kubernetes.io/component: worker }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}, app.kubernetes.io/component: worker } }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}, app.kubernetes.io/component: worker }
+    spec:
+      nodeSelector: { node.kubernetes.io/instance-type: ${INSTANCE_TYPE_WORKER} }
+      tolerations:
+        - { key: nvidia.com/gpu, operator: Exists, effect: NoSchedule }
+        - { key: vpc.amazonaws.com/efa, operator: Exists, effect: NoSchedule }
+      volumes:
+        - name: dshm
+          emptyDir: { medium: Memory, sizeLimit: 64Gi }
+        - name: shared
+          persistentVolumeClaim: { claimName: fsx-pvc }
+      containers:
+        - name: vllm
+          image: ${REGISTRY}${IMAGE}${TAG}
+          imagePullPolicy: Always
+          securityContext: { capabilities: { add: ["IPC_LOCK"] } }
+          command: ["/bin/bash","-c"]
+          args:
+            - |-
+              set -eu
+              unset HPCX_DIR HPCX_MPI_DIR HPCX_HOME HPCX_UCX_DIR HPCX_SHARP_DIR \
+                    HPCX_NCCL_RDMA_SHARP_PLUGIN_DIR HPCX_HCOLL_DIR HPCX_MPI_TESTS_DIR
+              if [ -n "${DOLLAR}{POD_IP:-}" ] && [ "${DOLLAR}{POD_IP:-}" = "${DOLLAR}{NODE_IP:-}" ]; then
+                echo "[worker] FATAL: pod IP ${DOLLAR}POD_IP == node IP ${DOLLAR}NODE_IP on the pod network."
+                echo "[worker]        Cluster DNS cannot answer for this pod, so NATS/etcd are unreachable."
+                echo "[worker]        RESTARTING WILL NOT HELP - the sandbox keeps the address. Remedy:"
+                echo "[worker]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
+                exit 1
+              fi
+              if command -v getent >/dev/null 2>&1; then
+                NATS_HOST=${DOLLAR}{NATS_SERVER#*://}; NATS_HOST=${DOLLAR}{NATS_HOST%%:*}
+                for i in ${DOLLAR}(seq 1 30); do
+                  if getent hosts "${DOLLAR}NATS_HOST" >/dev/null 2>&1; then break; fi
+                  if [ "${DOLLAR}i" = 30 ]; then
+                    echo "[worker] FATAL: cannot resolve ${DOLLAR}NATS_HOST after 60s - cluster DNS is broken"
+                    echo "[worker]        for this pod. Check CoreDNS and the CNI, then:"
+                    echo "[worker]        kubectl -n ${NAMESPACE} delete pod ${DOLLAR}HOSTNAME"
+                    exit 1
+                  fi
+                  sleep 2
+                done
+              fi
+              if [ -f /opt/dynamo/venv/bin/activate ]; then source /opt/dynamo/venv/bin/activate; fi
+              # Cold-start warmup (detached)
+              (
+                FE="http://${DEPLOYMENT_NAME}-frontend.${NAMESPACE}.svc.cluster.local:8000"
+                # Gate on THIS pod's dyn-system /health, the signal the startupProbe uses: the
+                # frontend answers /v1/models 200 long before the engine has loaded, so gating on
+                # the frontend alone fires the warmup at a dead engine and compiles nothing.
+                LH="http://localhost:${DOLLAR}{DYN_SYSTEM_PORT:-9090}/health"
+                WARMUP_CONCURRENCY=${DOLLAR}{WARMUP_CONCURRENCY:-10}
+                WARMUP_ENABLED=${DOLLAR}{WARMUP_ENABLED:-auto}
+                case "${DOLLAR}WARMUP_ENABLED" in
+                  auto) case "${MODEL_NAME}" in
+                          *NVFP4*|*nvfp4*) : ;;
+                          *) echo "[warmup] ${MODEL_NAME} is not NVFP4; warmup not needed, skipping (non-fatal)"; exit 0 ;;
+                        esac ;;
+                  0|false|no) echo "[warmup] WARMUP_ENABLED=${DOLLAR}WARMUP_ENABLED; skipping (non-fatal)"; exit 0 ;;
+                esac
+                if ! command -v curl >/dev/null 2>&1; then
+                  echo "[warmup] curl not present; skipping cold-start warmup (non-fatal)"
+                else
+                  warmed=0
+                  for i in ${DOLLAR}(seq 1 360); do
+                    if curl -sf -o /dev/null --max-time 5 "${DOLLAR}LH" 2>/dev/null \
+                       && curl -sf --max-time 5 "${DOLLAR}FE/v1/models" 2>/dev/null | grep -q "${MODEL_NAME}"; then
+                      echo "[warmup] engine ready (own /health 200 + model registered); priming batch=1 Mamba decode kernel (one-time JIT)"
+                      curl -s -o /dev/null --max-time 900 "${DOLLAR}FE/v1/completions" \
+                        -H 'Content-Type: application/json' \
+                        -d "{\"model\":\"${MODEL_NAME}\",\"prompt\":\"warmup\",\"max_tokens\":4,\"temperature\":0}" \
+                        && echo "[warmup] batch=1 warm; priming concurrent batch buckets 1..${DOLLAR}WARMUP_CONCURRENCY" \
+                        || echo "[warmup] batch=1 warmup returned non-zero (non-fatal)"
+                      for j in ${DOLLAR}(seq 1 "${DOLLAR}WARMUP_CONCURRENCY"); do
+                        curl -s -o /dev/null --max-time 900 "${DOLLAR}FE/v1/completions" \
+                          -H 'Content-Type: application/json' \
+                          -d "{\"model\":\"${MODEL_NAME}\",\"prompt\":\"warmup\",\"max_tokens\":4,\"temperature\":0}" &
+                      done
+                      wait
+                      echo "[warmup] concurrent batch buckets warm; benchmark opening will be fast"
+                      warmed=1
+                      break
+                    fi
+                    sleep 5
+                  done
+                  # Fail LOUD if the gate never opened (still non-fatal to the pod): falling out of
+                  # this loop silently is indistinguishable from "warmed up fine", and the next
+                  # benchmark would quietly pay the JIT tax again.
+                  [ "${DOLLAR}warmed" = 1 ] || echo "[warmup] gave up after 30min waiting for ${DOLLAR}LH 200 + ${MODEL_NAME} in ${DOLLAR}FE/v1/models; the FIRST benchmark requests will pay the Mamba JIT (non-fatal)"
+                fi
+              ) &
+              exec python3 -m dynamo.vllm \
+                --model ${MODEL_PATH} \
+                --served-model-name ${MODEL_NAME} \
+                --load-format ${LOAD_FORMAT} \
+                --enable-multimodal \
+                --tensor-parallel-size ${GPU_PER_WORKER} \
+                --pipeline-parallel-size 1 \
+                --max-model-len ${MAX_MODEL_LEN} \
+                --gpu-memory-utilization ${GPU_MEM_UTIL} \
+                --enforce-eager \
+                --trust-remote-code ${MAMBA_FLAGS} ${SPEC_DECODE_FLAG} \
+                --hf-overrides '{"architectures":["${HF_OVERRIDE_ARCH}"]}'
+          env:
+            - { name: DYNAMO_BACKEND, value: vllm }
+            - { name: DYN_NAMESPACE, value: dynamo-agg }
+            # TCP request plane for multimodal payloads — see the frontend note.
+            - { name: DYN_REQUEST_PLANE, value: tcp }
+            - { name: ETCD_ENDPOINTS, value: "${ETCD_URL}" }
+            - { name: POD_IP, valueFrom: { fieldRef: { fieldPath: status.podIP } } }
+            - { name: NODE_IP, valueFrom: { fieldRef: { fieldPath: status.hostIP } } }
+            - { name: NATS_SERVER, value: "${NATS_URL}" }
+            - { name: DYN_SYSTEM_ENABLED, value: "true" }
+            - { name: DYN_SYSTEM_PORT, value: "9090" }
+            - { name: WARMUP_ENABLED, value: "${WARMUP_ENABLED}" }
+            - { name: WARMUP_CONCURRENCY, value: "${WARMUP_CONCURRENCY}" }
+            # Raise the execute_model RPC deadline (default 300s) so a JIT-heavy first concurrent
+            # decode step cannot trip it and kill EngineCore ("RPC call to execute_model timed
+            # out" -> EngineDeadError).
+            - { name: VLLM_EXECUTE_MODEL_TIMEOUT_SECONDS, value: "1800" }
+            # trust-remote-code pulls the checkpoint's processor/config .py files through HF
+            # dynamic modules; both caches must be uid-1000-writable paths.
+            - { name: HF_HOME, value: /tmp/hf_cache }
+            - { name: HF_MODULES_CACHE, value: /tmp/hf_cache/modules }
+            # NVFP4 MoE pulls FlashInfer TRTLLM cubins at runtime. On 1.5.0-efa the installed
+            # cubin dir is group-writable for the dynamo user (verified 2026-10-06), but a
+            # /tmp cubin dir keeps the worker independent of that image detail. BF16 unaffected.
+            - { name: FLASHINFER_CUBIN_DIR, value: /tmp/flashinfer_cubins }
+            - { name: VLLM_LOGGING_LEVEL, value: INFO }
+            # NVFP4 on sm100: vllm_omni's Quack/CuTeDSL FP8 scaled-mm monkey-patch defaults ON,
+            # but its tuned-compile helper cannot spawn inside vLLM's daemonic TP workers ->
+            # exception + FlashInfer fallback on EVERY GEMM call and decode crawls. Force it
+            # off; BF16 never enters this path (no-op there). vllm-omni 0.28.0rc1 is present
+            # in 1.5.0-efa (verified 2026-10-06).
+            - { name: VLLM_OMNI_USE_QUACK_FP8, value: "0" }
+          ports: [ { containerPort: 9090, name: dyn-system } ]
+          startupProbe:
+            httpGet: { path: /health, port: 9090 }
+            periodSeconds: 30
+            timeoutSeconds: 10
+            # BF16 is a ~249 GB checkpoint - a cold Lustre load is minutes, not the hour+ of
+            # ultra's ~1 TB, but the probe must still cover a cold load plus multimodal
+            # processor init. 120 x 30s = 60 min ceiling; harmless once ready (probe stops on
+            # first success).
+            failureThreshold: 120
+          resources:
+            requests: { cpu: "${CPU_PER_WORKER}", memory: ${MEM_PER_WORKER}, nvidia.com/gpu: "${GPU_PER_WORKER}" }
+            limits:   { cpu: "${CPU_PER_WORKER}", memory: ${MEM_PER_WORKER}, nvidia.com/gpu: "${GPU_PER_WORKER}" }
+          volumeMounts:
+            - { name: dshm, mountPath: /dev/shm }
+            - { name: shared, mountPath: /shared }
