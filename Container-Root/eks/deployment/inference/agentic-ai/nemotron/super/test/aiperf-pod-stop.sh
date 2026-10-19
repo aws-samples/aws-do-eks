@@ -8,9 +8,10 @@ if [ -f ./.env ]; then source ./.env; fi
 _NS_ARG=""
 if [ "${NAMESPACE}" != "" ]; then _NS_ARG="-n ${NAMESPACE}"; fi
 
-echo "Removing do-aiperf pod ..."
+AIPERF_POD_NAME="${AIPERF_POD_NAME:-do-aiperf}"
+echo "Removing ${AIPERF_POD_NAME} pod ..."
 
-export CMD="kubectl ${_NS_ARG} delete pod do-aiperf"
+export CMD="kubectl ${_NS_ARG} delete pod ${AIPERF_POD_NAME}"
 
 if [ ! "$VERBOSE" == "false" ]; then echo -e "\n${CMD}\n"; fi
 
