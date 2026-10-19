@@ -689,6 +689,9 @@ spec:
       labels:
         app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
         app.kubernetes.io/component: frontend
+      # Auto Mode: keep Karpenter consolidation from draining the node under a live frontend (test/RESULTS.md p5e notes).
+      annotations:
+        karpenter.sh/do-not-disrupt: "true"
     spec:
       # PREFER the small CPU node when the cluster has one, but stay schedulable when it
       # does not (all-GPU cluster): a hard nodeSelector on an absent instance type pins

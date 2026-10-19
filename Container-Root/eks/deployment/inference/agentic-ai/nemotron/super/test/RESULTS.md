@@ -139,9 +139,10 @@ template requests and what the counters did. GPU counts are the `.env` defaults.
 - **Karpenter consolidation disrupts live pods on the utility nodes:** the `general-purpose` NodePool runs
   `consolidationPolicy: WhenEmptyOrUnderutilized` with `consolidateAfter: 30s`; at 21:12Z it drained an m7i.xlarge that carried a
   live frontend and two running aiperf client pods (`Evicted pod: Underutilized`), killing one warm run mid-flight (⁵⁴). Shipped
-  fix: `test/aiperf-pod-run.sh` now annotates the do-aiperf pod `karpenter.sh/do-not-disrupt: "true"`. The templates do not annotate
-  the frontends; on Auto Mode either add that annotation to the frontend pod templates or set the utility NodePool to `WhenEmpty`
-  for the duration of a campaign.
+  fixes: `test/aiperf-pod-run.sh` annotates the do-aiperf pod `karpenter.sh/do-not-disrupt: "true"`, and every template with a
+  frontend pod (all but `lws-ep`, which has none) now carries the same annotation on that pod (Deployment `template.metadata`,
+  v1alpha1 DGD `extraPodMetadata`, v1beta1 DGD `podTemplate.metadata`; all 34 renders pass a server-side dry-run). Worker pods
+  need nothing: they fill a GPU node, and the GPU pools consolidate `Never`.
 - **Single-node templates and EFA:** none of the three single-node agg templates (`agg/deployment`, `agg/dgd`, `agg/dgd-v1beta1`)
   requests `vpc.amazonaws.com/efa` (`agg/deployment` only tolerates the EFA taint; TP8 runs over NVLink), so their worker pods carry
   no EFA device and their nodes' counters do not move during a run. Their rows say so; the EFA proof is a multi-node matter.

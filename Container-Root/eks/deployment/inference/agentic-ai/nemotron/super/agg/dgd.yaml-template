@@ -52,6 +52,9 @@ spec:
     # ---- Frontend (router, CPU-only) --------------------------------------
     Frontend:
       componentType: frontend
+      # Auto Mode: keep Karpenter consolidation from draining the node under a live frontend (test/RESULTS.md p5e notes).
+      extraPodMetadata:
+        annotations: { karpenter.sh/do-not-disrupt: "true" }
       replicas: 1
       resources:
         requests: { cpu: "2", memory: 4Gi }

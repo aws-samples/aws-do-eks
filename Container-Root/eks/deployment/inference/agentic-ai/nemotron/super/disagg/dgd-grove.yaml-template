@@ -95,7 +95,10 @@ spec:
     - name: Frontend
       type: frontend
       replicas: 1
+      # Auto Mode: keep Karpenter consolidation from draining the node under a live frontend (test/RESULTS.md p5e notes).
       podTemplate:
+        metadata:
+          annotations: { karpenter.sh/do-not-disrupt: "true" }
         spec:
           nodeSelector: { node.kubernetes.io/instance-type: ${INSTANCE_TYPE_FRONTEND} }
           volumes:
