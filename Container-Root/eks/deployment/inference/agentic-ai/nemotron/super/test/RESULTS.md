@@ -69,6 +69,86 @@ cannot fit the template's default 1-GPU encode worker. See the header of
 
 ⁵ 2026-10-12, window 20261012T210839Z, one server launch on two p5en.48xlarge, TP8 prefill on one and TP8 decode on the other (KV prefill→decode via vLLM `NixlConnector`, LIBFABRIC backend over EFA), image `nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.5.0-efa` (node-recorded digest `sha256:a1bc3d20ea2b…`), the same `--hf-overrides` alias and engine flags as ³. Measured with this folder's `test-aiperf.sh` in its default LLM workload (ISL 1024 / OSL 512, `ignore_eos:true`, `--concurrency 10`, `--request-count 100`, `--random-seed 42`, no image flags) and `AIPERF_WARMUP_REQUESTS=0` (no `--warmup-request-count`), i.e. the `../../ultra/test/RESULTS.md` table methodology: a cold run right after the health gate (run id `cold`: TTFT p50 644.36, ITL p50 86.13, tok/s/user p50 11.61, tok/s total 113.37; `profile_export_aiperf.json` sha256 `184e7e64407cacbb…`), then a warm run on the same launch (run id `warm`), and **the warm run is the row**; both runs completed 100/100 requests with no errors (aiperf 0.9.0). The weights are the Early-Access checkpoint `/shared/nemotron/super/bf16/nemotron_3_5_super_ga_candidate_mtp_boosted_20261001_vv0.1` (`MODEL_PATH` export, the .env's documented override) on a shared FSx this lane may only mount read-only, so the manifest ran with namespace, a private etcd/NATS in place of the platform services, a node pin per worker, read-only `fsx-pvc` volumes and `/shared` mounts, a teardown label, and a header comment (the same six deployment-only changes as ³), and the aiperf client pod mounted `fsx-pvc` read-only with its artifact directory on an emptyDir (copied out before the pod was deleted) and was pinned to the decode worker's node; the `aiperf profile` command itself is byte-identical to this script's (only `--artifact-dir` differs). Row artifacts (sha256): `profile_export_aiperf.json` `dc2ec1333f6fa134…`, `profile_export.jsonl` `1b2c7e71f995d56a…`, `run-meta.json` `dd05f05c7a1f43c7…` (`workload: llm`, `warmup_requests: 0`). n=1 launch: one server start, two client runs; reproducibility across launches, an agg-vs-disagg verdict (the two n=1 rows only sit side by side), that every request took the remote-prefill path (KV transfer was verified in the health-gate window, not per request), tail columns, throughput at saturation, MTP, NVFP4, dgd/epd manifests, B200 and long context are not established. **Superseded:** this footnote's checkpoint (the Early-Access GA candidate under `/shared/nemotron/super`) was deprecated by the model owner on 2026-10-19 ("use the shipped HF path"); the row above now carries the 2026-10-19 measurement on the shipped checkpoint (³⁷). The superseded row read TTFT p50 509.73 ms, ITL p50 86.68 ms, 11.54 tok/s/user p50, 114.33 tok/s total.
 
+## EKS Auto Mode p5e.48xlarge (us-west-2) — live results 2026-10-19/20
+
+A second live campaign of the same grid, same method (one launch per cell through the folder's own `run.sh`, shipped chat + image
+smokes, then `test-aiperf.sh` in the default LLM workload: `--concurrency 10`, `--request-count 100`, ISL 1024 / OSL 512,
+`--random-seed 42`, aiperf 0.13.0, a cold run then a warm run on the same launch; the warm run is the row), on a different
+cluster class: an **EKS Auto Mode** cluster (EKS 1.35) with four **p5e.48xlarge** (8x H200 141 GB, **32** EFA interfaces each)
+Bottlerocket "EKS Auto, Nvidia" nodes on a capacity block, plus a utility node; Dynamo platform 1.4.0 operator, Grove + KAI,
+LeaderWorkerSet v0.8.0, FSx for Lustre (`fsx-pvc`, 1.2 TiB). PP>1 shapes were run first, as asked. Every cell carries an EFA
+proof (the four parts listed under "EFA proof" below); a row is MEASURED only with a non-zero EFA byte delta on the cell's nodes
+during the aiperf runs. GPU counts are the `.env` defaults. Footnote numbering continues from the grid above.
+
+| precision | template | GPU | GPUs | TTFT p50 (ms) | ITL p50 (ms) | tok/s/user p50 | tok/s total | status |
+|---|---|---|---|---|---|---|---|---|
+| BF16 | `agg/deployment` | | 8 | | | | | PENDING |
+| BF16 | `agg/lws` | | 16 | | | | | PENDING |
+| BF16 | `agg/lws-ep` | | 16 | | | | | PENDING |
+| BF16 | `agg/dgd` | | 8 | | | | | PENDING |
+| BF16 | `agg/dgd-v1beta1` | | 8 | | | | | PENDING |
+| BF16 | `agg/dgd-grove` | | 16 | | | | | PENDING |
+| BF16 | `agg/dgd-grove-ep` | | 16 | | | | | PENDING |
+| BF16 | `disagg/deployment` | | 16 | | | | | PENDING |
+| BF16 | `disagg/lws-2pp` | | 32 | | | | | PENDING |
+| BF16 | `disagg/lws-pp2` | | 32 | | | | | PENDING |
+| BF16 | `disagg/lws-ep` | | 32 | | | | | PENDING |
+| BF16 | `disagg/dgd` | | 16 | | | | | PENDING |
+| BF16 | `disagg/dgd-v1beta1` | | 16 | | | | | PENDING |
+| BF16 | `disagg/dgd-grove` | | 16 | | | | | PENDING |
+| BF16 | `disagg/dgd-grove-pp2` | | 32 | | | | | PENDING |
+| BF16 | `disagg/dgd-grove-ep` | | 32 | | | | | PENDING |
+| BF16 | `disagg/epd` | | 8+enc | | | | | PENDING |
+| NVFP4 | `agg/deployment` | | 8 | | | | | PENDING |
+| NVFP4 | `agg/lws` | | 16 | | | | | PENDING |
+| NVFP4 | `agg/lws-ep` | | 16 | | | | | PENDING |
+| NVFP4 | `agg/dgd` | | 8 | | | | | PENDING |
+| NVFP4 | `agg/dgd-v1beta1` | | 8 | | | | | PENDING |
+| NVFP4 | `agg/dgd-grove` | | 16 | | | | | PENDING |
+| NVFP4 | `agg/dgd-grove-ep` | | 16 | | | | | PENDING |
+| NVFP4 | `disagg/deployment` | | 16 | | | | | PENDING |
+| NVFP4 | `disagg/lws-2pp` | | 32 | | | | | PENDING |
+| NVFP4 | `disagg/lws-pp2` | | 32 | | | | | PENDING |
+| NVFP4 | `disagg/lws-ep` | | 32 | | | | | PENDING |
+| NVFP4 | `disagg/dgd` | | 16 | | | | | PENDING |
+| NVFP4 | `disagg/dgd-v1beta1` | | 16 | | | | | PENDING |
+| NVFP4 | `disagg/dgd-grove` | | 16 | | | | | PENDING |
+| NVFP4 | `disagg/dgd-grove-pp2` | | 32 | | | | | PENDING |
+| NVFP4 | `disagg/dgd-grove-ep` | | 32 | | | | | PENDING |
+| NVFP4 | `disagg/epd` | | 8+enc | | | | | PENDING |
+
+### p5e / EKS Auto Mode notes (what differed from the p5en cells above, and what was changed)
+
+- **Launch overrides, no template edits:** `INSTANCE_TYPE_WORKER=p5e.48xlarge EFA_PER_WORKER=32` (p5e advertises 32
+  `vpc.amazonaws.com/efa`; the `.env` default 16 is p5en's), `NAMESPACE=default` (where `fsx-pvc` lives), the golden image
+  through `REGISTRY`/`IMAGE`/`TAG` (`RUNTIME_BOOTSTRAP=0`), `INSTANCE_TYPE_FRONTEND=m7i.xlarge` (see the Auto Mode note).
+- **EKS Auto Mode specifics observed:** no EFA device-plugin DaemonSet is needed (Auto Mode exposes the resource; the
+  kube-system plugin shows DESIRED=0); `/dev/gdrdrv` is provided by the `gdrcopy-installer` DaemonSet (the templates'
+  `CharDevice` hostPath mounts are satisfied); GPU nodes carry the `nvidia.com/gpu:NoSchedule` taint, which every GPU
+  container in the templates tolerates; a same-account private ECR pull needs no pull secret (node role).
+- **Karpenter honours a *preferred* nodeAffinity as a provisioning hint:** the templates' `INSTANCE_TYPE_FRONTEND=m5.8xlarge`
+  preference made the `general-purpose` NodePool launch a fresh m5.8xlarge for a dynamo frontend instead of falling back to
+  an existing node. On Auto Mode set `INSTANCE_TYPE_FRONTEND` to an instance type that already exists in the cluster (or
+  accept the extra node; it is consolidated away after the cell is deleted).
+- **EFA hw_counters are hidden inside a pod's sysfs** on these Bottlerocket nodes (kernel 6.12.110, efa module 3.1.0g):
+  `/sys/class/infiniband/<dev>/ports/1/` has no `hw_counters` directory in the container while the host has the full set.
+  The byte proof below is read from the host sysfs through a per-node `hostPath: /sys` probe pod (what `efatop` does).
+- **FSx throughput is the pacing item:** two cells loading the ~249 GB BF16 checkpoint at once halve each other's load rate
+  (one engine Ready in ~26 min instead of ~14), and an HF download in flight slows both. Stagger launches on a 1.2 TiB volume.
+- **Shipped-file fixes found by these runs** are listed in the footnotes of the rows that found them.
+
+### EFA proof (per cell, under the cell's evidence)
+
+1. `render.yaml`: `vpc.amazonaws.com/efa` requests on every GPU container (32 per p5e worker).
+2. Worker logs: NCCL `Initialized NET plugin Libfabric` / `Using network Libfabric`, `GPU Direct RDMA Enabled` per HCA,
+   the OFI tuner's `platform: p5e.48xlarge`, and no `NET/Socket` line (the templates already set `NCCL_DEBUG=INFO`,
+   `NCCL_DEBUG_SUBSYS=INIT,NET`).
+3. Disagg only: NIXL `Backend LIBFABRIC was instantiated` in the worker logs and `fi_info -p efa` from inside a worker
+   (provider `efa`, 32 devices).
+4. Host `hw_counters` (`rdma_read_bytes`, `rdma_write_bytes`, `tx_bytes`, `rx_bytes`, summed over the node's 32 devices) read
+   before the cold run, after the cold run and after the warm run on every node of the cell; the per-cell table is cited in
+   the row's footnote.
+
 ## Concurrency sweeps: aggregated vs disaggregated (H200, c = 1 → 128)
 
 Both sweeps are the same LLM text workload as the table above (ISL 1024 / OSL 512, `ignore_eos:true`, seed 42, aiperf 0.9.0) run through this folder's own `aiperf-sweep.yaml-template` (`aiperf-sweep-run.sh`) with only concurrency varying — c = 1 / 2 / 4 / 8 / 16 / 32 / 64 / 128, 20 waves per phase (`--request-count` = 20 × c), and a per-phase excluded warm-up of 2 waves + 1 request (`--warmup-request-count` = 2 × c + 1). Because the warm-up is excluded, sweep rows are not directly comparable to the warmup=0 c=10 rows above; compare sweep to sweep (the six shipped phases c = 1/4/8/16/32/64 are the same ladder as `../../ultra/test/RESULTS.md`'s sweeps; c = 2 and c = 128 were added so the curve spans 1 → 128). The two cells ran on the same day on the same image, one server launch each; they differ in GPU count (8 vs 16), so the pair is not an equal-GPU comparison.
