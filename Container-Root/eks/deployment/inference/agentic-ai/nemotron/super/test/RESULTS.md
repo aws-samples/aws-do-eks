@@ -35,12 +35,12 @@ NVFP4 row measures a different kernel path than a B200 one.
 | BF16 | `agg/dgd-grove-ep` | NVIDIA H200 | 16 | 464.77 | 103.14 | 9.70 | 96.28 | MEASURED ²⁸ |
 | BF16 | `disagg/deployment` | NVIDIA H200 | 16 | 520.01 | 87.77 | 11.39 | 112.75 | MEASURED ³⁷ |
 | BF16 | `disagg/lws-2pp` | NVIDIA H200 | 32 | | | | | NOT SUPPORTED ²⁶ |
-| BF16 | `disagg/lws-pp2` | | 32 | | | | | PENDING ¹⁵ |
+| BF16 | `disagg/lws-pp2` | NVIDIA H200 | 32 | | | | | NOT SUPPORTED ⁴² |
 | BF16 | `disagg/lws-ep` | NVIDIA H200 | 32 | 726.91 | 103.96 | 9.62 | 94.82 | MEASURED ³³ |
 | BF16 | `disagg/dgd` | NVIDIA H200 | 16 | 519.41 | 87.13 | 11.48 | 113.54 | MEASURED ¹⁷ |
 | BF16 | `disagg/dgd-v1beta1` | NVIDIA H200 | 16 | 516.39 | 86.25 | 11.59 | 114.59 | MEASURED ²² |
 | BF16 | `disagg/dgd-grove` | NVIDIA H200 | 16 | 526.56 | 88.33 | 11.32 | 112.04 | MEASURED ²⁷ |
-| BF16 | `disagg/dgd-grove-pp2` | | 32 | | | | | PENDING ¹⁵ |
+| BF16 | `disagg/dgd-grove-pp2` | NVIDIA H200 | 32 | | | | | NOT SUPPORTED ⁴² |
 | BF16 | `disagg/dgd-grove-ep` | NVIDIA H200 | 32 | 757.44 | 104.21 | 9.60 | 94.40 | MEASURED ³⁶ |
 | BF16 | `disagg/epd` | NVIDIA H200 | 8+enc | | | | | NOT SUPPORTED ¹⁹ |
 | NVFP4 | `agg/deployment` | NVIDIA H200 | 8 | 399.73 | 95.13 | 10.51 | 104.44 | MEASURED ³⁸ |
@@ -51,15 +51,15 @@ NVFP4 row measures a different kernel path than a B200 one.
 | NVFP4 | `agg/dgd-grove` | NVIDIA H200 | 16 | 269.08 | 51.31 | 19.49 | 192.77 | MEASURED ³² |
 | NVFP4 | `agg/dgd-grove-ep` | | 16 | | | | | PENDING ¹⁵ |
 | NVFP4 | `disagg/deployment` | NVIDIA H200 | 16 | 576.36 | 96.77 | 10.33 | 102.16 | MEASURED ¹¹ |
-| NVFP4 | `disagg/lws-2pp` | | 32 | | | | | PENDING ¹⁵ |
-| NVFP4 | `disagg/lws-pp2` | | 32 | | | | | PENDING ¹⁵ |
+| NVFP4 | `disagg/lws-2pp` | NVIDIA H200 | 32 | | | | | NOT SUPPORTED ⁴² |
+| NVFP4 | `disagg/lws-pp2` | NVIDIA H200 | 32 | | | | | NOT SUPPORTED ⁴² |
 | NVFP4 | `disagg/lws-ep` | | 32 | | | | | PENDING ¹⁵ |
 | NVFP4 | `disagg/dgd` | NVIDIA H200 | 16 | 578.89 | 96.64 | 10.35 | 102.25 | MEASURED ³⁰ |
 | NVFP4 | `disagg/dgd-v1beta1` | NVIDIA H200 | 16 | 590.33 | 97.48 | 10.26 | 101.19 | MEASURED ³⁴ |
 | NVFP4 | `disagg/dgd-grove` | | 16 | | | | | PENDING ¹⁵ |
-| NVFP4 | `disagg/dgd-grove-pp2` | | 32 | | | | | PENDING ¹⁵ |
+| NVFP4 | `disagg/dgd-grove-pp2` | NVIDIA H200 | 32 | | | | | NOT SUPPORTED ⁴² |
 | NVFP4 | `disagg/dgd-grove-ep` | | 32 | | | | | PENDING ¹⁵ |
-| NVFP4 | `disagg/epd` | | 8+enc | | | | | PENDING¹ |
+| NVFP4 | `disagg/epd` | NVIDIA H200 | 8+enc | | | | | NOT SUPPORTED ⁴² |
 
 ¹ `disagg/epd` carries a verified structural caveat before any run is attempted: at
 dynamo v1.5.0 the encode worker's loader
@@ -192,6 +192,8 @@ spec-decode number into a non-spec row.
 ³⁸ 2026-10-19, launch 18:36:11Z, `MANIFEST_TYPE=deployment MODEL_VARIANT=NVFP4 DEPLOYMENT_NAME=nsv-agg-deployment-nvfp4 ./run.sh` as shipped (the NVFP4 checkpoint `../download` landed — the re-measurement of ¹⁰ after the GA candidate was deprecated) on the same cluster as ¹⁶: plain Deployments, TP8 worker on `ip-10-240-93-169`, `DYN_NAMESPACE=dynamo-agg`, image `vllm-runtime:1.5.0-efa` (digest as ¹⁶), 0 restarts; model listed 6 min after apply; the template's warmer ran for the NVFP4 name (`[warmup] batch=1 warm` 18:41:46Z). Shipped chat and image smokes returned 200 with text. Measured exactly as ¹⁶ (`test-aiperf.sh`, warmup 0, aiperf 0.13.0): cold run TTFT p50 331.80, ITL p50 95.69, tok/s/user p50 10.45, tok/s total 103.68 (`profile_export_aiperf.json` sha256 `65d3098e6fe97b12…`), then the warm run that is the row; both 100/100, no errors, OSL avg 511.96. Row artifacts (sha256): `profile_export_aiperf.json` `45637bfd9cec8175…`, `profile_export.jsonl` `a6ba0ecaadc93d75…`, `run-meta.json` `05429fd0b03cebf2…` (`label_check: consistent`). The superseded ¹⁰ row (deprecated checkpoint, 2026-10-13) read 387.85 / 97.93 / 10.21 / 101.51 — within 3% on every column. n=1 launch.
 
 ³⁶ 2026-10-19, launch 18:35:12Z, `MANIFEST_TYPE=dgd-grove-ep DEPLOYMENT_NAME=nsv-disagg-dgdgroveep-bf16 ./run.sh` in `../disagg` (BF16, `EP_DP_SIZE=2`) on the same cluster and 1.4.0 platform as ¹⁶, image `vllm-runtime:1.5.0-efa` (digest as ¹⁶): the v1beta1 P/D DGD with `multinode.nodeCount: 2` on both roles rendered as one Grove PodCliqueSet / PodGang — prefill leader/worker cliques and decode leader/worker cliques on four p5en.48xlarge (`ip-10-240-110-94`, `ip-10-240-117-144`, `ip-10-240-117-18`, `ip-10-240-68-100`; 32 GPUs), gang-scheduled by kai-scheduler, the operator injecting vLLM's DP coordination per role (`--data-parallel-size 2 --data-parallel-hybrid-lb …`) next to the template's `--enable-expert-parallel` (EP degree 16 per role); KV prefill→decode through `NixlConnector` LIBFABRIC (`Backend LIBFABRIC was instantiated` on all 32 ranks; decode `KV Transfer metrics … 40 successful transfers` per DP rank per window during the runs); `DYN_NAMESPACE=antonai-nsv-disagg-dgdgroveep-bf16`, 0 restarts; model listed 8.5 min after apply. Shipped chat and image smokes returned 200 with text (chat `finish_reason=stop`). Measured exactly as ¹⁶ (`test-aiperf.sh`, warmup 0, aiperf 0.13.0): cold run TTFT p50 933.51, ITL p50 104.49, tok/s/user p50 9.57, tok/s total 93.84 (`profile_export_aiperf.json` sha256 `a5558549fd08692e…`), then the warm run that is the row; both 100/100, no errors, OSL avg 511.95. Row artifacts (sha256): `profile_export_aiperf.json` `a807af0ec6defc3d…`, `profile_export.jsonl` `7de58f0e936eefae…`, `run-meta.json` `6982dab3bec32052…`. EP16 DISAGGREGATED on 32 GPUs under the operator's hybrid-lb coordination (³³ is the same shape under lws-ep's external-lb wiring; the two land within 4% on TTFT and within 1% on the other columns). n=1 launch.
+
+⁴² 2026-10-19: these rows share the two upstream gates measured in this campaign and were not launched separately. `disagg/lws-pp2` and `disagg/dgd-grove-pp2` (both precisions) and `disagg/lws-2pp` NVFP4 are stopped by the vLLM 0.28.0 NIXL connector check of ²⁶ — `if self.pp_size > 1 and self._is_hma_required: raise NotImplementedError(…)` runs at KV-connector init on every PP>1 producer rank and reads only the pipeline-parallel size and the hybrid-Mamba KV layout, not the bootstrap (Ray for the `lws-*` shapes, the operator's multiprocessing for `dgd-grove-pp2`) or the weight precision; `lws-pp2` and `dgd-grove-pp2` additionally run PP2 on the decode side, which the same file rejects (`NixlPushConnector consumer (decode) does not support pipeline_parallel_size > 1.`). `disagg/epd` NVFP4 is stopped by the dynamo 1.5.0 encode-worker family check of ¹⁹ (`get_encoder_components`: LLaVA and Qwen-VL only), which runs before any precision-specific code. Each of these rows becomes runnable the day its gate lifts — a 0.28-compatible port of ultra's NIXL pipeline-parallel patch (or upstream support) in `../dynamo-vllm-efa/Dockerfile.ray` for the PP2 rows, dynamo encode-worker support for the NemotronH Omni/VL family for `epd` — and should then be measured with its own launch.
 
 ## Served-request smoke (not a benchmark)
 
