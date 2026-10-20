@@ -33,6 +33,10 @@
 # POD NETWORK (no hostNetwork anywhere in the super tree); the EFA device plugin injects the
 # NICs via the vpc.amazonaws.com/efa resource.
 #
+# LOAD FORMAT: both ranks pass --load-format ${LOAD_FORMAT} (.env default runai_streamer) like every
+#   other template. MEASURED 2026-10-20 on 4x p5e.48xlarge (EKS Auto Mode, FSx for Lustre 1.2 TiB): without it
+#   vLLM's default safetensors loader read 2 of 64 shards in 16 min with the 16 EP ranks mmap-reading the same
+#   files (ETA > 7 h), while the streamer-based templates loaded the same 249 GB in 25-30 min.
 # NATIVE `vllm serve` NOTE: unlike the dynamo.vllm templates this one runs vLLM's own OpenAI
 # server. vLLM 0.28.0 has NO --enable-multimodal flag (that is a dynamo.vllm argument, see
 # dynamo v1.5.0 components/src/dynamo/vllm/args.py) and no Dynamo runtime reads
@@ -171,6 +175,7 @@ spec:
                   --data-parallel-address "${DOLLAR}LEADER_IP" \
                   --data-parallel-rpc-port 29550 \
                   --enable-expert-parallel \
+                  --load-format ${LOAD_FORMAT} \
                   --pipeline-parallel-size 1 \
                   --max-model-len ${MAX_MODEL_LEN} \
                   --gpu-memory-utilization ${GPU_MEM_UTIL} \
@@ -303,6 +308,7 @@ spec:
                   --data-parallel-address "${DOLLAR}LEADER_IP" \
                   --data-parallel-rpc-port 29550 \
                   --enable-expert-parallel \
+                  --load-format ${LOAD_FORMAT} \
                   --pipeline-parallel-size 1 \
                   --max-model-len ${MAX_MODEL_LEN} \
                   --gpu-memory-utilization ${GPU_MEM_UTIL} \
