@@ -23,9 +23,17 @@
 #            see step 3b. MEASURED 2026-10-19 on 4x p5e.48xlarge: disagg/lws-pp2 BF16
 #            serves with byte-identical temperature-0 output vs PP1 and per-stage KV over EFA.
 #
+#   patch 3 (OPTIONAL, DYNAMO_EPD_NEMOTRON_PATCH=1): dynamo 1.5.0's standalone vision ENCODE
+#            worker (disagg/epd) knows only the LLaVA and Qwen-VL families and rejects this
+#            checkpoint after full-loading it (patches/0003-*.diff adds the NemotronH Omni /
+#            Nano-VL family: encoder-only load through vLLM, per-image features, PD-side
+#            ingestion). Off by default (not upstream); see step 3c.
+#
 # Build:
 #   docker build -f Dockerfile.ray -t dynamo-vllm-efa:1.5.0-super-ray .
 #   docker build -f Dockerfile.ray --build-arg NIXL_PP_PATCH=1 -t dynamo-vllm-efa:1.5.0-super-ray-nixlpp .   # PP>1 disagg
+#   docker build -f Dockerfile.ray --build-arg NIXL_PP_PATCH=1 --build-arg DYNAMO_EPD_NEMOTRON_PATCH=1 \
+#          -t dynamo-vllm-efa:1.5.0-super-ray-nixlpp-epd .                                                  # + disagg/epd
 #
 # ---------------------------------------------------------------------------------------
 ARG BASE=nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.5.0-efa
@@ -115,6 +123,33 @@ RUN set -eux; \
       python3 /opt/vllm-patches/verify_nixl_pp_patch.py; \
     else echo "[nixl-pp] NIXL_PP_PATCH=0: stock NIXL connector (PP>1 disagg of hybrid-Mamba models stays unsupported)"; fi
 
+# ---- 3c) OPTIONAL: dynamo encode-worker support for the NemotronH Omni / Nano-VL family (disagg/epd) ----
+#    dynamo 1.5.0's standalone encode worker (`python -m dynamo.vllm --disaggregation-mode encode`) knows only the
+#    LLaVA and Qwen-VL families: multimodal_utils/encode_utils.py get_encoder_components raises
+#    NotImplementedError("Model not supported") for this checkpoint, and only AFTER multimodal_utils/model.py
+#    full-loaded it with AutoModel.from_pretrained (~249 GB for BF16) - ../test/RESULTS.md footnotes 19, 42.
+#    patches/0003-dynamo-encode-worker-nemotron-h-omni-1.5.0.dynamo.diff registers the family and:
+#      - loads the vision side (RADIO tower + pixel shuffle + mlp1) through vLLM's own encoder-only engine
+#        (--mm-encoder-only, the recipe dynamo already uses for Qwen-VL), so the encode worker runs the same
+#        RadioModel/mlp1 code and weights the PD worker would run in-process; the worker's --hf-overrides
+#        (architecture alias on vLLM 0.28.x) is forwarded to it;
+#      - produces one (num_tokens, hidden) embedding per image through the model's extract_feature_dynamic
+#        (dynamic-resolution tiler, token count varies per image);
+#      - makes the PD side (--enable-mm-embeds) ingest them as the per-image 2-D embeddings vLLM's
+#        NemotronH_Nano_VL_V2 already accepts (image_embeds), owning copies before the NIXL buffer is released.
+#    Opt-in (--build-arg DYNAMO_EPD_NEMOTRON_PATCH=1): an out-of-tree dynamo change stays out of the default image.
+#    Strict apply (--dry-run --fuzz=0 --forward) + patches/verify_dynamo_epd_patch.py marker/import proof, as in 3b.
+ARG DYNAMO_EPD_NEMOTRON_PATCH=0
+COPY patches/0003-dynamo-encode-worker-nemotron-h-omni-1.5.0.dynamo.diff patches/verify_dynamo_epd_patch.py /opt/vllm-patches/
+RUN set -eux; \
+    if [ "${DYNAMO_EPD_NEMOTRON_PATCH}" = "1" ]; then \
+      SITE="$(python3 -c 'import os, dynamo.vllm; print(os.path.dirname(os.path.dirname(os.path.dirname(dynamo.vllm.__file__))))')"; \
+      cd "${SITE}"; \
+      patch -p1 --dry-run --fuzz=0 --forward < /opt/vllm-patches/0003-dynamo-encode-worker-nemotron-h-omni-1.5.0.dynamo.diff; \
+      patch -p1 --fuzz=0 --forward < /opt/vllm-patches/0003-dynamo-encode-worker-nemotron-h-omni-1.5.0.dynamo.diff; \
+      python3 /opt/vllm-patches/verify_dynamo_epd_patch.py; \
+    else echo "[dynamo-epd] DYNAMO_EPD_NEMOTRON_PATCH=0: stock encode worker (disagg/epd of the NemotronH Omni family stays unsupported)"; fi
+
 # ---- 4) CVE remediation: drop worker-UNUSED binaries ----------------------------------
 # 3a) nats-server (17 MB)
 RUN rm -f /usr/bin/nats-server || true
@@ -155,4 +190,4 @@ print(f"[golden-1.5.0-super-ray] all prerequisites OK: vllm={m.version('vllm')} 
 PY
 
 USER dynamo
-LABEL org.opencontainers.image.description="Golden-image 1.5.0 for Nemotron 3.5 Super VL + Ray + PP: Dynamo 1.5.0 (-efa base, EFA 1.50 + NIXL LIBFABRIC baked) + vLLM 0.28.0 + Ray 2.55.1 + NemotronH_Nano_VL_V2 SupportsPP patch (multi-node PP2) + optional NIXL PP>1 pull-path backport (vllm#53360, NIXL_PP_PATCH=1) + CVE remediation"
+LABEL org.opencontainers.image.description="Golden-image 1.5.0 for Nemotron 3.5 Super VL + Ray + PP: Dynamo 1.5.0 (-efa base, EFA 1.50 + NIXL LIBFABRIC baked) + vLLM 0.28.0 + Ray 2.55.1 + NemotronH_Nano_VL_V2 SupportsPP patch (multi-node PP2) + optional NIXL PP>1 pull-path backport (vllm#53360, NIXL_PP_PATCH=1) + optional dynamo encode-worker NemotronH Omni family (disagg/epd, DYNAMO_EPD_NEMOTRON_PATCH=1) + CVE remediation"
