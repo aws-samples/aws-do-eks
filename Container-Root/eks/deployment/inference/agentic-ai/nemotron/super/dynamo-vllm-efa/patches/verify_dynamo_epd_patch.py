@@ -29,4 +29,7 @@ with tempfile.TemporaryDirectory() as d:
 assert model.resolve_model_family("Qwen/Qwen2.5-VL-7B-Instruct") is model.ModelFamily.QWEN_VL, "Qwen-VL resolution regressed"
 assert model.resolve_model_family("llava-hf/llava-1.5-7b-hf") is model.ModelFamily.LLAVA, "LLaVA resolution regressed"
 from vllm.transformers_utils.processors.nano_nemotron_vl import DynamicResolutionImageTiler  # noqa: F401  (the stack() the encoder uses)
-print("[dynamo-epd] NemotronH Omni encode-worker patch applied: family registered, vLLM encoder-only loader + per-image features + list-aware PD ingestion present")
+import vllm.model_executor.models.nano_nemotron_vl as nnvl
+assert "num_patches = None if raw_num_patches is None else int(raw_num_patches)" in open(nnvl.__file__).read(), \
+    "marker missing: vLLM nano_nemotron_vl image_embeds num_patches guard (patches/0004-*.vllm.diff)"
+print("[dynamo-epd] NemotronH Omni encode-worker patch applied: family registered, vLLM encoder-only loader + per-image features + list-aware PD ingestion present; vLLM image_embeds num_patches guard present")

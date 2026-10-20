@@ -1,0 +1,16 @@
+diff -ruN a/vllm/model_executor/models/nano_nemotron_vl.py b/vllm/model_executor/models/nano_nemotron_vl.py
+--- a/vllm/model_executor/models/nano_nemotron_vl.py	2026-10-20 02:47:35.599644356 +0000
++++ b/vllm/model_executor/models/nano_nemotron_vl.py	2026-10-20 02:47:35.784648071 +0000
+@@ -472,7 +472,11 @@
+             if isinstance(local_image_num_patches, (list, tuple)) and item_idx < len(
+                 local_image_num_patches
+             ):
+-                num_patches = int(local_image_num_patches[item_idx])
++                raw_num_patches = local_image_num_patches[item_idx]
++                # Pre-computed `image_embeds` inputs carry no patch count (the
++                # `[None] * n` placeholder above); get_image_repl() takes an
++                # optional int, so keep None instead of raising on int(None).
++                num_patches = None if raw_num_patches is None else int(raw_num_patches)
+ 
+             return hf_processor.get_image_repl(feature_size, num_patches)
+ 

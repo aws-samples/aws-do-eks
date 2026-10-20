@@ -137,16 +137,22 @@ RUN set -eux; \
 #        (dynamic-resolution tiler, token count varies per image);
 #      - makes the PD side (--enable-mm-embeds) ingest them as the per-image 2-D embeddings vLLM's
 #        NemotronH_Nano_VL_V2 already accepts (image_embeds), owning copies before the NIXL buffer is released.
-#    Opt-in (--build-arg DYNAMO_EPD_NEMOTRON_PATCH=1): an out-of-tree dynamo change stays out of the default image.
+#    The PD side also needs patches/0004-nano-nemotron-vl-image-embeds-num-patches-0.28.0.vllm.diff: vLLM 0.28.0's
+#    NanoNemotronVL processor builds `image_num_patches = [None] * n` for pre-computed image_embeds and then runs
+#    int(None) in get_image_replacement (TypeError -> HTTP 500 on every image request; MEASURED 2026-10-20; still
+#    present on vLLM main) - a one-line guard keeps the None that get_image_repl() already accepts.
+#    Opt-in (--build-arg DYNAMO_EPD_NEMOTRON_PATCH=1): out-of-tree dynamo/vLLM changes stay out of the default image.
 #    Strict apply (--dry-run --fuzz=0 --forward) + patches/verify_dynamo_epd_patch.py marker/import proof, as in 3b.
 ARG DYNAMO_EPD_NEMOTRON_PATCH=0
-COPY patches/0003-dynamo-encode-worker-nemotron-h-omni-1.5.0.dynamo.diff patches/verify_dynamo_epd_patch.py /opt/vllm-patches/
+COPY patches/0003-dynamo-encode-worker-nemotron-h-omni-1.5.0.dynamo.diff patches/0004-nano-nemotron-vl-image-embeds-num-patches-0.28.0.vllm.diff patches/verify_dynamo_epd_patch.py /opt/vllm-patches/
 RUN set -eux; \
     if [ "${DYNAMO_EPD_NEMOTRON_PATCH}" = "1" ]; then \
       SITE="$(python3 -c 'import os, dynamo.vllm; print(os.path.dirname(os.path.dirname(os.path.dirname(dynamo.vllm.__file__))))')"; \
       cd "${SITE}"; \
-      patch -p1 --dry-run --fuzz=0 --forward < /opt/vllm-patches/0003-dynamo-encode-worker-nemotron-h-omni-1.5.0.dynamo.diff; \
-      patch -p1 --fuzz=0 --forward < /opt/vllm-patches/0003-dynamo-encode-worker-nemotron-h-omni-1.5.0.dynamo.diff; \
+      for P in 0003-dynamo-encode-worker-nemotron-h-omni-1.5.0.dynamo.diff 0004-nano-nemotron-vl-image-embeds-num-patches-0.28.0.vllm.diff; do \
+        patch -p1 --dry-run --fuzz=0 --forward < "/opt/vllm-patches/${P}"; \
+        patch -p1 --fuzz=0 --forward < "/opt/vllm-patches/${P}"; \
+      done; \
       python3 /opt/vllm-patches/verify_dynamo_epd_patch.py; \
     else echo "[dynamo-epd] DYNAMO_EPD_NEMOTRON_PATCH=0: stock encode worker (disagg/epd of the NemotronH Omni family stays unsupported)"; fi
 
