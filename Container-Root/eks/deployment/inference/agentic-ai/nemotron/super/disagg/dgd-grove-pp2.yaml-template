@@ -109,7 +109,7 @@
 #
 # NOT SUPPORTED on stock vLLM 0.28.0 (both precisions): same NIXL connector gate as lws-2pp under the operator's
 # multinode bootstrap (../test/RESULTS.md footnotes 26, 42).
-# MEASURED 2026-10-20 with the `../dynamo-vllm-efa/Dockerfile.ray --build-arg NIXL_PP_PATCH=1` image on BOTH roles
+# MEASURED 2026-10-20 with the `../../dynamo-vllm-efa/Dockerfile --build-arg NIXL_PP_PATCH=1` image (then `../dynamo-vllm-efa/Dockerfile.ray`, preserved in git history) on BOTH roles
 # (the vllm#53360 backport) on a Dynamo 1.5.1 platform with the Grove + KAI feature gates ON (../test/RESULTS.md
 # footnotes BF16 ¹⁰⁸, NVFP4 ¹⁰⁹). With the gates off the operator sets this DGD to `no multinode orchestrator
 # available` and creates no pods (footnote ¹⁰⁷) - apply eks/deployment/grove first (prerequisite 2 above).
