@@ -7,13 +7,13 @@
 #
 # Installed separately (not via the dynamo-platform bundled subcharts) per the chart's own
 # guidance: "For production environments, it is recommended to install Grove separately."
-# Versions default to the pair the dynamo-platform 1.4.0 Chart.lock ships, so the combination
+# Versions default to the pair the dynamo-platform 1.5.1 Chart.lock ships, so the combination
 # is the one NVIDIA tests together. Override with GROVE_VERSION / KAI_VERSION.
 
 export GROVE_NAMESPACE=${GROVE_NAMESPACE:-grove-system}
-export GROVE_VERSION=${GROVE_VERSION:-"v0.1.0-alpha.12-rc1"}
+export GROVE_VERSION=${GROVE_VERSION:-"v0.1.0-alpha.13"}
 export KAI_NAMESPACE=${KAI_NAMESPACE:-kai-scheduler}
-export KAI_VERSION=${KAI_VERSION:-"v0.13.4"}
+export KAI_VERSION=${KAI_VERSION:-"v0.17.0"}
 export DYNAMO_NAMESPACE=${DYNAMO_NAMESPACE:-dynamo-system}
 
 # 0. RuntimeClass "nvidia": KAI's admission webhook injects runtimeClassName: nvidia into every
