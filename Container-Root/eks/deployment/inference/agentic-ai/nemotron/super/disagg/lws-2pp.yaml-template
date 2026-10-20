@@ -34,6 +34,8 @@
 # NOT SUPPORTED on stock vLLM 0.28.0 (both precisions): the NIXL connector raises NotImplementedError
 # ("does not support pipeline_parallel_size > 1 with hybrid KV cache layouts (HMA)") on every PP>1 producer rank;
 # still present upstream through v0.32.0 (../test/RESULTS.md footnotes 26, 42).
+# MEASURED 2026-10-20 with the `../dynamo-vllm-efa/Dockerfile.ray --build-arg NIXL_PP_PATCH=1` image on BOTH roles
+# (the vllm#53360 backport; ../test/RESULTS.md footnotes BF16 ¹⁰³, NVFP4 ¹⁰⁶).
 # It is ultra's
 # template with only the Super delta applied (model identity + .env knobs, --hf-overrides alias,
 # multimodal flags, stock 1.5.0-efa image, pod network, CPU/MEM knobs, 60-min probe ceiling);

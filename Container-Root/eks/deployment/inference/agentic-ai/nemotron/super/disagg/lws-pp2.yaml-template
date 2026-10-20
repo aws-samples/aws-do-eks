@@ -31,6 +31,8 @@
 #
 # NOT SUPPORTED on stock vLLM 0.28.0 (both precisions): same NIXL connector gate as lws-2pp, plus decode-side PP>1
 # is rejected too (../test/RESULTS.md footnotes 26, 42).
+# MEASURED 2026-10-20 with the `../dynamo-vllm-efa/Dockerfile.ray --build-arg NIXL_PP_PATCH=1` image on BOTH roles
+# (the vllm#53360 backport; ../test/RESULTS.md footnotes BF16 ¹⁰², NVFP4 ¹⁰⁴).
 # It is ultra's
 # template with only the Super delta applied (model identity + .env knobs, --hf-overrides alias,
 # multimodal flags, stock 1.5.0-efa image, pod network, CPU/MEM knobs, 60-min probe ceiling);

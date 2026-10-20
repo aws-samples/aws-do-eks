@@ -29,6 +29,9 @@
 # NOT SUPPORTED at dynamo 1.5.0 (both precisions): after full-loading the checkpoint the encode worker raises
 # NotImplementedError("Model not supported") — get_encoder_components knows only the LLaVA and Qwen-VL families
 # (../test/RESULTS.md footnotes 19, 42). The PD worker itself comes up.
+# MEASURED 2026-10-20 with the `../dynamo-vllm-efa/Dockerfile.ray --build-arg DYNAMO_EPD_NEMOTRON_PATCH=1` image
+# (adds this family to the encode worker: vLLM encoder-only load of the RADIO tower + mlp1, per-image embeddings over NIXL;
+# ../test/RESULTS.md footnotes BF16 ¹⁰¹, NVFP4 ¹⁰⁵).
 # ==========================================================================================
 ---
 apiVersion: apps/v1
