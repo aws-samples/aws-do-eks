@@ -1,0 +1,1936 @@
+diff -ruN a/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py b/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py
+--- a/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py
++++ b/vllm/distributed/kv_transfer/kv_connector/v1/nixl/base_worker.py
+@@ -2,6 +2,7 @@
+ # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+ """Base worker-side logic for the NIXL connector."""
+ 
++import dataclasses
+ import itertools
+ import logging
+ import os
+@@ -13,7 +14,7 @@
+ from collections.abc import Iterator
+ from concurrent.futures import Future, ThreadPoolExecutor
+ from functools import cached_property
+-from typing import TYPE_CHECKING, Any, cast
++from typing import TYPE_CHECKING, Any, NamedTuple, cast
+ 
+ import msgspec
+ import numpy as np
+@@ -62,8 +63,10 @@
+ )
+ from vllm.distributed.nixl_utils import NixlWrapper, nixl_agent_config
+ from vllm.distributed.parallel_state import (
++    get_pp_group,
+     get_tensor_model_parallel_rank,
+     get_tensor_model_parallel_world_size,
++    model_parallel_is_initialized,
+ )
+ from vllm.logger import init_logger
+ from vllm.platforms import current_platform
+@@ -88,6 +91,27 @@
+ logger = init_logger(__name__)
+ 
+ 
++class ShardDescLayout(NamedTuple):
++    """Descriptor layout of one pipeline-parallel producer shard's dlist.
++
++    A stage registers only the layers it owns, so its descriptors run over that
++    shard's regions rather than over all local regions. With HMA a region is
++    pooled across KV groups: it holds one layer per group, and the group a
++    member belongs to selects which block ids address it. Descriptors are laid
++    out as ``[fa (all regions) | ssm (all regions x sub-regions)]``, mirroring
++    the whole-engine layout built by ``_compute_desc_ids``.
++
++    Attributes:
++        region_member_groups: KV group index of every layer pooled into each
++            region, in region order.
++        ssm_regions_per_layer: NIXL regions per SSM layer (conv sub-projections
++            plus the SSM temporal state); 0 when the shard has no Mamba layers.
++    """
++
++    region_member_groups: tuple[tuple[int, ...], ...]
++    ssm_regions_per_layer: int
++
++
+ class NixlBaseConnectorWorker:
+     """Base implementation of Worker side methods shared by pull and push."""
+ 
+@@ -96,6 +120,18 @@
+     # Overridden by NixlPushConnectorWorker.
+     _TRANSFER_MODE: str = "pull"
+ 
++    # Whether this transfer mode can read from a PP-sharded producer, i.e. it
++    # keys remote state per (pp_rank, tp_rank) and issues one transfer per
++    # producer stage. Push writes into a remote's regions by layer offset and
++    # cannot, so it keeps rejecting a PP consumer.
++    _supports_consumer_pp: bool = False
++
++    # Whether this transfer mode can describe a PP producer's *pooled* regions,
++    # where HMA shares one backing tensor across kv cache groups. Requires
++    # per-(region x member group) descriptor emission; push slices regions per
++    # layer assuming a uniform count, so it cannot.
++    _supports_pp_hma: bool = False
++
+     def _compute_desc_ids(
+         self,
+         block_ids: BlockIds,
+@@ -251,6 +287,282 @@
+         """
+         return region_idx < len(self._region_is_mla) and self._region_is_mla[region_idx]
+ 
++    def _local_region_indices_for_layer_names(
++        self, registered_layer_names: list[str]
++    ) -> list[int]:
++        """Map a producer shard's registered layers onto local region indices.
++
++        Args:
++            registered_layer_names: Layer name backing each of the producer's
++                regions, in its registration order.
++
++        Returns:
++            Local region index for each producer region, same order.
++
++        Raises:
++            RuntimeError: A producer layer has no matching local region.
++        """
++        local_names = self.local_seen_layer_names
++        positions_by_name: dict[str, list[int]] = defaultdict(list)
++        for local_idx, layer_name in enumerate(local_names):
++            positions_by_name[layer_name].append(local_idx)
++
++        occurrences_by_name: dict[str, int] = defaultdict(int)
++        local_indices: list[int] = []
++        for layer_name in registered_layer_names:
++            occurrence = occurrences_by_name[layer_name]
++            occurrences_by_name[layer_name] += 1
++            matches = positions_by_name.get(layer_name, [])
++            if occurrence < len(matches):
++                local_indices.append(matches[occurrence])
++                continue
++            # HMA pools layers of different groups into one region, so a
++            # producer's representative may be a non-representative member here.
++            pooled_idx = self._member_to_local_region.get(layer_name)
++            if occurrence == 0 and pooled_idx is not None:
++                local_indices.append(pooled_idx)
++                continue
++            raise RuntimeError(
++                "NIXL handshake failed: producer registered layer "
++                f"{layer_name!r} occurrence {occurrence} has no matching "
++                f"local region. Local registered layers: {local_names}"
++            )
++        return local_indices
++
++    def _local_region_indices_if_overlapping(
++        self, registered_layer_names: list[str]
++    ) -> list[int] | None:
++        """Map a producer shard's layers onto local regions, if any overlap.
++
++        A pipeline-parallel consumer owns only its own layer slice, so a
++        producer stage may advertise layers with no local counterpart. Such a
++        shard carries nothing this rank needs: its KV is read by the consumer
++        stage(s) that do own those layers.
++
++        Args:
++            registered_layer_names: Layer name backing each of the producer's
++                regions, in its registration order.
++
++        Returns:
++            Local region index for each producer region (same order) when
++            every advertised layer is local, or ``None`` when none is.
++
++        Raises:
++            RuntimeError: The shard overlaps only part of the local slice:
++                producer and consumer pipeline stages split the layers at
++                incompatible boundaries.
++        """
++        local_names = set(self.local_seen_layer_names)
++        matched = [
++            name in local_names or name in self._member_to_local_region
++            for name in registered_layer_names
++        ]
++        if not any(matched):
++            return None
++        if not all(matched):
++            missing = [
++                name for name, hit in zip(registered_layer_names, matched) if not hit
++            ]
++            raise RuntimeError(
++                "NIXL handshake failed: producer shard layers partially "
++                "overlap the local layer slice; producer and consumer "
++                "pipeline stages must split layers at compatible boundaries. "
++                f"Non-local layers: {missing}"
++            )
++        return self._local_region_indices_for_layer_names(registered_layer_names)
++
++    def _shard_desc_layout(self, nixl_agent_meta: NixlAgentMetadata) -> ShardDescLayout:
++        """Descriptor layout of a pipeline-parallel producer shard's dlist.
++
++        Args:
++            nixl_agent_meta: Handshake metadata of the producer shard.
++
++        Returns:
++            Layout describing the shard's descriptor list.
++
++        Raises:
++            RuntimeError: A member layer is unknown locally.
++        """
++        region_member_groups: list[tuple[int, ...]] = []
++        for members in self._remote_region_members(nixl_agent_meta):
++            groups: list[int] = []
++            for member in members:
++                if member not in self._layer_name_to_kv_group_index:
++                    raise RuntimeError(
++                        "NIXL handshake failed: producer region member "
++                        f"{member!r} has no matching local KV cache group."
++                    )
++                groups.append(self._layer_name_to_kv_group_index[member])
++            region_member_groups.append(tuple(groups))
++
++        ssm_regions_per_layer = 0
++        if self._has_mamba:
++            assert self._conv_decomp is not None
++            ssm_regions_per_layer = len(self._conv_decomp.local_conv_offsets) + 1
++        return ShardDescLayout(
++            region_member_groups=tuple(region_member_groups),
++            ssm_regions_per_layer=ssm_regions_per_layer,
++        )
++
++    @staticmethod
++    def _remote_region_members(
++        nixl_agent_meta: NixlAgentMetadata,
++    ) -> list[list[str]]:
++        """Layers pooled into each of a producer shard's regions.
++
++        Falls back to the representative layer per region for a peer that does
++        not advertise membership (one layer per region, i.e. no pooling).
++
++        Raises:
++            RuntimeError: Advertised membership does not cover every region.
++        """
++        names = nixl_agent_meta.registered_layer_names
++        members = nixl_agent_meta.region_members
++        if not members:
++            return [[name] for name in names]
++        if len(members) != len(names):
++            raise RuntimeError(
++                "NIXL handshake failed: producer advertised "
++                f"{len(members)} region_members entries for "
++                f"{len(names)} registered regions."
++            )
++        return [list(region) for region in members]
++
++    def _shard_desc_slots(
++        self,
++        nixl_agent_meta: NixlAgentMetadata,
++        rep_local_region_indices: list[int],
++        layout: ShardDescLayout,
++    ) -> tuple[tuple[int, ...], tuple[int, ...], tuple[tuple[int, ...], ...]]:
++        """[0.28.0 backport extension] Descriptor slots of a producer shard.
++
++        Each producer region is split into one slot per local region holding
++        one of its pooled members; the representative's local region comes
++        first, so a region whose members all live in one local region is a
++        single slot and the result equals the upstream per-region layout.
++
++        Args:
++            nixl_agent_meta: Handshake metadata of the producer shard.
++            rep_local_region_indices: Local region of each producer region's
++                representative layer (``registered_layer_names``).
++            layout: ``_shard_desc_layout`` of the shard (member KV groups per
++                producer region, same member order as ``region_members``).
++
++        Returns:
++            ``(remote region per slot, local region per slot, member KV groups
++            per slot)``.
++        """
++        members_per_region = self._remote_region_members(nixl_agent_meta)
++        slot_remote: list[int] = []
++        slot_local: list[int] = []
++        slot_groups: list[tuple[int, ...]] = []
++        for region_idx, (members, groups) in enumerate(
++            zip(members_per_region, layout.region_member_groups)
++        ):
++            rep_local = rep_local_region_indices[region_idx]
++            groups_by_local: dict[int, list[int]] = {}
++            for member, group in zip(members, groups):
++                local_idx = self._member_to_local_region.get(member, rep_local)
++                groups_by_local.setdefault(local_idx, []).append(group)
++            ordered = sorted(groups_by_local, key=lambda idx: idx != rep_local)
++            for local_idx in ordered:
++                slot_remote.append(region_idx)
++                slot_local.append(local_idx)
++                slot_groups.append(tuple(groups_by_local[local_idx]))
++        return tuple(slot_remote), tuple(slot_local), tuple(slot_groups)
++
++    def _get_block_descs_ids_for_shard(
++        self,
++        engine_id: EngineId,
++        remote_pp_rank: int,
++        num_blocks: int,
++        block_ids: BlockIds,
++        physical_blocks_per_logical: int = 1,
++    ) -> np.ndarray:
++        """Descriptor IDs relative to one producer stage's prepared dlist.
++
++        A PP producer stage registers only its own layer slice, so descriptor
++        ids run over that shard's regions rather than over all local regions.
++        With HMA a region is pooled across KV groups and holds one layer per
++        group, so every member's group contributes its own block ids to the
++        same region. Descriptors are laid out as
++        ``[fa (all regions) | ssm (all regions x sub-regions)]``, matching the
++        shard's dlist and the whole-engine layout of ``_compute_desc_ids``.
++
++        Args:
++            engine_id: Remote producer engine id.
++            remote_pp_rank: Producer pipeline-parallel rank of the shard.
++            num_blocks: Number of blocks per region in the shard's dlist.
++            block_ids: Physical block ids per local KV group.
++            physical_blocks_per_logical: Physical blocks per logical block on
++                the side being described, the stride divisor for SSM
++                descriptors. P and D may differ.
++
++        Returns:
++            Flat descriptor ids into the shard's prepared dlist.
++        """
++        layout = self._shard_desc_layouts[(engine_id, remote_pp_rank)]
++        region_member_groups = layout.region_member_groups
++        num_fa_descs = len(region_member_groups) * num_blocks
++        logical_blocks = num_blocks // physical_blocks_per_logical
++        ssm_per_layer = layout.ssm_regions_per_layer
++
++        fa_descs: list[np.ndarray] = []
++        ssm_descs: list[np.ndarray] = []
++        for region_id, member_groups in enumerate(region_member_groups):
++            for group_id in member_groups:
++                group_arr = np.asarray(block_ids[group_id], dtype=np.int64)
++                if group_arr.size == 0:
++                    continue
++                spec_type = self._group_spec_types[group_id]
++                if _is_attention_spec(spec_type):
++                    fa_descs.append(region_id * num_blocks + group_arr)
++                elif _is_ssm_spec(spec_type):
++                    # SSM state of a region is described by conv sub-projections
++                    # plus the temporal state, each with logical-block stride.
++                    for sub_region in range(ssm_per_layer):
++                        offset = (region_id * ssm_per_layer + sub_region) * (
++                            logical_blocks
++                        )
++                        ssm_descs.append(num_fa_descs + offset + group_arr)
++                else:
++                    raise ValueError(
++                        f"Unknown spec type {spec_type} for KV group {group_id}"
++                    )
++
++        desc_ids = fa_descs + ssm_descs
++        if not desc_ids:
++            return np.empty(0, dtype=np.int64)
++        return np.concatenate(desc_ids)
++
++    def _handshake_complete(self, engine_id: EngineId, pp_size: int) -> bool:
++        """Whether the handshake with ``engine_id`` finished.
++
++        ``_remote_agents[engine_id]`` is only assigned once the handshake
++        registered every producer shard that overlaps this consumer stage's
++        layer slice (all shards when the consumer is not pipelined), so its
++        presence alone covers PP=1. The recorded pp_size additionally forces
++        a re-handshake if a peer first seen as a single stage later announces
++        itself as pipelined.
++        """
++        return (
++            engine_id in self._remote_agents
++            and self._remote_pp_size.get(engine_id, 1) == pp_size
++        )
++
++    def _representative_stage(self, engine_id: EngineId) -> int:
++        """Any registered producer stage of ``engine_id``.
++
++        A pipeline-parallel consumer only registers the producer stages
++        overlapping its own layer slice, so stage 0 may be absent; block
++        geometry is uniform across a producer's stages, so any registered
++        one serves for engine-wide lookups.
++        """
++        for eid, pp_rank in self.tp_mappings:
++            if eid == engine_id:
++                return pp_rank
++        raise KeyError(f"No registered stage for engine {engine_id}")
++
+     def __init__(
+         self,
+         vllm_config: "VllmConfig",
+@@ -287,6 +599,13 @@
+                 "bidirectional_kv_xfer", False
+             )
+         )
++        # Map each layer to its KV-cache group index. Consumed by the pull-path
++        # PP producer logic to advertise all dedup'd members of a region.
++        self._layer_name_to_kv_group_index = {
++            layer: group_index
++            for group_index, group in enumerate(kv_cache_config.kv_cache_groups)
++            for layer in group.layer_names
++        }
+ 
+         self._is_hma_required = (
+             not vllm_config.scheduler_config.disable_hybrid_kv_cache_manager
+@@ -429,9 +748,20 @@
+ 
+         # Map of engine_id -> kv_caches_base_addr. For TP case, each local
+         self.device_id: int = 0
+-        # Current rank may pull from multiple remote TP workers.
+-        # EngineId, dict[int, list[int]] -> engine_id, tp_rank, base_addr_for_layer
+-        self.kv_caches_base_addr = defaultdict[EngineId, dict[int, list[int]]](dict)
++        # Current rank may pull from multiple remote workers. A PP producer is
++        # sharded over (pp_rank, tp_rank); a PP=1 remote uses (0, tp_rank).
++        # EngineId, dict[shard, list[int]] -> engine_id, shard, base_addr_for_layer
++        self.kv_caches_base_addr = defaultdict[
++            EngineId, dict[tuple[int, int], list[int]]
++        ](dict)
++        # Base address of each locally registered region, in registration order.
++        self.local_kv_caches_base_addr: list[int] = []
++        # Layer name backing each local region, 1:1 with the list above. Lets a
++        # PP producer's layer slice be mapped onto local regions by name.
++        self.local_seen_layer_names: list[str] = []
++        # Local region index of every layer, including the non-representative
++        # members that HMA pools into a shared region.
++        self._member_to_local_region: dict[str, int] = {}
+ 
+         # Number of NIXL regions. Currently one region per cache
+         # (so 1 per layer for MLA, otherwise 2 per layer)
+@@ -441,17 +771,24 @@
+         # transfers into the matching sub-range of a PP=1 remote's regions.
+         self.pp_size = vllm_config.parallel_config.pipeline_parallel_size
+         self._remote_region_offset = 0
+-        # PP push slices regions per layer (uniform count); HMA breaks that.
+-        if self.pp_size > 1 and self._is_hma_required:
++        # HMA pools several kv cache groups into one backing tensor, so a
++        # region holds more than one layer. A mode that slices regions per
++        # layer assuming a uniform count cannot describe that under PP.
++        if self.pp_size > 1 and self._is_hma_required and not self._supports_pp_hma:
+             raise NotImplementedError(
+-                "NixlPushConnector does not support pipeline_parallel_size > 1 "
+-                "with hybrid KV cache layouts (HMA) yet."
++                f"NIXL {self._TRANSFER_MODE} mode does not support "
++                "pipeline_parallel_size > 1 with hybrid KV cache layouts (HMA)."
+             )
+-        # Decode-side PP is unsupported (completions counted per consumer rank).
+-        if vllm_config.kv_transfer_config.kv_role == "kv_consumer" and self.pp_size > 1:
++        # Reading from a PP-sharded producer needs remote state keyed per
++        # (pp_rank, tp_rank) and one transfer per stage.
++        if (
++            vllm_config.kv_transfer_config.kv_role == "kv_consumer"
++            and self.pp_size > 1
++            and not self._supports_consumer_pp
++        ):
+             raise NotImplementedError(
+-                "NixlPushConnector consumer (decode) does not support "
+-                "pipeline_parallel_size > 1."
++                f"NIXL {self._TRANSFER_MODE} mode consumer (decode) does not "
++                "support pipeline_parallel_size > 1."
+             )
+         # Keep heartbeat handshakes to a PP-sharded producer notif-only.
+         self._hb_handshake_notif_only = False
+@@ -464,8 +801,25 @@
+         # Populated dynamically during handshake based on remote configuration.
+         # Per-source split handles, keyed by (tp_ratio, remote_block_size).
+         self.src_xfer_handles_by_tp_ratio: dict[tuple[int, int], list[int]] = {}
+-        # Map of engine_id -> {tp_rank: nixl_prepped_dlist_handle (int)}.
+-        self.dst_xfer_side_handles = defaultdict[EngineId, dict[int, int]](dict)
++        # Local handles covering only a PP producer shard's layer slice, keyed
++        # by (engine_id, remote_pp_rank, remote_block_size). PP=1 remotes keep
++        # using the whole-region handles above.
++        self.src_xfer_handles_by_remote: dict[tuple[EngineId, int, int], int] = {}
++        self.src_blocks_data_by_remote: dict[tuple[EngineId, int, int], np.ndarray] = {}
++        # Per-shard split handles, keyed by (engine_id, remote_pp_rank, tp_ratio).
++        self.src_xfer_handles_by_shard_tp_ratio: dict[
++            tuple[EngineId, int, int], list[int]
++        ] = {}
++        # Descriptor layout of each PP producer shard's dlist, keyed by
++        # (engine_id, remote_pp_rank).
++        self._shard_desc_layouts: dict[tuple[EngineId, int], ShardDescLayout] = {}
++        # Map of engine_id -> {(pp_rank, tp_rank): nixl_prepped_dlist_handle}.
++        self.dst_xfer_side_handles = defaultdict[EngineId, dict[tuple[int, int], int]](
++            dict
++        )
++        # Map of engine_id -> remote pipeline-parallel size, set once the
++        # handshake with every producer shard has completed.
++        self._remote_pp_size: dict[EngineId, int] = {}
+ 
+         # Map of engine_id -> num_blocks. All ranks in the same deployment will
+         # have the same number of blocks.
+@@ -554,8 +908,9 @@
+         # This is not used for SSM layers, which use the counterpart `mamba_ssm_size`.
+         self.block_len_per_layer = list[int]()
+ 
+-        # Per-engine TP mappings. Generated during handshake.
+-        self.tp_mappings: dict[EngineId, TPMapping] = {}
++        # TP mappings per producer shard, keyed by (engine_id, remote_pp_rank).
++        # Generated during handshake; a PP=1 remote uses pp_rank 0.
++        self.tp_mappings: dict[tuple[EngineId, int], TPMapping] = {}
+ 
+         self.enforce_compat_hash = self.kv_transfer_config.get_from_extra_config(
+             "enforce_handshake_compat", True
+@@ -611,6 +966,13 @@
+         assert self.transfer_topo is not None
+         p_remote_ranks = self.transfer_topo.handshake_target_ranks(remote_tp_size)
+         remote_rank_to_agent_name: dict[tuple[int, int], str] = {}
++        # Local regions covered by at least one producer shard, to verify a
++        # pipelined producer's stages jointly cover the local layer slice.
++        covered_local_regions: set[int] = set()
++        # [0.28.0 backport extension] Layers (including pooled HMA members)
++        # advertised by the registered producer shards, to verify that every
++        # local layer, not only every local region, receives its KV.
++        covered_layers: set[str] = set()
+         path = make_zmq_path("tcp", host, port)
+         # Clock offset to the peer, estimated from the handshake round-trip.
+         # Keep the lowest-RTT sample: hop cost is ~uniform across ranks, so a
+@@ -715,8 +1077,24 @@
+                     )
+                 else:
+                     remote_agent_name = self.add_remote_agent(
+-                        metadata, remote_rank, remote_tp_size
++                        metadata,
++                        remote_rank,
++                        remote_tp_size,
++                        remote_pp_rank=remote_pp_rank,
++                        remote_pp_size=remote_pp_size,
+                     )
++                    if remote_agent_name is None:
++                        # Shard owns no layer of this consumer stage's slice;
++                        # the consumer stage(s) owning those layers read it.
++                        continue
++                    if remote_pp_size > 1:
++                        indices = self._local_region_indices_if_overlapping(
++                            metadata.registered_layer_names
++                        )
++                        assert indices is not None
++                        covered_local_regions.update(indices)
++                        for region in self._remote_region_members(metadata):
++                            covered_layers.update(region)
+                 setup_agent_time = time.perf_counter()
+                 logger.debug(
+                     "NIXL handshake: add agent took: %s (notif_agents_only=%s)",
+@@ -726,6 +1104,28 @@
+                 remote_ranks = (remote_pp_rank, remote_rank)
+                 remote_rank_to_agent_name[remote_ranks] = remote_agent_name
+ 
++        if not notif_agents_only and remote_pp_size > 1:
++            missing = [
++                name
++                for idx, name in enumerate(self.local_seen_layer_names)
++                if idx not in covered_local_regions
++            ]
++            if missing:
++                raise RuntimeError(
++                    "NIXL handshake failed: the union of the producer's "
++                    "pipeline stages does not cover this consumer stage's "
++                    f"layer slice; uncovered local regions: {missing}"
++                )
++            missing_layers = sorted(
++                name for name in self._member_to_local_region if name not in covered_layers
++            )
++            if missing_layers:
++                raise RuntimeError(
++                    "NIXL handshake failed: the union of the producer's "
++                    "pipeline stages does not advertise every local KV layer "
++                    "(including HMA-pooled members); their KV would never be "
++                    f"transferred. Uncovered local layers: {missing_layers}"
++                )
+         assert best_offset is not None
+         return remote_rank_to_agent_name, best_offset
+ 
+@@ -876,7 +1276,7 @@
+         """
+         self._evict_stale_engines()
+         with self._handshake_lock:
+-            if engine_id in self._remote_agents:
++            if self._handshake_complete(engine_id, pp_size):
+                 return None
+             fut = self._handshake_futures.get(engine_id)
+             if fut is not None:
+@@ -895,6 +1295,7 @@
+             def done_callback(
+                 f: Future[tuple[dict[tuple[int, int], str], float]],
+                 eid=engine_id,
++                pp=pp_size,
+             ):
+                 with self._handshake_lock:
+                     del self._handshake_futures[eid]
+@@ -903,6 +1304,9 @@
+                         self._remote_agents[eid] = remote_agents
+                         self._engine_clock_offset[eid] = clock_offset
+                         self._engine_last_active[eid] = time.perf_counter()
++                        # Mark complete only after every PP stage's TP shards
++                        # are registered, so reads never race a missing handle.
++                        self._remote_pp_size[eid] = pp
+                     except Exception as e:
+                         self._log_failure(
+                             failure_type="handshake_setup_failed",
+@@ -924,6 +1328,7 @@
+             meta.remote.host,
+             meta.remote.port,
+             meta.tp_size,
++            meta.pp_size,
+         )
+         if fut is None:
+             # Already handshaked — only happens if caller does not pre-check.
+@@ -967,6 +1372,14 @@
+         block_stride-byte chunk is one logical block.  We register 1
+         NIXL region and create 1 descriptor per block.
+         """
++        if self.pp_size > 1 and self._supports_consumer_pp:
++            # [0.28.0 backport guard] One interleaved region has no per-layer
++            # names, so pipeline stages cannot be mapped onto it: a PP consumer
++            # would skip every producer shard and never complete the read.
++            raise NotImplementedError(
++                f"NIXL {self._TRANSFER_MODE} mode does not support "
++                "pipeline_parallel_size > 1 with a packed KV cache layout."
++            )
+         self.transfer_topo = TransferTopology(
+             tp_rank=self.tp_rank,
+             tp_size=self.world_size,
+@@ -984,6 +1397,7 @@
+             self.transfer_topo.cross_layers_blocks,
+             transfer_mode=self._TRANSFER_MODE,
+         )
++        pp_rank = get_pp_group().rank_in_group if model_parallel_is_initialized() else 0
+ 
+         total_size = storage.nbytes()
+         block_stride = total_size // self.num_blocks
+@@ -1005,7 +1419,12 @@
+         self.block_len_per_layer = [block_stride]
+         self.num_regions = 1
+         self.num_descs = self.num_blocks
+-        self.kv_caches_base_addr[self.engine_id][self.tp_rank] = [base_addr]
++        self.kv_caches_base_addr[self.engine_id][(pp_rank, self.tp_rank)] = [base_addr]
++        # Packed storage interleaves every layer in one region; it advertises no
++        # per-region layer names, so a PP consumer rejects it at handshake.
++        self.local_kv_caches_base_addr = [base_addr]
++        self.local_seen_layer_names = []
++        self._member_to_local_region = {}
+ 
+         descs = self.nixl_wrapper.get_reg_descs(caches_data, self.nixl_memory_type)
+         self.nixl_wrapper.register_memory(descs, backends=self.nixl_backends)
+@@ -1021,9 +1440,7 @@
+             engine_id=self.engine_id,
+             agent_metadata=self.nixl_wrapper.get_agent_metadata(),
+             device_id=self.device_id,
+-            kv_caches_base_addr=(
+-                self.kv_caches_base_addr[self.engine_id][self.tp_rank]
+-            ),
++            kv_caches_base_addr=self.local_kv_caches_base_addr,
+             num_blocks=self.num_blocks,
+             block_lens=self.block_len_per_layer,
+             kv_cache_layout=self.kv_cache_layout,
+@@ -1033,6 +1450,8 @@
+             physical_blocks_per_logical_kv_block=(
+                 self._physical_blocks_per_logical_kv_block
+             ),
++            pp_rank=pp_rank,
++            pp_size=self.pp_size,
+         )
+         assert self.compat_hash is not None
+         encoder = msgspec.msgpack.Encoder()
+@@ -1078,6 +1497,7 @@
+             self.transfer_topo.cross_layers_blocks,
+             transfer_mode=self._TRANSFER_MODE,
+         )
++        pp_rank = get_pp_group().rank_in_group if model_parallel_is_initialized() else 0
+ 
+         if self.use_host_buffer:
+             self.initialize_host_xfer_buffer(kv_caches=kv_caches)
+@@ -1104,6 +1524,13 @@
+         caches_data = []
+         # With hybrid allocator, layers can share a kv cache tensor
+         seen_base_addresses: list[int] = []
++        # Layer backing each region, so a consumer can map a PP producer's
++        # layer slice onto its own regions by name.
++        seen_layer_names: list[str] = []
++        # Every layer pooled into each region. With HMA a region is shared
++        # across KV groups, so the region holds more than one layer's cache and
++        # a consumer must transfer all of them, not just the representative.
++        region_members: list[list[str]] = []
+ 
+         # K and V are packed into the content dim, so each attention layer is a
+         # single NIXL region whose block transfers as one unit. Mamba layers instead
+@@ -1162,12 +1589,19 @@
+                 # layer registered it first.
+                 idx = seen_base_addresses.index(base_addr)
+                 self._region_is_mla[idx] |= is_mla_region
++                # This layer's cache is pooled into an already-registered
++                # region; a consumer still has to transfer it.
++                members = region_members[idx]
++                if layer_name not in members:
++                    members.append(layer_name)
+                 logger.debug("Skipping %s because it's already seen", layer_name)
+                 continue
+             logger.debug(
+                 "Registering layer %s with cache shape: %s", layer_name, cache.shape
+             )
+             seen_base_addresses.append(base_addr)
++            seen_layer_names.append(layer_name)
++            region_members.append([layer_name])
+             # Only record non-Mamba page sizes.
+             if isinstance(layer_spec, MambaSpec):
+                 self.block_len_per_layer.append(
+@@ -1215,9 +1649,19 @@
+             len(self.block_len_per_layer)
+             == len(seen_base_addresses)
+             == len(self._region_is_mla)
++            == len(seen_layer_names)
+         )
+ 
+-        self.kv_caches_base_addr[self.engine_id][self.tp_rank] = seen_base_addresses
++        self.kv_caches_base_addr[self.engine_id][(pp_rank, self.tp_rank)] = (
++            seen_base_addresses
++        )
++        self.local_kv_caches_base_addr = seen_base_addresses
++        self.local_seen_layer_names = seen_layer_names
++        self._member_to_local_region = {
++            member: region_idx
++            for region_idx, members in enumerate(region_members)
++            for member in members
++        }
+         self.num_regions = len(caches_data)
+ 
+         if self.pp_size > 1:
+@@ -1225,9 +1669,20 @@
+                 self.vllm_config.parallel_config
+             )
+             num_local_layers = end_layer - start_layer
+-            assert num_local_layers > 0 and self.num_regions % num_local_layers == 0
+-            regions_per_layer = self.num_regions // num_local_layers
+-            self._remote_region_offset = regions_per_layer * start_layer
++            if not self._is_hma_required:
++                # A uniform region count per layer only holds without pooling;
++                # HMA resolves a producer's regions by layer membership instead.
++                assert num_local_layers > 0 and self.num_regions % num_local_layers == 0
++                regions_per_layer = self.num_regions // num_local_layers
++                self._remote_region_offset = regions_per_layer * start_layer
++            logger.info(
++                "Registering KV_Caches. pp_rank=%d/%d, layers=[%d, %d), num_regions=%d",
++                pp_rank,
++                self.pp_size,
++                start_layer,
++                end_layer,
++                self.num_regions,
++            )
+ 
+         # Total local FA descriptors (boundary between FA and mamba descs).
+         self.num_descs = self.num_regions * self.num_blocks
+@@ -1265,7 +1720,7 @@
+             engine_id=self.engine_id,
+             agent_metadata=self.nixl_wrapper.get_agent_metadata(),
+             device_id=self.device_id,
+-            kv_caches_base_addr=self.kv_caches_base_addr[self.engine_id][self.tp_rank],
++            kv_caches_base_addr=self.local_kv_caches_base_addr,
+             num_blocks=self.num_blocks,
+             block_lens=self.block_len_per_layer,
+             kv_cache_layout=self.kv_cache_layout
+@@ -1277,6 +1732,10 @@
+             physical_blocks_per_logical_kv_block=(
+                 self._physical_blocks_per_logical_kv_block
+             ),
++            pp_rank=pp_rank,
++            pp_size=self.pp_size,
++            registered_layer_names=seen_layer_names,
++            region_members=region_members,
+         )
+         # Wrap metadata in payload with hash for defensive decoding
+         assert self.compat_hash is not None
+@@ -1286,7 +1745,11 @@
+             agent_metadata_bytes=encoder.encode(agent_metadata),
+         )
+ 
+-    def _build_mamba_local(self, base_addresses: list[int]) -> np.ndarray:
++    def _build_mamba_local(
++        self,
++        base_addresses: list[int],
++        local_region_indices: list[int] | None = None,
++    ) -> np.ndarray:
+         """Build desc regions (conv sub-projections + ssm) per layer for
+         local mamba blocks with DS conv layout, as an Nx3 uint64 array.
+ 
+@@ -1318,9 +1781,21 @@
+         descriptors always use the local page geometry regardless of any
+         attention block-size ratio; their desc ids are likewise never
+         ratio-expanded (see _compute_desc_ids).
++
++        Args:
++            base_addresses: Base address of each region to describe.
++            local_region_indices: Local region index of each entry in
++                ``base_addresses``, used to look up per-region block lengths
++                when describing a producer shard's layer slice. Defaults to
++                the identity mapping over all local regions.
++
++        Returns:
++            Nx3 uint64 array of (address, length, device_id) descriptors.
+         """
+         assert base_addresses, "Local KV cache base addresses must not be empty."
+         assert self._conv_decomp is not None
++        if local_region_indices is None:
++            local_region_indices = list(range(len(base_addresses)))
+         conv_offsets = self._conv_decomp.local_conv_offsets
+         conv_size, ssm_size = self._mamba_ssm_size
+         num_blocks = self._logical_num_blocks
+@@ -1329,7 +1804,11 @@
+         block_arange = np.arange(num_blocks, dtype=np.uint64)
+ 
+         parts: list[np.ndarray] = []
+-        for i, base_addr in enumerate(base_addresses):
++        # A PP producer shard restricts ``base_addresses`` to the regions it
++        # owns and passes their local region indices in ``local_region_indices``;
++        # per-region lengths are looked up by that index, addresses come from the
++        # shard-local ``base_addr``.
++        for i, base_addr in zip(local_region_indices, base_addresses):
+             # Jump one page_size, but ssm page_size may be bigger when kernel
+             # locks block size to a specific value (physical_per_logical scale).
+             page_stride = self.block_len_per_layer[i] * physical_per_logical
+@@ -1395,15 +1874,30 @@
+         self,
+         base_addresses: list[int],
+         block_size_ratio: int,
++        local_region_indices: list[int] | None = None,
+     ) -> np.ndarray:
+-        """Build local FA descriptors for all layers as an Nx3 uint64 array."""
++        """Build local FA descriptors for all layers as an Nx3 uint64 array.
++
++        Args:
++            base_addresses: Base address of each region to describe.
++            block_size_ratio: Local block size divided by remote block size.
++            local_region_indices: Local region index of each entry in
++                ``base_addresses``, used to look up per-region block lengths
++                when describing a producer shard's layer slice. Defaults to
++                the identity mapping over all local regions.
++
++        Returns:
++            Nx3 uint64 array of (address, length, device_id) descriptors.
++        """
+         assert self.transfer_topo is not None
+         assert base_addresses, "Local KV cache base addresses must not be empty."
++        if local_region_indices is None:
++            local_region_indices = list(range(len(base_addresses)))
+         num_blocks = self.num_blocks * block_size_ratio
+         device_id = self.device_id
+         block_arange = np.arange(num_blocks, dtype=np.uint64)
+         parts: list[np.ndarray] = []
+-        for i, base_addr in enumerate(base_addresses):
++        for i, base_addr in zip(local_region_indices, base_addresses):
+             # K/V are packed into the content dim, so the whole block transfers
+             # as one unit: desc length equals the block stride.
+             block_len = self.block_len_per_layer[i] // block_size_ratio
+@@ -1416,12 +1910,28 @@
+         plan: TPMapping,
+         nixl_agent_meta: NixlAgentMetadata,
+         block_size_ratio: int,
++        local_region_indices: list[int] | None = None,
+     ) -> np.ndarray:
+-        """Build remote FA descriptors for all layers as an Nx3 uint64 array."""
++        """Build remote FA descriptors for all layers as an Nx3 uint64 array.
++
++        Args:
++            plan: TP mapping against the producer shard being described.
++            nixl_agent_meta: Handshake metadata of that producer shard.
++            block_size_ratio: Local block size divided by remote block size.
++            local_region_indices: Local region index of each remote region,
++                used to look up per-region block lengths when the producer is
++                a PP stage holding only part of the layers. Defaults to the
++                identity mapping.
++
++        Returns:
++            Nx3 uint64 array of (address, length, device_id) descriptors.
++        """
+         assert self.transfer_topo is not None
+         assert nixl_agent_meta.kv_caches_base_addr, (
+             "Remote KV cache base addresses must not be empty."
+         )
++        if local_region_indices is None:
++            local_region_indices = list(range(len(nixl_agent_meta.kv_caches_base_addr)))
+         fa_group_idx = next(
+             i for i, t in enumerate(self._group_spec_types) if _is_attention_spec(t)
+         )
+@@ -1433,9 +1943,10 @@
+         block_arange = np.arange(num_blocks, dtype=np.uint64)
+         parts: list[np.ndarray] = []
+         for i, base_addr in enumerate(nixl_agent_meta.kv_caches_base_addr):
+-            replicated = self._is_region_replicated(i)
++            local_region_idx = local_region_indices[i]
++            replicated = self._is_region_replicated(local_region_idx)
+             # Read our whole local region size from remote..
+-            local_block_len = self.block_len_per_layer[i]
++            local_block_len = self.block_len_per_layer[local_region_idx]
+             remote_kv_block_len = local_block_len // block_size_ratio
+             if block_size_ratio > 1:
+                 # ..using remote kv_block_len as transfer unit
+@@ -1457,6 +1968,9 @@
+     def register_local_xfer_handler(
+         self,
+         block_size: int,
++        *,
++        registered_layer_names: list[str] | None = None,
++        local_region_indices: list[int] | tuple[int, ...] | None = None,
+     ) -> tuple[int, np.ndarray]:
+         """
+         Function used for register local xfer handler with local block_size or
+@@ -1468,12 +1982,42 @@
+         When remote block size is less than local block size, we need to use
+         register another local_xfer_handler using remote block len to ensure
+         data copy correctness.
++
++        Args:
++            block_size: Block size the handler describes blocks with.
++            registered_layer_names: Layers a pipeline-parallel producer shard
++                registered, in its own registration order. When given, only the
++                matching local regions are described, so the handler lines up
++                1:1 with that shard's remote descriptors. ``None`` describes
++                every local region.
++            local_region_indices: Explicit local region per descriptor slot
++                (0.28.0 backport: a producer region split over several local
++                regions). Takes precedence over ``registered_layer_names``.
++
++        Returns:
++            The prepared local dlist handle and its descriptor array.
+         """
+         assert self.transfer_topo is not None
+         block_size_ratio = self.block_size // block_size
+-        local_base_addresses = self.kv_caches_base_addr[self.engine_id][self.tp_rank]
++        if local_region_indices is not None:
++            local_region_indices = list(local_region_indices)
++            local_base_addresses = [
++                self.local_kv_caches_base_addr[i] for i in local_region_indices
++            ]
++        elif registered_layer_names is None:
++            local_base_addresses = self.local_kv_caches_base_addr
++            local_region_indices = list(range(len(local_base_addresses)))
++        else:
++            local_region_indices = self._local_region_indices_for_layer_names(
++                registered_layer_names
++            )
++            local_base_addresses = [
++                self.local_kv_caches_base_addr[i] for i in local_region_indices
++            ]
+ 
+-        blocks_data = self._build_fa_local(local_base_addresses, block_size_ratio)
++        blocks_data = self._build_fa_local(
++            local_base_addresses, block_size_ratio, local_region_indices
++        )
+         logger.debug(
+             "Created %s blocks for src engine %s and rank %s on device id %s",
+             len(blocks_data),
+@@ -1482,7 +2026,13 @@
+             self.device_id,
+         )
+         if self._has_mamba:
+-            assert self.num_descs * block_size_ratio == len(blocks_data)
++            # num_descs counts every local region; a PP producer shard's handler
++            # describes only the regions backing that stage's layers.
++            assert (
++                registered_layer_names is not None
++                or local_region_indices is not None
++                or (self.num_descs * block_size_ratio == len(blocks_data))
++            )
+             # TODO (ZhanqiuHu): For homogeneous TP (tp_ratio == 1), the 3-descs split
+             # is unnecessary — a single conv desc per block suffices.  Consider
+             # adding a fast path that falls back to the standard 2-region
+@@ -1490,7 +2040,7 @@
+             # remote has been seen.  Currently we always register 4 regions
+             # because local descs are created before knowing the remote TP.
+             logger.debug("Registering local Mamba descriptors (4 regions/layer)")
+-            mamba = self._build_mamba_local(local_base_addresses)
++            mamba = self._build_mamba_local(local_base_addresses, local_region_indices)
+             blocks_data = np.concatenate([blocks_data, mamba])
+ 
+         descs = self.nixl_wrapper.get_xfer_descs(blocks_data, self.nixl_memory_type)
+@@ -1502,10 +2052,14 @@
+         nixl_agent_meta: NixlAgentMetadata,
+         remote_tp_rank: int = 0,
+         remote_tp_size: int = 1,
+-    ) -> str:
++        *,
++        remote_pp_rank: int = 0,
++        remote_pp_size: int = 1,
++    ) -> str | None:
+         """
+         Add the remote NIXL agent and prepare the descriptors for reading cache
+-        blocks from remote.
++        blocks from remote. Returns ``None`` for a pipeline-parallel producer
++        shard that registers no layer of this consumer stage's slice.
+ 
+         In particular, handle both homogeneous and heterogeneous TP. The former
+         requires local rank_i to read from remote rank_i.
+@@ -1545,18 +2099,53 @@
+ 
+         For Mamba hetero-TP, both tp_ratio > 0 (D_TP > P_TP) and
+         tp_ratio < 0 (P_TP > D_TP) are supported by the 3-read transfer.
++
++        A pipeline-parallel producer registers one shard per (pp_rank, tp_rank);
++        each shard holds only its own layer slice, so descriptors are built and
++        cached per shard.
+         """  # noqa: E501
+         engine_id = nixl_agent_meta.engine_id
++        shard_key = (remote_pp_rank, remote_tp_rank)
++        if nixl_agent_meta.pp_size != remote_pp_size:
++            # [0.28.0 backport guard] Checked before the cached-agent early
++            # return so a stage-0 shard cached by an earlier pipelined handshake
++            # cannot satisfy a request routed with the wrong pp_size. With
++            # pp_size == 1 on the request (its kv_transfer_params lost "pp_size"
++            # on the way to the reader) the whole-engine path would read only
++            # stage 0's regions into the local regions by position: every other
++            # stage's KV would silently never transfer.
++            if remote_pp_size == 1:
++                raise RuntimeError(
++                    "NIXL handshake failed: producer advertises "
++                    f"pipeline_parallel_size={nixl_agent_meta.pp_size} "
++                    f"(pp_rank={nixl_agent_meta.pp_rank}) but the request carries "
++                    "pp_size=1. The router/frontend must forward the producer's "
++                    "kv_transfer_params['pp_size'] to the consumer."
++                )
++            raise RuntimeError(
++                "NIXL handshake failed: producer advertised "
++                f"pp_size={nixl_agent_meta.pp_size} but was queried as a "
++                f"pp_size={remote_pp_size} engine."
++            )
+         # TODO re-evaluate refreshing for scaling/recovery
+-        if (0, remote_tp_rank) in self._remote_agents.get(engine_id, {}):
++        if shard_key in self._remote_agents.get(engine_id, {}):
+             logger.debug(
+-                "Remote agent with engine_id %s and rank"
+-                "%s already exchanged metadata, skip handshake.",
++                "Remote agent with engine_id %s, pp rank %s, tp rank %s "
++                "already exchanged metadata, skip handshake.",
+                 engine_id,
++                remote_pp_rank,
+                 remote_tp_rank,
+             )
+-            return self._remote_agents[engine_id][(0, remote_tp_rank)]
++            return self._remote_agents[engine_id][shard_key]
+ 
++        if remote_pp_size > 1:
++            return self._add_pp_remote_agent(
++                nixl_agent_meta,
++                remote_tp_rank,
++                remote_tp_size,
++                remote_pp_rank,
++                remote_pp_size,
++            )
+         # Number of physical regions registered locally (one per layer/tensor).
+         num_local_regions = len(self.block_len_per_layer)
+         if (
+@@ -1566,6 +2155,17 @@
+             # This worker holds a PP layer-slice; the PP=1 remote registered
+             # the full model. Slice its regions to our layer window so the
+             # logic below sees congruent local/remote lists.
++            if self._supports_pp_hma and self._is_hma_required:
++                # Residual gate: the window offset assumes a uniform region
++                # count per layer, which pooling breaks. A PP consumer needs a
++                # PP producer to resolve pooled regions by layer membership.
++                # Modes without _supports_pp_hma reject HMA at construction, so
++                # they never reach this.
++                raise RuntimeError(
++                    "NIXL does not support a pipeline-parallel consumer with "
++                    "hybrid KV cache layouts (HMA) reading from a "
++                    "pipeline_parallel_size == 1 producer yet."
++                )
+             start = self._remote_region_offset
+             end = start + num_local_regions
+             assert len(nixl_agent_meta.kv_caches_base_addr) >= end
+@@ -1589,7 +2189,7 @@
+         transfer_topo.register_remote_engine(engine_id, transfer_info)
+         logger.info("Transfer plan: %s", transfer_topo.describe(engine_id))
+ 
+-        self.tp_mappings[engine_id] = compute_tp_mapping(
++        self.tp_mappings[(engine_id, 0)] = compute_tp_mapping(
+             transfer_topology=transfer_topo,
+             remote_tp_size=remote_tp_size,
+             group_spec_types=self._group_spec_types,
+@@ -1612,7 +2212,7 @@
+             self.dst_num_blocks[engine_id] = nixl_agent_meta.num_blocks
+ 
+         # Keep track of remote agent kv caches base addresses.
+-        self.kv_caches_base_addr[engine_id][remote_tp_rank] = (
++        self.kv_caches_base_addr[engine_id][shard_key] = (
+             nixl_agent_meta.kv_caches_base_addr
+         )
+         self._validate_remote_agent_handshake(nixl_agent_meta, remote_tp_size)
+@@ -1628,7 +2228,7 @@
+             tp_ratio,
+         )
+ 
+-        plan = self.tp_mappings[engine_id]
++        plan = self.tp_mappings[(engine_id, 0)]
+ 
+         ### (Optional) Register a local handler at the remote engine's block
+         ### granularity (remote/prefill blocks smaller than local).
+@@ -1699,12 +2299,355 @@
+ 
+         # Register with NIXL.
+         descs = self.nixl_wrapper.get_xfer_descs(blocks_data, self.nixl_memory_type)
+-        self.dst_xfer_side_handles[engine_id][remote_tp_rank] = (
++        self.dst_xfer_side_handles[engine_id][shard_key] = (
+             self.nixl_wrapper.prep_xfer_dlist(remote_agent_name, descs)
+         )
+ 
+         return remote_agent_name
+ 
++    def _add_pp_remote_agent(
++        self,
++        nixl_agent_meta: NixlAgentMetadata,
++        remote_tp_rank: int,
++        remote_tp_size: int,
++        remote_pp_rank: int,
++        remote_pp_size: int,
++    ) -> str | None:
++        """Register one shard of a pipeline-parallel producer.
++
++        Each producer stage registers only the layers it owns, so descriptors,
++        TP mappings and local handles are all cached per (engine, pp_rank)
++        rather than per engine.
++
++        Args:
++            nixl_agent_meta: Handshake metadata of the producer shard.
++            remote_tp_rank: TP rank of the shard within its stage.
++            remote_tp_size: TP size of the producer.
++            remote_pp_rank: PP rank (stage index) of the shard.
++            remote_pp_size: PP size of the producer.
++
++        Returns:
++            The NIXL agent name of the registered shard, or ``None`` when the
++            shard registers no layer of this consumer stage's slice.
++        """
++        engine_id = nixl_agent_meta.engine_id
++        shard_key = (remote_pp_rank, remote_tp_rank)
++        assert self.transfer_topo is not None
++        transfer_topo = self.transfer_topo
++
++        if nixl_agent_meta.pp_size != remote_pp_size:
++            raise RuntimeError(
++                "NIXL handshake failed: producer advertised "
++                f"pp_size={nixl_agent_meta.pp_size} but was queried as a "
++                f"pp_size={remote_pp_size} engine."
++            )
++        if nixl_agent_meta.pp_rank != remote_pp_rank:
++            raise RuntimeError(
++                "NIXL handshake failed: producer advertised "
++                f"pp_rank={nixl_agent_meta.pp_rank} but was queried for "
++                f"pp_rank={remote_pp_rank}."
++            )
++        if not nixl_agent_meta.registered_layer_names:
++            raise RuntimeError(
++                "NIXL handshake failed: a pipeline-parallel producer must "
++                "advertise registered_layer_names so its layer slice can be "
++                "mapped onto local regions."
++            )
++        if (
++            self._local_region_indices_if_overlapping(
++                nixl_agent_meta.registered_layer_names
++            )
++            is None
++        ):
++            logger.info(
++                "NIXL handshake: skipping producer shard (%s, pp rank %s, tp "
++                "rank %s): it registers no layer of this consumer stage's "
++                "slice.",
++                engine_id,
++                remote_pp_rank,
++                remote_tp_rank,
++            )
++            return None
++
++        transfer_info = EngineTransferInfo(
++            remote_tp_size=remote_tp_size,
++            remote_block_size=nixl_agent_meta.block_size,
++            remote_block_len=nixl_agent_meta.block_lens[0],
++            remote_physical_blocks_per_logical=(
++                nixl_agent_meta.physical_blocks_per_logical_kv_block
++            ),
++            remote_pp_rank=remote_pp_rank,
++        )
++        transfer_topo.register_remote_engine(engine_id, transfer_info)
++        logger.info(
++            "Transfer plan: %s", transfer_topo.describe(engine_id, remote_pp_rank)
++        )
++
++        plan_key = (engine_id, remote_pp_rank)
++        self.tp_mappings[plan_key] = compute_tp_mapping(
++            transfer_topology=transfer_topo,
++            remote_tp_size=remote_tp_size,
++            group_spec_types=self._group_spec_types,
++        )
++
++        remote_agent_name = self.nixl_wrapper.add_remote_agent(
++            nixl_agent_meta.agent_metadata
++        )
++
++        block_size_ratio = transfer_topo.block_size_ratio(nixl_agent_meta.block_size)
++        if engine_id not in self.dst_num_blocks:
++            self.dst_num_blocks[engine_id] = nixl_agent_meta.num_blocks
++
++        self.kv_caches_base_addr[engine_id][shard_key] = (
++            nixl_agent_meta.kv_caches_base_addr
++        )
++        local_region_indices = self._validate_pp_remote_agent_handshake(
++            nixl_agent_meta,
++            remote_pp_rank,
++            remote_tp_size,
++            block_size_ratio,
++        )
++
++        tp_ratio = transfer_topo.tp_ratio(remote_tp_size)
++        if self._is_hma_required and tp_ratio != 1:
++            # Residual gate: pooled regions plus a per-rank read offset need a
++            # hetero-TP x HMA x PP descriptor test we do not have yet.
++            raise RuntimeError(
++                "NIXL does not support heterogeneous TP with hybrid KV cache "
++                "layouts (HMA) and pipeline_parallel_size > 1 yet. Got "
++                f"tp_ratio={tp_ratio}."
++            )
++        logger.debug(
++            "Registering remote agent (%s, pp rank %s, tp rank %s) memory "
++            "regions with tp_ratio %s",
++            engine_id,
++            remote_pp_rank,
++            remote_tp_rank,
++            tp_ratio,
++        )
++        plan = self.tp_mappings[plan_key]
++
++        # [0.28.0 backport extension] Split each producer region into one
++        # descriptor slot per LOCAL region its pooled members live in. On
++        # v0.28.0 a PP stage pools layers by their index inside the stage's
++        # projected KV groups, so when the consumer's stage boundaries differ
++        # (e.g. PP2 producer -> PP1 consumer) one producer region's members can
++        # live in different local regions. Routing every member through the
++        # representative's local region (upstream #53360 at d20b060) would then
++        # write those members' state into another layer's slot. When pooling
++        # matches (symmetric PP, or no pooling) every region is exactly one
++        # slot and the layout is identical to the upstream one.
++        layout = self._shard_desc_layout(nixl_agent_meta)
++        slot_remote_regions, slot_local_regions, slot_member_groups = (
++            self._shard_desc_slots(nixl_agent_meta, local_region_indices, layout)
++        )
++        if len(slot_remote_regions) != len(local_region_indices):
++            logger.info(
++                "NIXL handshake: producer shard (%s, pp rank %s, tp rank %s) "
++                "pools members into different local regions; using %d "
++                "descriptor slots for %d remote regions.",
++                engine_id,
++                remote_pp_rank,
++                remote_tp_rank,
++                len(slot_remote_regions),
++                len(local_region_indices),
++            )
++
++        # One local handler per (engine, stage, remote block size): sibling TP
++        # ranks of the same stage register the same layer slice.
++        local_handle_key = (engine_id, remote_pp_rank, nixl_agent_meta.block_size)
++        if local_handle_key not in self.src_xfer_handles_by_remote:
++            handle, local_blocks_data = self.register_local_xfer_handler(
++                nixl_agent_meta.block_size,
++                local_region_indices=slot_local_regions,
++            )
++            self.src_xfer_handles_by_remote[local_handle_key] = handle
++            self.src_blocks_data_by_remote[local_handle_key] = local_blocks_data
++        self._shard_desc_layouts[plan_key] = ShardDescLayout(
++            region_member_groups=slot_member_groups,
++            ssm_regions_per_layer=layout.ssm_regions_per_layer,
++        )
++        src_blocks_data = self.src_blocks_data_by_remote[local_handle_key]
++        num_shard_regions = len(slot_remote_regions)
++        # Remote view of the slots: a producer region split over k local
++        # regions is described k times (each slot then carries only the member
++        # groups living in its local region).
++        slot_agent_meta = dataclasses.replace(
++            nixl_agent_meta,
++            kv_caches_base_addr=[
++                nixl_agent_meta.kv_caches_base_addr[j] for j in slot_remote_regions
++            ],
++            block_lens=[nixl_agent_meta.block_lens[j] for j in slot_remote_regions],
++        )
++
++        ### (Optional) Register local agent memory regions. MLA is not split.
++        split_handle_key = (engine_id, remote_pp_rank, tp_ratio)
++        if (
++            tp_ratio < 0
++            and (not self.use_mla or len(plan.all_source_ranks) > 1)
++            and split_handle_key not in self.src_xfer_handles_by_shard_tp_ratio
++        ):
++            self.src_xfer_handles_by_shard_tp_ratio[split_handle_key] = []
++            num_shard_descs = num_shard_regions * self.num_blocks * block_size_ratio
++            for handle_data in self._build_local_splits_from_plan(
++                plan,
++                src_blocks_data,
++                num_shard_descs,
++                block_size_ratio,
++            ):
++                descs = self.nixl_wrapper.get_xfer_descs(
++                    handle_data, self.nixl_memory_type
++                )
++                handle = self.nixl_wrapper.prep_xfer_dlist("NIXL_INIT_AGENT", descs)
++                self.src_xfer_handles_by_shard_tp_ratio[split_handle_key].append(handle)
++
++        blocks_data = self._build_fa_remote(
++            plan,
++            slot_agent_meta,
++            block_size_ratio,
++            list(slot_local_regions),
++        )
++        if self._has_mamba:
++            mamba = self._build_mamba_remote(slot_agent_meta, tp_ratio, transfer_info)
++            blocks_data = np.concatenate([blocks_data, mamba])
++        logger.debug(
++            "Created %s blocks for dst engine %s with remote pp rank %s, "
++            "remote tp rank %s and local rank %s",
++            len(blocks_data),
++            engine_id,
++            remote_pp_rank,
++            remote_tp_rank,
++            self.tp_rank,
++        )
++
++        descs = self.nixl_wrapper.get_xfer_descs(blocks_data, self.nixl_memory_type)
++        self.dst_xfer_side_handles[engine_id][shard_key] = (
++            self.nixl_wrapper.prep_xfer_dlist(remote_agent_name, descs)
++        )
++        # [0.28.0 backport] The write below creates the engine's _remote_agents
++        # key before the handshake finished; mark the engine mid-registration
++        # first (pp_size 0 never matches a request), so _handshake_complete()
++        # cannot report a partially-registered pipelined peer as a complete PP=1
++        # one. done_callback stores the real pp_size once every shard is in.
++        self._remote_pp_size[engine_id] = 0
++        # _nixl_handshake only publishes _remote_agents once every shard is
++        # registered; record it now so a partially-registered engine can still
++        # resolve the agents it does have (e.g. for notifs).
++        self._remote_agents[engine_id][shard_key] = remote_agent_name
++
++        return remote_agent_name
++
++    def _validate_pp_remote_agent_handshake(
++        self,
++        nixl_agent_meta: NixlAgentMetadata,
++        remote_pp_rank: int,
++        remote_tp_size: int,
++        block_size_ratio: int,
++    ) -> list[int]:
++        """Validate one pipeline-parallel producer shard's handshake metadata.
++
++        Mirrors ``_validate_remote_agent_handshake`` but compares per-region
++        block lengths against the local regions the shard's layers map to,
++        instead of assuming the producer registered every layer.
++
++        Args:
++            nixl_agent_meta: Handshake metadata of the producer shard.
++            remote_pp_rank: PP rank (stage index) of the shard.
++            remote_tp_size: TP size of the producer.
++            block_size_ratio: Local block size divided by remote block size.
++
++        Returns:
++            Local region index for each of the shard's regions, in the shard's
++            registration order.
++
++        Raises:
++            RuntimeError: A producer layer has no matching local region, or the
++                producer's layout cannot serve a heterogeneous-TP read.
++        """
++        remote_engine_id = nixl_agent_meta.engine_id
++        assert self.transfer_topo is not None
++        assert (
++            len(nixl_agent_meta.kv_caches_base_addr)
++            == len(nixl_agent_meta.block_lens)
++            == len(nixl_agent_meta.registered_layer_names)
++        )
++        local_region_indices = self._local_region_indices_for_layer_names(
++            nixl_agent_meta.registered_layer_names
++        )
++
++        remote_info = self.transfer_topo.get_engine_info(
++            remote_engine_id, remote_pp_rank
++        )
++        assert remote_info.remote_tp_size == remote_tp_size
++
++        tp_ratio = self.transfer_topo.tp_ratio(remote_tp_size)
++        assert tp_ratio != 0, "Local and remote TP size must be divisible."
++        if self.use_mla:
++            assert tp_ratio > 0, "MLA only supports remote TP size >= local TP size."
++        assert not (
++            tp_ratio < 0
++            and self.transfer_topo.is_kv_replicated(remote_engine_id, remote_pp_rank)
++        )
++
++        remote_physical_per_logical = remote_info.remote_physical_blocks_per_logical
++        assert remote_physical_per_logical >= 1
++
++        kv_cache_layout = nixl_agent_meta.kv_cache_layout
++        # [0.28.0 backport] v0.28.0 has no KVCacheLayout enum (upstream main checks
++        # KVCacheLayout[...].is_block_contiguous); its whole-engine validator
++        # requires equal P/D layouts (or the HND->NHD permute, which HMA forbids)
++        # and HND for head splitting. Apply both to PP shards, without permute.
++        local_kv_cache_layout = (
++            self.kv_cache_layout
++            if not self.use_host_buffer
++            else self.host_buffer_kv_cache_layout
++        )
++        if not self.use_mla and kv_cache_layout != local_kv_cache_layout:
++            raise RuntimeError(
++                "NIXL handshake failed: a pipeline-parallel producer shard must use "
++                f"the local kv_cache_layout ({local_kv_cache_layout}); remote is "
++                f"{kv_cache_layout}."
++            )
++        if (
++            abs(tp_ratio) != 1
++            and not self.use_mla
++            and not self.transfer_topo.is_kv_replicated(
++                remote_engine_id, remote_pp_rank
++            )
++            and kv_cache_layout != "HND"
++            and not self.enable_permute_local_kv
++        ):
++            raise RuntimeError(
++                "Heterogeneous TP head-dimension splitting requires contiguous "
++                f"heads, but remote kv_cache_layout is {kv_cache_layout}. Use the "
++                "HND layout on the prefill side."
++            )
++
++        remote_replicates_kv = self.transfer_topo.is_kv_replicated(
++            remote_engine_id, remote_pp_rank
++        )
++        for j, remote_block_len in enumerate(nixl_agent_meta.block_lens):
++            local_block_len = self.block_len_per_layer[local_region_indices[j]]
++            if self.use_mla or remote_replicates_kv:
++                # With a replicated KV cache, only the number of blocks differs.
++                expected = local_block_len // block_size_ratio
++            elif tp_ratio > 0:
++                expected = (local_block_len * tp_ratio) // block_size_ratio
++            else:
++                assert block_size_ratio == 1, (
++                    "Different local/remote block sizes are not supported"
++                    " when P TP > D TP."
++                )
++                expected = local_block_len // (-tp_ratio)
++            assert remote_block_len == expected, (
++                "Remote P worker KV layer cache shape is incompatible with the "
++                "local decode worker."
++            )
++
++        # TP workers that handshake with same remote have same #blocks.
++        assert self.dst_num_blocks[remote_engine_id] == nixl_agent_meta.num_blocks
++        return local_region_indices
++
+     def _validate_remote_agent_handshake(
+         self, nixl_agent_meta: NixlAgentMetadata, remote_tp_size: int
+     ):
+@@ -2111,8 +3054,13 @@
+             # granularity (block_size_ratio > 1) or at kernel-block
+             # granularity, when equal kernel pages meet differing logical
+             # block sizes and _apply_prefix_caching front-trims to the
+-            # minimum count (hybrid heterogeneous TP).
+-            remote_info = self.transfer_topo.get_engine_info(meta.remote.engine_id)
++            # minimum count (hybrid heterogeneous TP). Block size is uniform
++            # across a producer's PP stages, so any registered stage is
++            # representative.
++            remote_info = self.transfer_topo.get_engine_info(
++                meta.remote.engine_id,
++                self._representative_stage(meta.remote.engine_id),
++            )
+             block_size_ratio = self.transfer_topo.block_size_ratio(
+                 remote_info.remote_block_size
+             )
+@@ -2574,9 +3522,25 @@
+         for agent_name in self._remote_agents.pop(engine_id).values():
+             self.nixl_wrapper.remove_remote_agent(agent_name)
+ 
++        # Per-producer-shard local handles (PP producers only).
++        for key in [k for k in self.src_xfer_handles_by_remote if k[0] == engine_id]:
++            self.nixl_wrapper.release_dlist_handle(
++                self.src_xfer_handles_by_remote.pop(key)
++            )
++            self.src_blocks_data_by_remote.pop(key, None)
++        for key in [
++            k for k in self.src_xfer_handles_by_shard_tp_ratio if k[0] == engine_id
++        ]:
++            for handle in self.src_xfer_handles_by_shard_tp_ratio.pop(key):
++                self.nixl_wrapper.release_dlist_handle(handle)
++        for key in [k for k in self._shard_desc_layouts if k[0] == engine_id]:
++            del self._shard_desc_layouts[key]
++
+         self.kv_caches_base_addr.pop(engine_id, None)
+         self.dst_num_blocks.pop(engine_id, None)
+-        self.tp_mappings.pop(engine_id, None)
++        self._remote_pp_size.pop(engine_id, None)
++        for key in [k for k in self.tp_mappings if k[0] == engine_id]:
++            del self.tp_mappings[key]
+         if self.transfer_topo is not None:
+             self.transfer_topo.unregister_remote_engine(engine_id)
+ 
+@@ -2614,6 +3578,16 @@
+         self.src_xfer_handles_by_tp_ratio.clear()
+         for engine_id in list(self._remote_agents):
+             self._cleanup_remote_engine(engine_id, log_eviction=False)
++        # Shards of an engine whose handshake failed before it was published.
++        for handle in self.src_xfer_handles_by_remote.values():
++            self.nixl_wrapper.release_dlist_handle(handle)
++        self.src_xfer_handles_by_remote.clear()
++        self.src_blocks_data_by_remote.clear()
++        for handles in self.src_xfer_handles_by_shard_tp_ratio.values():
++            for handle in handles:
++                self.nixl_wrapper.release_dlist_handle(handle)
++        self.src_xfer_handles_by_shard_tp_ratio.clear()
++        self._shard_desc_layouts.clear()
+         for desc in self._registered_descs:
+             self.nixl_wrapper.deregister_memory(desc)
+         self._registered_descs.clear()
+diff -ruN a/vllm/distributed/kv_transfer/kv_connector/v1/nixl/metadata.py b/vllm/distributed/kv_transfer/kv_connector/v1/nixl/metadata.py
+--- a/vllm/distributed/kv_transfer/kv_connector/v1/nixl/metadata.py
++++ b/vllm/distributed/kv_transfer/kv_connector/v1/nixl/metadata.py
+@@ -2,7 +2,7 @@
+ # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
+ """Metadata dataclasses and helpers for the NIXL connector."""
+ 
+-from dataclasses import dataclass
++from dataclasses import dataclass, field
+ from typing import Any
+ 
+ from vllm.config import VllmConfig
+@@ -43,8 +43,14 @@
+ #      clock-sync timestamp
+ #   6: Validate EAGLE/MTP speculative configuration compatibility
+ #   7: Include NIXL transfer mode (push vs pull) in the compatibility hash
++#   10: Add pipeline-parallel producer metadata, per-request pp_size and the
++#       per-region layer membership of pooled (HMA) regions
++#       (backport of vllm-project/vllm#53360 onto v0.28.0; upstream versions
++#       8 and 9 -- dcp/pcp sizes and block_strides -- are NOT part of this
++#       wire format. The vLLM version is also hashed, so this only gates
++#       patched-vs-stock 0.28.0 peers.)
+ #
+-NIXL_CONNECTOR_VERSION: int = 7
++NIXL_CONNECTOR_VERSION: int = 10
+ 
+ 
+ @dataclass
+@@ -60,6 +66,18 @@
+     ssm_sizes: tuple[int, int]
+     attn_backend_name: str
+     physical_blocks_per_logical_kv_block: int
++    # Pipeline-parallel producer shard identity. Defaults keep a PP=1 peer
++    # that omits these fields decodable.
++    pp_rank: int = 0
++    pp_size: int = 1
++    # Layer names backing each registered region, in registration order. Lets
++    # a consumer map a PP producer's layer slice onto its own regions.
++    registered_layer_names: list[str] = field(default_factory=list)
++    # Every layer whose cache lives in each registered region, in registration
++    # order. With HMA a region is pooled across KV groups, so only the first
++    # layer of the pool appears in registered_layer_names while all of them
++    # must be transferred. Empty means one layer per region.
++    region_members: list[list[str]] = field(default_factory=list)
+ 
+ 
+ @dataclass
+diff -ruN a/vllm/distributed/kv_transfer/kv_connector/v1/nixl/pull_scheduler.py b/vllm/distributed/kv_transfer/kv_connector/v1/nixl/pull_scheduler.py
+--- a/vllm/distributed/kv_transfer/kv_connector/v1/nixl/pull_scheduler.py
++++ b/vllm/distributed/kv_transfer/kv_connector/v1/nixl/pull_scheduler.py
+@@ -266,7 +266,7 @@
+ 
+             remote_num_tokens = request.num_computed_tokens
+ 
+-        return delay_free_blocks, dict(
++        params_out = dict(
+             do_remote_prefill=is_p_node,
+             do_remote_decode=is_d_node,
+             remote_block_ids=block_ids,
+@@ -279,3 +279,10 @@
+             remote_blocks_expiry_time=blocks_expiry_time,
+             transfer_mode=self._TRANSFER_MODE,
+         )
++        # Pipeline-parallel producer: the reader must handshake with and read
++        # from every stage (vllm-project/vllm#53360). Advertised only when > 1
++        # so a PP=1 producer's kv_transfer_params stay byte-identical to stock.
++        pp_size = self.vllm_config.parallel_config.pipeline_parallel_size
++        if pp_size > 1:
++            params_out["pp_size"] = pp_size
++        return delay_free_blocks, params_out
+diff -ruN a/vllm/distributed/kv_transfer/kv_connector/v1/nixl/pull_worker.py b/vllm/distributed/kv_transfer/kv_connector/v1/nixl/pull_worker.py
+--- a/vllm/distributed/kv_transfer/kv_connector/v1/nixl/pull_worker.py
++++ b/vllm/distributed/kv_transfer/kv_connector/v1/nixl/pull_worker.py
+@@ -31,6 +31,13 @@
+ class NixlPullConnectorWorker(NixlBaseConnectorWorker):
+     """Pull-specific (READ) worker logic."""
+ 
++    # Reads are issued per producer stage, so a PP-sharded decode is supported.
++    _supports_consumer_pp = True
++
++    # A shard's descriptors are emitted per (region x member group), so pooled
++    # (HMA) regions of a PP producer are fully covered.
++    _supports_pp_hma = True
++
+     def __init__(
+         self,
+         vllm_config: "VllmConfig",
+@@ -62,10 +69,10 @@
+             )
+             # always store metadata for failure recovery
+             self._recving_metadata[req_id] = meta
+-            if remote_engine_id not in self._remote_agents:
++            if not self._handshake_complete(remote_engine_id, meta.pp_size):
+                 # Initiate handshake with remote engine to exchange metadata.
+                 with self._handshake_lock:
+-                    if remote_engine_id not in self._remote_agents:
++                    if not self._handshake_complete(remote_engine_id, meta.pp_size):
+                         self._background_nixl_handshake(req_id, remote_engine_id, meta)
+                         continue
+ 
+@@ -140,87 +147,137 @@
+             self._handle_failed_transfer(req_id, None)
+             return
+ 
+-        plan = self.tp_mappings[engine_id]
+-        remote_info = self.transfer_topo.get_engine_info(engine_id)
+-        tp_ratio = self.transfer_topo.tp_ratio(remote_info.remote_tp_size)
+-
+-        meta.remote.block_ids = self._logical_to_kernel_block_ids(
+-            meta.remote.block_ids,
+-            remote_info.remote_physical_blocks_per_logical,
+-        )
+-        remote_block_ids = meta.remote.block_ids
++        # The handshake gate in start_load_kv only lets a request through once
++        # the handshake for meta.pp_size stages completed, so every stage that
++        # overlaps this consumer's layer slice is present in the per-stage
++        # structures below.
++        remote_pp_size = meta.pp_size
++        remote_logical_block_ids = meta.remote.block_ids
+         local_block_ids = meta.local_physical_block_ids
+         num_groups = len(local_block_ids)
+-        read_specs = [
+-            ReadSpec(
+-                remote_rank=rank,
+-                local_block_ids=[
+-                    list(local_block_ids[g])
+-                    if rank in plan.source_ranks_per_group[g]
+-                    else []
+-                    for g in range(num_groups)
+-                ],
+-                remote_block_ids=[
+-                    list(remote_block_ids[g])
+-                    if rank in plan.source_ranks_per_group[g]
+-                    else []
+-                    for g in range(num_groups)
+-                ],
+-            )
+-            for rank in plan.all_source_ranks
+-        ]
+-
+-        # D may have to perform multiple reads from different remote ranks.
+-        # Pure MLA reads once because its cache is replicated. Hybrid
+-        # MLA+SSM still needs one read per SSM source rank.
+-        if self.use_mla and tp_ratio < 0 and not self._has_mamba:
+-            assert len(read_specs) == 1
+ 
+-        for i, spec in enumerate(read_specs):
+-            remote_block_size = remote_info.remote_block_size
+-            logger.debug(
+-                "Remote agent %s available, calling _read_blocks"
+-                " on remote rank %s with remote block size %s for req %s",
+-                meta.remote.engine_id,
+-                spec.remote_rank,
+-                remote_block_size,
+-                req_id,
++        # A request's KV is spread across the remote producer's PP stages; read
++        # each overlapping stage in turn (its own layer range, TP mapping and
++        # block geometry). A stage owning none of this consumer's layers was
++        # skipped at handshake and is read by the consumer(s) that own those
++        # layers. With PP=1 the loop runs once at remote_pp_rank 0.
++        for remote_pp_rank in range(remote_pp_size):
++            if (
++                remote_pp_size > 1
++                and (engine_id, remote_pp_rank) not in self.tp_mappings
++            ):
++                continue
++            plan = self.tp_mappings[(engine_id, remote_pp_rank)]
++            remote_info = self.transfer_topo.get_engine_info(engine_id, remote_pp_rank)
++            tp_ratio = self.transfer_topo.tp_ratio(remote_info.remote_tp_size)
++
++            # With PP>1 meta.remote.block_ids must stay logical so each stage
++            # can expand it with its own geometry; with PP=1 the single stage
++            # expands it in place (pre-PP behavior).
++            remote_block_ids = self._logical_to_kernel_block_ids(
++                remote_logical_block_ids,
++                remote_info.remote_physical_blocks_per_logical,
+             )
+-            # Get side handles.
+-            if tp_ratio < 0 and (not self.use_mla or len(read_specs) > 1):
+-                # Remote tp_size > local tp_size: we must perform multiple
+-                # reads. Get the memory chunk onto which we will write to.
+-                split_key = (tp_ratio, remote_block_size)
+-                local_xfer_side_handle = self.src_xfer_handles_by_tp_ratio[split_key][i]
+-            else:
+-                # Single read from remote, we write to the whole memory region.
+-                # Also handle remote block size different from local block size.
+-                local_xfer_side_handle = self.src_xfer_handles_by_block_size[
+-                    remote_block_size
+-                ]
+-
+-            # Destination handle: remote_engine_id -> remote_rank -> handle.
+-            remote_xfer_side_handle = self.dst_xfer_side_handles[meta.remote.engine_id][
+-                spec.remote_rank
++            if remote_pp_size == 1:
++                meta.remote.block_ids = remote_block_ids
++            read_specs = [
++                ReadSpec(
++                    remote_rank=rank,
++                    local_block_ids=[
++                        list(local_block_ids[g])
++                        if rank in plan.source_ranks_per_group[g]
++                        else []
++                        for g in range(num_groups)
++                    ],
++                    remote_block_ids=[
++                        list(remote_block_ids[g])
++                        if rank in plan.source_ranks_per_group[g]
++                        else []
++                        for g in range(num_groups)
++                    ],
++                )
++                for rank in plan.all_source_ranks
+             ]
+ 
+-            self._read_blocks(
+-                read_spec=spec,
+-                request_id=req_id,
+-                dst_engine_id=meta.remote.engine_id,
+-                remote_request_id=meta.remote.request_id,
+-                local_xfer_side_handle=local_xfer_side_handle,
+-                remote_xfer_side_handle=remote_xfer_side_handle,
+-            )
+-
+-        if self.use_mla and tp_ratio < 0 and len(read_specs) == 1:
+-            # ..but we still need to notify the other remote ranks that we
+-            # have the blocks we need so they can update the request state.
+-            notif_id = f"{meta.remote.request_id}:{self.world_size}".encode()
+-            remote_agents = self._remote_agents[meta.remote.engine_id]
+-            for rank_to_notify, agent in remote_agents.items():
+-                if rank_to_notify != (0, read_specs[0].remote_rank):
+-                    self.nixl_wrapper.send_notif(agent, notif_msg=notif_id)
++            # D may have to perform multiple reads from different remote ranks.
++            # Pure MLA reads once because its cache is replicated. Hybrid
++            # MLA+SSM still needs one read per SSM source rank.
++            if self.use_mla and tp_ratio < 0 and not self._has_mamba:
++                assert len(read_specs) == 1
++
++            for i, spec in enumerate(read_specs):
++                remote_block_size = remote_info.remote_block_size
++                logger.debug(
++                    "Remote agent %s available, calling _read_blocks on remote "
++                    "pp rank %s, tp rank %s with remote block size %s for req %s",
++                    meta.remote.engine_id,
++                    remote_pp_rank,
++                    spec.remote_rank,
++                    remote_block_size,
++                    req_id,
++                )
++                # Get side handles.
++                if tp_ratio < 0 and (not self.use_mla or len(read_specs) > 1):
++                    # Remote tp_size > local tp_size: we must perform multiple
++                    # reads. Get the memory chunk onto which we will write to.
++                    if remote_pp_size > 1:
++                        local_xfer_side_handle = (
++                            self.src_xfer_handles_by_shard_tp_ratio[
++                                (engine_id, remote_pp_rank, tp_ratio)
++                            ][i]
++                        )
++                    else:
++                        split_key = (tp_ratio, remote_block_size)
++                        local_xfer_side_handle = self.src_xfer_handles_by_tp_ratio[
++                            split_key
++                        ][i]
++                elif remote_pp_size > 1:
++                    # One handle per producer stage: it covers only the local
++                    # regions backing that stage's layer slice.
++                    local_xfer_side_handle = self.src_xfer_handles_by_remote[
++                        (engine_id, remote_pp_rank, remote_block_size)
++                    ]
++                else:
++                    # Single read from remote, we write to the whole memory region.
++                    # Also handle remote block size different from local block size.
++                    local_xfer_side_handle = self.src_xfer_handles_by_block_size[
++                        remote_block_size
++                    ]
++
++                # Destination handle:
++                # remote_engine_id -> (remote_pp_rank, remote_rank) -> handle.
++                remote_xfer_side_handle = self.dst_xfer_side_handles[
++                    meta.remote.engine_id
++                ][(remote_pp_rank, spec.remote_rank)]
++
++                self._read_blocks(
++                    read_spec=spec,
++                    request_id=req_id,
++                    dst_engine_id=meta.remote.engine_id,
++                    remote_request_id=meta.remote.request_id,
++                    remote_pp_rank=remote_pp_rank,
++                    remote_pp_size=remote_pp_size,
++                    local_xfer_side_handle=local_xfer_side_handle,
++                    remote_xfer_side_handle=remote_xfer_side_handle,
++                )
++
++            if self.use_mla and tp_ratio < 0 and len(read_specs) == 1:
++                # ..but we still need to notify the other remote ranks that we
++                # have the blocks we need so they can update the request state.
++                notif_id = f"{meta.remote.request_id}:{self.world_size}".encode()
++                remote_agents = self._remote_agents[meta.remote.engine_id]
++                for (pp_rank, rank_to_notify), agent in remote_agents.items():
++                    if (
++                        pp_rank == remote_pp_rank
++                        and rank_to_notify != read_specs[0].remote_rank
++                    ):
++                        self.nixl_wrapper.send_notif(agent, notif_msg=notif_id)
++
++        if remote_pp_size > 1 and len(meta.local_physical_block_ids) == 0:
++            # Full prefix hit: no remote read happens, so no recv completion
++            # will report this request. Only the PP path needs this: with PP=1
++            # the pre-PP bookkeeping is left untouched.
++            self._recving_metadata.pop(req_id, None)
+ 
+     def _read_blocks(
+         self,
+@@ -228,19 +285,25 @@
+         dst_engine_id: str,
+         request_id: str,
+         remote_request_id: str,
++        remote_pp_rank: int,
++        remote_pp_size: int,
+         local_xfer_side_handle: int,
+         remote_xfer_side_handle: int,
+     ):
+         """
+         Post a READ point-to-point xfer request from a single local worker to
+         a single remote worker.
++
++        ``remote_pp_rank``/``remote_pp_size`` identify which pipeline stage of
++        the producer is being read: a pipelined producer registers only its own
++        layer slice, so descriptor ids are relative to that shard's dlist.
+         """
+         assert self.transfer_topo is not None
+         remote_rank = read_spec.remote_rank
+         local_block_ids = read_spec.local_block_ids
+         remote_block_ids = read_spec.remote_block_ids
+ 
+-        remote_info = self.transfer_topo.get_engine_info(dst_engine_id)
++        remote_info = self.transfer_topo.get_engine_info(dst_engine_id, remote_pp_rank)
+         block_size_ratio = self.transfer_topo.block_size_ratio(
+             remote_info.remote_block_size
+         )
+@@ -267,7 +330,9 @@
+         # just notify P worker that we have the blocks we need.
+         if len(local_block_ids) == 0:
+             # A full prefix cache hit is indicated with an empty list.
+-            agent_name = self._remote_agents[dst_engine_id][(0, remote_rank)]
++            agent_name = self._remote_agents[dst_engine_id][
++                (remote_pp_rank, remote_rank)
++            ]
+             try:
+                 self.nixl_wrapper.send_notif(agent_name, notif_msg=notif_id)
+             except Exception as e:
+@@ -278,6 +343,7 @@
+                     req_id=request_id,
+                     error=e,
+                     dst_engine_id=dst_engine_id,
++                    remote_pp_rank=remote_pp_rank,
+                     remote_rank=remote_rank,
+                     remote_agent_name=agent_name,
+                 )
+@@ -300,19 +366,40 @@
+         # corresponding rank. With heterogeneous TP, fixing D>P, the D tp
+         # workers will issue xfers to parts of the P worker remote kv caches.
+ 
+-        # Get descs ids.
+-        remote_block_descs_ids = self._compute_desc_ids(
+-            block_ids=remote_block_ids,
+-            dst_num_blocks=self.dst_num_blocks[dst_engine_id],
+-            block_size_ratio=None,
+-            physical_blocks_per_logical=remote_info.remote_physical_blocks_per_logical,
+-        )
+-        local_block_descs_ids = self._compute_desc_ids(
+-            block_ids=local_block_ids,
+-            dst_num_blocks=self.dst_num_blocks[self.engine_id],
+-            block_size_ratio=block_size_ratio,
+-            physical_blocks_per_logical=self._physical_blocks_per_logical_kv_block,
+-        )
++        # Get descs ids. A single-stage (pp_size == 1) producer registers all of
++        # the engine's KV regions, so compute ids against the whole-engine layout
++        # (which also covers Mamba FA/SSM and hetero physical-per-logical). Per-PP
++        # -stage descriptor sharding is only needed when the producer is pipelined.
++        if remote_pp_size == 1:
++            remote_block_descs_ids = self._compute_desc_ids(
++                block_ids=remote_block_ids,
++                dst_num_blocks=self.dst_num_blocks[dst_engine_id],
++                block_size_ratio=None,
++                physical_blocks_per_logical=(
++                    remote_info.remote_physical_blocks_per_logical
++                ),
++            )
++            local_block_descs_ids = self._compute_desc_ids(
++                block_ids=local_block_ids,
++                dst_num_blocks=self.dst_num_blocks[self.engine_id],
++                block_size_ratio=block_size_ratio,
++                physical_blocks_per_logical=self._physical_blocks_per_logical_kv_block,
++            )
++        else:
++            remote_block_descs_ids = self._get_block_descs_ids_for_shard(
++                dst_engine_id,
++                remote_pp_rank,
++                self.dst_num_blocks[dst_engine_id],
++                remote_block_ids,
++                remote_info.remote_physical_blocks_per_logical,
++            )
++            local_block_descs_ids = self._get_block_descs_ids_for_shard(
++                dst_engine_id,
++                remote_pp_rank,
++                self.num_blocks * block_size_ratio,
++                local_block_ids,
++                self._physical_blocks_per_logical_kv_block,
++            )
+ 
+         assert len(local_block_descs_ids) == len(remote_block_descs_ids)
+ 
+@@ -341,6 +428,7 @@
+                 msg="Marking blocks as invalid",
+                 error=e,
+                 dst_engine_id=dst_engine_id,
++                remote_pp_rank=remote_pp_rank,
+                 remote_rank=remote_rank,
+             )
+             self._handle_failed_transfer(request_id, handle)
+diff -ruN a/vllm/distributed/kv_transfer/kv_connector/v1/nixl/push_worker.py b/vllm/distributed/kv_transfer/kv_connector/v1/nixl/push_worker.py
+--- a/vllm/distributed/kv_transfer/kv_connector/v1/nixl/push_worker.py
++++ b/vllm/distributed/kv_transfer/kv_connector/v1/nixl/push_worker.py
+@@ -502,8 +502,9 @@
+         """Issue WRITE transfers to one or more remote TP ranks."""
+         assert meta.remote is not None and self.transfer_topo is not None
+         engine_id = meta.remote.engine_id
+-        plan = self.tp_mappings[engine_id]
+-        remote_info = self.transfer_topo.get_engine_info(engine_id)
++        # Push always targets a PP=1 consumer, hence the fixed stage index 0.
++        plan = self.tp_mappings[(engine_id, 0)]
++        remote_info = self.transfer_topo.get_engine_info(engine_id, 0)
+         tp_ratio = self.transfer_topo.tp_ratio(remote_info.remote_tp_size)
+ 
+         # Expand D's logical IDs using the ratio learned during the
+@@ -526,7 +527,9 @@
+         replicate_attn = self.use_mla and tp_ratio < 0
+         if replicate_attn and not self._has_mamba:
+             assert len(plan.all_source_ranks) == 1
+-            write_ranks = sorted(self.dst_xfer_side_handles[engine_id])
++            write_ranks = sorted(
++                rank for _, rank in self.dst_xfer_side_handles[engine_id]
++            )
+         else:
+             write_ranks = list(plan.all_source_ranks)
+ 
+@@ -571,7 +574,7 @@
+                 ]
+ 
+             remote_xfer_side_handle = self.dst_xfer_side_handles[meta.remote.engine_id][
+-                spec.remote_rank
++                (0, spec.remote_rank)
+             ]
+ 
+             handle = self._xfer_blocks(

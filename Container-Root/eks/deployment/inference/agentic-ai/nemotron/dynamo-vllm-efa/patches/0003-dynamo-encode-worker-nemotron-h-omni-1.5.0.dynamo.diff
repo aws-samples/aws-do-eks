@@ -1,0 +1,293 @@
+diff -ruN a/dynamo/vllm/multimodal_handlers/encode_worker_handler.py b/dynamo/vllm/multimodal_handlers/encode_worker_handler.py
+--- a/dynamo/vllm/multimodal_handlers/encode_worker_handler.py	2026-09-18 02:40:47.000000000 +0000
++++ b/dynamo/vllm/multimodal_handlers/encode_worker_handler.py	2026-10-20 02:29:31.158007821 +0000
+@@ -162,6 +162,7 @@
+             self.model,
+             enforce_eager=self.engine_args.enforce_eager,
+             trust_remote_code=self.engine_args.trust_remote_code,
++            hf_overrides=getattr(self.engine_args, "hf_overrides", None),
+         )
+         hidden_size = getattr(self.vision_model, "out_hidden_size", None)
+         if hidden_size is None:
+@@ -412,7 +413,10 @@
+                     )
+                     encoded_embeddings = embeddings
+                     # Sync XPU to ensure kernels complete before NIXL transfer.
+-                    if embeddings.device.type == "xpu":
++                    if (
++                        isinstance(embeddings, torch.Tensor)
++                        and embeddings.device.type == "xpu"
++                    ):
+                         torch.xpu.synchronize()
+ 
+                 with _nvtx.annotate("mm:enc:split_embeddings", color="orange"):
+@@ -433,7 +437,14 @@
+                         # Validated on llava (NOTE need to double check on other models) that the
+                         # embeddings already has batch dimension for images, so we can directly
+                         # split by batch dimension
+-                        logger.debug(f"image embedding shape: {embeddings.shape}")
++                        # A per-image list (NemotronH Omni: one (num_tokens_i, hidden)
++                        # tensor per image) indexes the same way as a batched tensor.
++                        logger.debug(
++                            "image embedding shape(s): %s",
++                            embeddings.shape
++                            if isinstance(embeddings, torch.Tensor)
++                            else [tuple(e.shape) for e in embeddings],
++                        )
+                         splitted_embeddings = embeddings
+ 
+                     image_grid_thw = (
+diff -ruN a/dynamo/vllm/multimodal_utils/encode_utils.py b/dynamo/vllm/multimodal_utils/encode_utils.py
+--- a/dynamo/vllm/multimodal_utils/encode_utils.py	2026-09-18 02:40:47.000000000 +0000
++++ b/dynamo/vllm/multimodal_utils/encode_utils.py	2026-10-20 02:29:31.157752116 +0000
+@@ -83,12 +83,71 @@
+     )
+ 
+ 
++def _as_py_list(value: Any) -> list:
++    """BatchFeature(tensor_type="pt") turns list fields into tensors; accept both forms."""
++    if isinstance(value, torch.Tensor):
++        return value.tolist()
++    return list(value)
++
++
++def get_nemotron_h_omni_image_features(
++    model: torch.nn.Module, image_embeds: Dict[str, Any]
++) -> list[torch.Tensor]:
++    """
++    Vision features for the NemotronH Omni / Nano-VL family (dynamic-resolution tiler).
++
++    `model` is vLLM's `NemotronH_Nano_VL_V2` composite loaded in --mm-encoder-only mode
++    (RADIO `vision_model` + pixel shuffle + `mlp1`). The HF image processor emits ONE tile
++    per image: `pixel_values` is a stacked (n, 3, H, W) tensor when every tile has the same
++    size, otherwise a list of (3, H_i, W_i) tensors, plus `imgs_sizes` = per-image (H, W).
++    This mirrors the model's own pixel path (`_parse_and_validate_image_input` ->
++    `DynamicResolutionImageTiler.stack` -> `extract_feature_dynamic`) and returns one
++    (num_tokens_i, hidden) tensor per image, in input order.
++    """
++    from vllm.transformers_utils.processors.nano_nemotron_vl import (
++        DynamicResolutionImageTiler,
++    )
++
++    pixel_values = image_embeds["pixel_values"]
++    tiles = (
++        [t for t in pixel_values]
++        if isinstance(pixel_values, torch.Tensor)
++        else list(pixel_values)
++    )
++    if not tiles:
++        raise ValueError("no image tiles to encode")
++    if image_embeds.get("imgs_sizes") is not None:
++        imgs_sizes = [(int(h), int(w)) for h, w in _as_py_list(image_embeds["imgs_sizes"])]
++    else:
++        imgs_sizes = [(int(t.shape[-2]), int(t.shape[-1])) for t in tiles]
++    if len(imgs_sizes) != len(tiles):
++        raise ValueError(
++            f"imgs_sizes ({len(imgs_sizes)}) does not match the tile count ({len(tiles)})"
++        )
++    patch_size = int(model.patch_size)
++    reduction = int(round(1 / float(model.downsample_ratio))) ** 2
++    num_tokens = [(h // patch_size) * (w // patch_size) // reduction for h, w in imgs_sizes]
++    device = next(model.mlp1.parameters()).device
++    stacked = DynamicResolutionImageTiler.stack(
++        [t.to(torch.float32) for t in tiles], patch_size
++    ).to(device=device, dtype=model.llm_dtype)
++    features = model.extract_feature_dynamic(stacked, imgs_sizes)
++    hidden = features.shape[-1]
++    features = features.reshape(-1, hidden)
++    if features.shape[0] != sum(num_tokens):
++        raise RuntimeError(
++            f"encoder returned {features.shape[0]} visual tokens, expected {sum(num_tokens)} "
++            f"for imgs_sizes={imgs_sizes}"
++        )
++    return list(features.split(num_tokens))
++
++
+ def encode_image_embeddings(
+     model_name: str,
+     image_embeds: Dict[str, Any],
+     vision_encoder: torch.nn.Module,
+     projector: Optional[torch.nn.Module] = None,
+-) -> torch.Tensor:
++) -> torch.Tensor | list[torch.Tensor]:
+     """
+     Encode image embeddings using the appropriate model-specific encoder.
+ 
+@@ -119,6 +178,12 @@
+         elif family is ModelFamily.QWEN_VL:
+             embeddings = get_qwen_image_features(vision_encoder, image_embeds)
+ 
++        elif family is ModelFamily.NEMOTRON_H_OMNI:
++            # One (num_tokens_i, hidden) tensor per image. Images may carry different
++            # token counts, so the result stays a list and skips the batch
++            # normalization below (which would keep only the first element).
++            return get_nemotron_h_omni_image_features(vision_encoder, image_embeds)
++
+         else:
+             raise NotImplementedError(f"Model not supported: {model_name}")
+ 
+@@ -157,5 +222,10 @@
+         projector = None
+         return vision_encoder, projector
+ 
++    elif family is ModelFamily.NEMOTRON_H_OMNI:
++        # The mm-encoder-only composite is driven as one unit (vision_model + pixel
++        # shuffle + mlp1 through extract_feature_dynamic); no separate projector handle.
++        return vision_model, None
++
+     else:
+         raise NotImplementedError(f"Model not supported: {model_name}")
+diff -ruN a/dynamo/vllm/multimodal_utils/model.py b/dynamo/vllm/multimodal_utils/model.py
+--- a/dynamo/vllm/multimodal_utils/model.py	2026-09-18 02:40:47.000000000 +0000
++++ b/dynamo/vllm/multimodal_utils/model.py	2026-10-20 02:29:31.157554122 +0000
+@@ -64,6 +64,9 @@
+ 
+     QWEN_VL = "qwen-vl"
+     LLAVA = "llava"
++    # NemotronH Omni / Nano-VL (NVIDIA Nemotron 3.5 Super VL, Nemotron Nano 12B v2 VL, ...):
++    # RADIO vision tower + pixel-shuffle + `mlp1` projector in front of a hybrid-Mamba LLM.
++    NEMOTRON_H_OMNI = "nemotron-h-omni"
+ 
+ 
+ # Per-family registries used by `resolve_model_family`. The encoder reaches
+@@ -90,6 +93,16 @@
+         }
+     ),
+     ModelFamily.LLAVA: frozenset({"LlavaForConditionalGeneration"}),
++    # The checkpoint's bare name plus every alias vLLM's registry maps onto the
++    # `NemotronH_Nano_VL_V2` implementation (vllm/model_executor/models/registry.py).
++    ModelFamily.NEMOTRON_H_OMNI: frozenset(
++        {
++            "NemotronH_Omni_Reasoning_V3",
++            "NemotronH_Super_Omni_Reasoning_V3",
++            "NemotronH_Nano_Omni_Reasoning_V3",
++            "NemotronH_Nano_VL_V2",
++        }
++    ),
+ }
+ 
+ # Name-stage substring patterns (lowercase). A new size / quantization /
+@@ -110,6 +123,9 @@
+         }
+     ),
+     ModelFamily.LLAVA: frozenset({"llava-1.5-7b-hf"}),
++    ModelFamily.NEMOTRON_H_OMNI: frozenset(
++        {"nemotron-3.5-super-vl", "nemotron-3.5-nano-omni", "nemotron-nano-12b-v2-vl"}
++    ),
+ }
+ 
+ 
+@@ -182,10 +198,17 @@
+ 
+ 
+ def load_vision_model(
+-    model_id: str, enforce_eager: bool = False, trust_remote_code: bool = False
++    model_id: str,
++    enforce_eager: bool = False,
++    trust_remote_code: bool = False,
++    hf_overrides: Optional[Dict[str, Any]] = None,
+ ) -> torch.nn.Module:
+     """
+     Load a vision model from a HuggingFace model ID.
++
++    `hf_overrides` is the worker's `--hf-overrides` (forwarded to the vLLM encoder-only
++    engine for the families loaded through it; the NemotronH Omni checkpoints need the
++    architecture alias on vLLM 0.28.x).
+     """
+     if VLLM_ENCODER and resolve_model_family(model_id) is ModelFamily.QWEN_VL:
+         # Disable to get ViT from the same process
+@@ -222,6 +245,51 @@
+         return (
+             vllm_model.llm_engine.engine_core.engine_core.model_executor.driver_worker.worker.model_runner.model.visual
+         )
++    if VLLM_ENCODER and resolve_model_family(model_id) is ModelFamily.NEMOTRON_H_OMNI:
++        # NemotronH Omni / Nano-VL: load the vision side through vLLM's encoder-only engine,
++        # as the Qwen-VL branch does, so the encode worker runs the same RadioModel + mlp1
++        # code and weights the downstream vLLM worker would run in-process. The generic
++        # AutoModel.from_pretrained branch below materializes the FULL checkpoint first
++        # (~249 GB for Nemotron 3.5 Super VL BF16) and this family then had no encoder
++        # extractor at all (get_encoder_components -> NotImplementedError).
++        update_environment_variables(
++            {
++                "VLLM_ENABLE_V1_MULTIPROCESSING": "0",
++            }
++        )
++        with _maybe_skip_encoder_only_kernel_warmup():
++            vllm_model = LLM(
++                model=model_id,
++                enforce_eager=enforce_eager,
++                trust_remote_code=trust_remote_code,
++                hf_overrides=hf_overrides,
++                gpu_memory_utilization=float(
++                    os.getenv("DYN_VLLM_ENCODER_GPU_MEMORY_UTILIZATION", "0.2")
++                ),
++                # vLLM still sizes a KV cache for max_model_len on this hybrid-Mamba
++                # composite even with the language model stubbed out (measured
++                # 2026-10-20: "max seq len (16384) needs 0.21 GiB KV cache", so the
++                # Qwen branch's 64 MiB reservation fails the init check); 1 GiB covers it.
++                kv_cache_memory_bytes=int(
++                    os.getenv(
++                        "DYN_VLLM_ENCODER_KV_CACHE_MEMORY_BYTES",
++                        str(1024 * 1024 * 1024),
++                    )
++                ),
++                max_num_seqs=int(os.getenv("DYN_VLLM_ENCODER_MAX_NUM_SEQS", "64")),
++                # The dynamic-resolution tiler budgets image tokens against max_model_len
++                # (up to max_num_patches / 4 = 3328 tokens per image for this checkpoint),
++                # so the encoder-only engine keeps a real context length here.
++                max_model_len=int(os.getenv("DYN_VLLM_ENCODER_MAX_MODEL_LEN", "16384")),
++                mm_encoder_only=True,
++                enable_prefix_caching=False,
++            )
++        # The composite model: `vision_model` (RADIO) + `mlp1`; its language model is a
++        # StageMissingLayer stub in --mm-encoder-only mode. encode_utils drives
++        # extract_feature_dynamic on it.
++        return (
++            vllm_model.llm_engine.engine_core.engine_core.model_executor.driver_worker.worker.model_runner.model
++        )
+     return AutoModel.from_pretrained(
+         model_id,
+         device_map="auto",
+@@ -251,6 +319,15 @@
+     # Model-specific image handling
+     if resolve_model_family(model) is ModelFamily.QWEN_VL:
+         return _construct_qwen_image_data(image_embeds, image_grid_thw)
++    elif resolve_model_family(model) is ModelFamily.NEMOTRON_H_OMNI:
++        # vLLM reads a list of 2-D (num_tokens, hidden) tensors as per-image embeddings
++        # (MultiModalDataParser.is_embeddings). The encode worker ships one
++        # (1, num_tokens, hidden) tensor per image and images may differ in token count
++        # (dynamic-resolution tiler), so they are kept as a list, never concatenated.
++        # clone(): the received tensor can be a view into a NIXL receive buffer that is
++        # released once the request is handed to the engine.
++        tensors = [t for t in image_embeds] if image_embeds.ndim == 3 else [image_embeds]
++        return {"image": [t.clone() for t in tensors]}
+     else:
+         # Default image handling for other models (e.g., LLAVA_1_5_7B)
+         return {"image": image_embeds}
+diff -ruN a/dynamo/vllm/multimodal_utils/prefill_worker_utils.py b/dynamo/vllm/multimodal_utils/prefill_worker_utils.py
+--- a/dynamo/vllm/multimodal_utils/prefill_worker_utils.py	2026-09-18 02:40:47.000000000 +0000
++++ b/dynamo/vllm/multimodal_utils/prefill_worker_utils.py	2026-10-20 02:29:31.158295697 +0000
+@@ -200,7 +200,11 @@
+         multi_modal_data["image"] = mm_data["image"]
+         return
+ 
+-    if isinstance(mm_data["image"], dict):
++    if isinstance(mm_data["image"], list):
++        # Per-image list of 2-D (num_tokens, hidden) tensors (NemotronH Omni): images may
++        # differ in token count, so they are appended, never concatenated.
++        multi_modal_data["image"].extend(mm_data["image"])
++    elif isinstance(mm_data["image"], dict):
+         # Qwen-VL style: dict with image_embeds + image_grid_thw tensors
+         multi_modal_data["image"]["image_embeds"] = torch.cat(
+             (
+@@ -237,6 +241,10 @@
+                 img[k] = v.clone()
+     elif isinstance(img, torch.Tensor):
+         multi_modal_data["image"] = img.clone()
++    elif isinstance(img, list):
++        multi_modal_data["image"] = [
++            v.clone() if isinstance(v, torch.Tensor) else v for v in img
++        ]
+ 
+ 
+ async def _fetch_from_encode_workers(
