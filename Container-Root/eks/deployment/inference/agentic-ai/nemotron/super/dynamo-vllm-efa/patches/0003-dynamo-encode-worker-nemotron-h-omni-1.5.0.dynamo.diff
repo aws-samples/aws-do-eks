@@ -1,6 +1,6 @@
 diff -ruN a/dynamo/vllm/multimodal_handlers/encode_worker_handler.py b/dynamo/vllm/multimodal_handlers/encode_worker_handler.py
 --- a/dynamo/vllm/multimodal_handlers/encode_worker_handler.py	2026-09-18 02:40:47.000000000 +0000
-+++ b/dynamo/vllm/multimodal_handlers/encode_worker_handler.py	2026-10-20 01:54:55.912353814 +0000
++++ b/dynamo/vllm/multimodal_handlers/encode_worker_handler.py	2026-10-20 02:29:31.158007821 +0000
 @@ -162,6 +162,7 @@
              self.model,
              enforce_eager=self.engine_args.enforce_eager,
@@ -39,7 +39,7 @@ diff -ruN a/dynamo/vllm/multimodal_handlers/encode_worker_handler.py b/dynamo/vl
                      image_grid_thw = (
 diff -ruN a/dynamo/vllm/multimodal_utils/encode_utils.py b/dynamo/vllm/multimodal_utils/encode_utils.py
 --- a/dynamo/vllm/multimodal_utils/encode_utils.py	2026-09-18 02:40:47.000000000 +0000
-+++ b/dynamo/vllm/multimodal_utils/encode_utils.py	2026-10-20 01:54:55.912068359 +0000
++++ b/dynamo/vllm/multimodal_utils/encode_utils.py	2026-10-20 02:29:31.157752116 +0000
 @@ -83,12 +83,71 @@
      )
  
@@ -139,7 +139,7 @@ diff -ruN a/dynamo/vllm/multimodal_utils/encode_utils.py b/dynamo/vllm/multimoda
          raise NotImplementedError(f"Model not supported: {model_name}")
 diff -ruN a/dynamo/vllm/multimodal_utils/model.py b/dynamo/vllm/multimodal_utils/model.py
 --- a/dynamo/vllm/multimodal_utils/model.py	2026-09-18 02:40:47.000000000 +0000
-+++ b/dynamo/vllm/multimodal_utils/model.py	2026-10-20 01:54:55.911859214 +0000
++++ b/dynamo/vllm/multimodal_utils/model.py	2026-10-20 02:29:31.157554122 +0000
 @@ -64,6 +64,9 @@
  
      QWEN_VL = "qwen-vl"
@@ -196,7 +196,7 @@ diff -ruN a/dynamo/vllm/multimodal_utils/model.py b/dynamo/vllm/multimodal_utils
      """
      if VLLM_ENCODER and resolve_model_family(model_id) is ModelFamily.QWEN_VL:
          # Disable to get ViT from the same process
-@@ -222,6 +245,47 @@
+@@ -222,6 +245,51 @@
          return (
              vllm_model.llm_engine.engine_core.engine_core.model_executor.driver_worker.worker.model_runner.model.visual
          )
@@ -221,10 +221,14 @@ diff -ruN a/dynamo/vllm/multimodal_utils/model.py b/dynamo/vllm/multimodal_utils
 +                gpu_memory_utilization=float(
 +                    os.getenv("DYN_VLLM_ENCODER_GPU_MEMORY_UTILIZATION", "0.2")
 +                ),
++                # vLLM still sizes a KV cache for max_model_len on this hybrid-Mamba
++                # composite even with the language model stubbed out (measured
++                # 2026-10-20: "max seq len (16384) needs 0.21 GiB KV cache", so the
++                # Qwen branch's 64 MiB reservation fails the init check); 1 GiB covers it.
 +                kv_cache_memory_bytes=int(
 +                    os.getenv(
 +                        "DYN_VLLM_ENCODER_KV_CACHE_MEMORY_BYTES",
-+                        str(1024 * 1024 * 64),
++                        str(1024 * 1024 * 1024),
 +                    )
 +                ),
 +                max_num_seqs=int(os.getenv("DYN_VLLM_ENCODER_MAX_NUM_SEQS", "64")),
@@ -244,7 +248,7 @@ diff -ruN a/dynamo/vllm/multimodal_utils/model.py b/dynamo/vllm/multimodal_utils
      return AutoModel.from_pretrained(
          model_id,
          device_map="auto",
-@@ -251,6 +315,15 @@
+@@ -251,6 +319,15 @@
      # Model-specific image handling
      if resolve_model_family(model) is ModelFamily.QWEN_VL:
          return _construct_qwen_image_data(image_embeds, image_grid_thw)
@@ -262,7 +266,7 @@ diff -ruN a/dynamo/vllm/multimodal_utils/model.py b/dynamo/vllm/multimodal_utils
          return {"image": image_embeds}
 diff -ruN a/dynamo/vllm/multimodal_utils/prefill_worker_utils.py b/dynamo/vllm/multimodal_utils/prefill_worker_utils.py
 --- a/dynamo/vllm/multimodal_utils/prefill_worker_utils.py	2026-09-18 02:40:47.000000000 +0000
-+++ b/dynamo/vllm/multimodal_utils/prefill_worker_utils.py	2026-10-20 01:54:55.912619590 +0000
++++ b/dynamo/vllm/multimodal_utils/prefill_worker_utils.py	2026-10-20 02:29:31.158295697 +0000
 @@ -200,7 +200,11 @@
          multi_modal_data["image"] = mm_data["image"]
          return
