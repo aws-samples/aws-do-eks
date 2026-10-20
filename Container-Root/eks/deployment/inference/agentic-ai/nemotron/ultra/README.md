@@ -21,6 +21,8 @@ Capacity can be reserved via [EC2 ODCR](https://docs.aws.amazon.com/AWSEC2/lates
 #### 2a. Amazon EKS cluster
 The [aws-do-eks](https://bit.ly/do-eks) project contains example [eksctl](https://eksctl.io) cluster manifests for [p5en](https://github.com/aws-samples/aws-do-eks/blob/main/wd/conf/eksctl/yaml/eks-gpu-p5en-cbr.yaml) and [p6-b200](https://github.com/aws-samples/aws-do-eks/blob/main/wd/conf/eksctl/yaml/eks-gpu-p6-b200-cbr.yaml). It also contains an example [terraform](https://developer.hashicorp.com/terraform) template for [p6-b200](https://github.com/aws-samples/aws-do-eks/tree/main/wd/conf/terraform/eks-p6-b200).
 
+**On EKS Auto Mode:** create the cluster from [eks-auto-mode-gpu-efa.yaml](https://github.com/aws-samples/aws-do-eks/blob/main/wd/conf/eksctl/yaml/eks-auto-mode-gpu-efa.yaml) and add the GPU nodes with the NodeClass + static NodePool manifests in [eks-auto-mode-gpu-efa/](https://github.com/aws-samples/aws-do-eks/tree/main/wd/conf/eksctl/yaml/eks-auto-mode-gpu-efa) (p5en and p6-b200; the capacity reservation id goes in the NodeClass). See "Cluster types" below for what differs once the cluster is up.
+
 #### 2b. SageMaker HyperPod EKS cluster
 The [aws-do-hyperpod](https://bit.ly/aws-do-hyperpod) project, the [hyperpod-eks](https://bit.ly/smhp-eks-workshop) workshop, and the SageMaker HyperPod EKS [documentation](https://docs.aws.amazon.com/sagemaker/latest/dg/sagemaker-hyperpod-eks-operate-console-ui-create-cluster.html) are good resources to help with creating a HyperPod EKS cluster. A HyperPod EKS cluster can also be created easilry from the [AWS Console](https://us-east-1.console.aws.amazon.com/sagemaker/home?region=us-east-1#/cluster-management/create-hp-eks).
 
@@ -28,18 +30,47 @@ The [aws-do-hyperpod](https://bit.ly/aws-do-hyperpod) project, the [hyperpod-eks
 Deploy the [EBS](https://github.com/aws-samples/aws-do-eks/tree/main/Container-Root/eks/deployment/csi/ebs) and [FSx](https://github.com/aws-samples/aws-do-eks/tree/main/Container-Root/eks/deployment/csi/fsx) CSI drivers to your cluster.
 Use the `./sc-set.sh` script from the [csi](https://github.com/aws-samples/aws-do-eks/tree/main/Container-Root/eks/deployment/csi) folder to set your default storage class to `gp2`. Create an FSxL PVC called `fsx-pvc` by applying the `fsx-pvc-dynamic.yaml` manifest from the [fsx](https://github.com/aws-samples/aws-do-eks/blob/main/Container-Root/eks/deployment/csi/fsx) folder.
 
+**On EKS Auto Mode:** block storage (EBS) is a built-in capability of the cluster, so the EBS CSI driver is not yours to install; the FSx for Lustre CSI driver and the `fsx-pvc` claim still are (the p5e cluster of the super campaign had `fsx-pvc`, 1.2 TiB RWX, in `default`). The FSx client's traffic rides EFA on those nodes, so EFA byte counters are read only around the benchmark windows.
+
 ### 4. NVIDIA GPU Device Plugin
 The plugin can be deployed from the [nvidia-device-plugin](https://github.com/aws-samples/aws-do-eks/blob/main/Container-Root/eks/deployment/nvidia-device-plugin/) folder, or using your preferred method.
+
+**On EKS Auto Mode:** not needed — the "EKS Auto, Nvidia" Bottlerocket nodes expose `nvidia.com/gpu` themselves and carry the `nvidia.com/gpu:NoSchedule` taint, which every GPU container in the templates tolerates. The templates' `/dev/gdrdrv` CharDevice mount is satisfied by the [gdrcopy-installer DaemonSet](https://github.com/aws-samples/aws-do-eks/blob/main/Container-Root/eks/deployment/nvidia-drivers/gdrcopy-daemonset-bottlerocket.yaml) (adjust its NodeClass `nodeSelector`).
 
 ### 5. EFA Device Plugin
 The plugin can be deployed from the [efa-device-plugin](https://github.com/aws-samples/aws-do-eks/tree/main/Container-Root/eks/deployment/efa-device-plugin) folder, or using your preferred method.
 
+**On EKS Auto Mode:** the nodes advertise `vpc.amazonaws.com/efa` themselves (on the p5e cluster the installed EFA device-plugin DaemonSet scheduled on no node, DESIRED=0, and the nodes still advertised 32). Set `EFA_PER_WORKER` to the node's allocatable count (p5e.48xlarge 32; the `.env` default 16 is p5en's).
+
 ### 6. Leader Worker Set
 You can deploy the Leader Worker Set Controller and CRD using the [lws](https://github.com/aws-samples/aws-do-eks/tree/main/Container-Root/eks/deployment/lws) folder, or another method.
+
+**On EKS Auto Mode:** unchanged (the p5e cluster ran LeaderWorkerSet v0.8.0 from this folder); the LWS templates here render and dry-run against such a cluster the same way.
 
 ### 7. NVIDIA Dynamo Platform
 Deploy [NVIDIA Dynamo] by running the `./deploy.sh` script in the [nvidia-dynamo](https://github.com/aws-samples/aws-do-eks/tree/main/Container-Root/eks/deployment/nvidia-dynamo) folder.
 
+**On EKS Auto Mode:** unchanged (the p5e cluster ran the Dynamo platform operator from this folder, with Grove + KAI from [grove](https://github.com/aws-samples/aws-do-eks/tree/main/Container-Root/eks/deployment/grove)). The operator, NATS/etcd and the frontends land on the built-in `general-purpose` NodePool, whose consolidation is why every frontend pod here carries `karpenter.sh/do-not-disrupt: "true"`.
+
+
+## Cluster types: traditional EKS / HyperPod EKS vs EKS Auto Mode
+
+The measured results in [test/RESULTS.md](test/RESULTS.md) come from traditional clusters: a 4-node p6-b200.48xlarge SageMaker HyperPod EKS cluster and an 8-node p5en.48xlarge EKS cluster with managed node groups. **Nemotron-3 Ultra has NOT been run on an EKS Auto Mode cluster.** The sibling [nemotron/super](../super) tree ran its full grid on an EKS Auto Mode cluster with four p5e.48xlarge Bottlerocket "EKS Auto, Nvidia" nodes (2026-10-19/20) with the same template families, `.env` knobs and scripts as this tree, and the fixes that campaign produced are carried here for parity: the `karpenter.sh/do-not-disrupt` annotation on every frontend pod and on the do-aiperf client, `NCCL_DEBUG` on every worker of the disaggregated templates whose roles span nodes, the download pod without the `nvidia.com/gpu.present` node pin, and the `.env` comments on `EFA_PER_WORKER`, `INSTANCE_TYPE_FRONTEND` and `NAMESPACE`. The super launch line, with the same knobs this tree has, was `INSTANCE_TYPE_WORKER=p5e.48xlarge EFA_PER_WORKER=32 NAMESPACE=default INSTANCE_TYPE_FRONTEND=m7i.xlarge ./run.sh`. What differs between the two classes, as measured there (super's [test/RESULTS.md](../super/test/RESULTS.md), "p5e / EKS Auto Mode notes"):
+
+| Topic | Traditional EKS (managed node groups) / HyperPod EKS | EKS Auto Mode | Where it lives in this tree |
+|---|---|---|---|
+| Cluster config | eksctl manifests such as [eks-gpu-p5en-cbr.yaml](https://github.com/aws-samples/aws-do-eks/blob/main/wd/conf/eksctl/yaml/eks-gpu-p5en-cbr.yaml); HyperPod per its own tooling (instance-type labels carry the `ml.` prefix) | [eks-auto-mode-gpu-efa.yaml](https://github.com/aws-samples/aws-do-eks/blob/main/wd/conf/eksctl/yaml/eks-auto-mode-gpu-efa.yaml) plus the NodeClass + static NodePool manifests in [eks-auto-mode-gpu-efa/](https://github.com/aws-samples/aws-do-eks/tree/main/wd/conf/eksctl/yaml/eks-auto-mode-gpu-efa) (the capacity reservation id goes in the NodeClass); the p5e cluster that ran the campaign is [eks-auto-nemotron-super-vl.yaml](https://github.com/aws-samples/aws-do-eks/blob/main/wd/conf/eksctl/yaml/eks-auto-nemotron-super-vl.yaml) + [its folder](https://github.com/aws-samples/aws-do-eks/tree/main/wd/conf/eksctl/yaml/eks-auto-nemotron-super-vl) | — |
+| GPU and EFA resources | the NVIDIA device plugin and the EFA device plugin are installed by you (prerequisites) | Auto Mode's "EKS Auto, Nvidia" Bottlerocket nodes expose `nvidia.com/gpu` and `vpc.amazonaws.com/efa` themselves: the kube-system EFA device-plugin DaemonSet installed per the folder's README scheduled on no node (DESIRED=0) and the nodes still advertised 32 EFA; nothing else to install | the templates request both resources either way |
+| EFA per node | p5en.48xlarge 16 (`.env` default); p6-b200.48xlarge 8 | p5e.48xlarge 32 -> `EFA_PER_WORKER=32` | `.env` (`EFA_PER_WORKER`, table in the comments) |
+| `/dev/gdrdrv` (the templates mount it as a `CharDevice` hostPath) | from the node AMI / your own DaemonSet | provided by [nvidia-drivers/gdrcopy-daemonset-bottlerocket.yaml](https://github.com/aws-samples/aws-do-eks/blob/main/Container-Root/eks/deployment/nvidia-drivers/gdrcopy-daemonset-bottlerocket.yaml) (+ `install-gdrcopy-bottlerocket.sh`); its `nodeSelector` names the NodeClass (`p5e-efa`), so adjust it to yours | — |
+| GPU node taint | depends on your node group | `nvidia.com/gpu:NoSchedule` on every GPU node; every GPU container in the templates tolerates it | templates |
+| Frontend placement | the *preferred* `INSTANCE_TYPE_FRONTEND` falls back to an existing node | Karpenter treats the preference as a provisioning hint and launches a node of that type for the frontend (a type that exists but has no room gets a new node too), consolidated away after teardown; pick a type that exists with room (the campaign used `m7i.xlarge`) or accept one extra small node per deployment | `.env` (`INSTANCE_TYPE_FRONTEND`) |
+| Karpenter consolidation | n/a | the built-in `general-purpose` NodePool (`WhenEmptyOrUnderutilized`, 30 s) drained a utility node under a live frontend and two running aiperf clients; every frontend pod and the do-aiperf client now carry `karpenter.sh/do-not-disrupt: "true"` (inert without Karpenter); worker pods fill a GPU node and the GPU pools consolidate `Never` | templates, `test/aiperf-pod-run.sh` |
+| Download pod | lands on any node | the former `nvidia.com/gpu.present` node pin is a GPU-operator/NFD label Auto Mode nodes do not carry (the pod stayed Pending) -> no pin by default, `HF_POD_NODE_SELECTOR` restores it | `download/hf-pod-run.sh` |
+| Image pull | pull secret or node role, per your setup | a same-account private ECR pull worked with the node role, no pull secret | `.env` (`REGISTRY`/`IMAGE`/`TAG`) |
+| EFA byte counters (the per-cell EFA proof) | read from host sysfs through a privileged `hostPath: /sys` pod per node (what [`eks/ops/efatop.sh`](https://github.com/aws-samples/aws-do-eks/blob/main/Container-Root/eks/ops/efatop.sh) does); the worker pod's own sysfs showed no `hw_counters` directory on the p5en pods either | same method; on the Bottlerocket nodes (kernel 6.12, efa module 3.1.0g) the container's sysfs has no `hw_counters` directory while the host has the full set | RESULTS.md "EFA proof" |
+| FSx for Lustre | — | the FSx client itself rides EFA on these nodes (tens of GB of `rdma_read_bytes` during a weight load), so counters are read only around the benchmark windows; two checkpoints loading at once halve each other's rate on the 1.2 TiB volume | RESULTS.md p5e notes |
+| Node health | — | Auto Mode surfaces GPU PCIe replays as node events (`AcceleratedHardwareReady ... NvidiaPCIeError`); read them alongside any failure | RESULTS.md p5e notes |
 
 ## Download the model weights
 
