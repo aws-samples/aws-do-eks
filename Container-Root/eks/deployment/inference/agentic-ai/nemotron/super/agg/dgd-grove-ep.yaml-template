@@ -68,9 +68,13 @@
 #     artifacts to land under this manifest's FSx path (stale-MANIFEST_TYPE
 #     trap; verify with run-meta.json observed.workloads, never the path).
 #
-# Like lws-ep (and unlike the other agg templates) there is NO --load-format
-# here: the proven lws-ep leg loaded with vLLM's default path, and adding
-# runai_streamer would make a 1.4.0-vs-LWS A/B two-variable. The cold-start
+# Unlike the other agg templates there is NO --load-format here: this leg was
+# proven and measured with vLLM's default loader (load_format=auto) on both grids
+# (test/RESULTS.md ²⁸: model listed 7 min after apply on p5en; ⁶⁴: 12-13 min on
+# EKS Auto Mode p5e, first shard 6 min). lws-ep, which used to share this choice,
+# moved to --load-format ${LOAD_FORMAT} after a default-loader launch on p5e
+# stalled at 2/64 shards in 16 min (⁶²); if that recurs here, add
+# --load-format ${LOAD_FORMAT} to the exec line below and re-measure. The cold-start
 # warmup block is intentionally ABSENT for the same multinode-clique reason as
 # agg/dgd-grove.yaml-template; BF16 (the default) never needed it. No explicit
 # ports/probes on the worker either — the operator injects multinode-aware
