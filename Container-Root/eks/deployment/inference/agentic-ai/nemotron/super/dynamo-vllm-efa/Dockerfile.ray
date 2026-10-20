@@ -15,8 +15,17 @@
 # Ray 2.55.1 is the PP2-proven pin from the ultra golden image (import-verified
 # with vllm 0.28.0).
 #
+#   patch 2 (OPTIONAL, NIXL_PP_PATCH=1): NIXL pull-path pipeline parallelism for PP>1
+#            prefill AND decode of this hybrid-Mamba model (disagg/lws-2pp, lws-pp2,
+#            dgd-grove-pp2): the backport of the open upstream PR vllm-project/vllm#53360
+#            onto vLLM 0.28.0 (patches/0002-*.diff). Stock 0.28.0 refuses every PP>1 NIXL
+#            worker of a Mamba hybrid at init. Off by default (unmerged upstream change);
+#            see step 3b. MEASURED 2026-10-19 on 4x p5e.48xlarge: disagg/lws-pp2 BF16
+#            serves with byte-identical temperature-0 output vs PP1 and per-stage KV over EFA.
+#
 # Build:
 #   docker build -f Dockerfile.ray -t dynamo-vllm-efa:1.5.0-super-ray .
+#   docker build -f Dockerfile.ray --build-arg NIXL_PP_PATCH=1 -t dynamo-vllm-efa:1.5.0-super-ray-nixlpp .   # PP>1 disagg
 #
 # ---------------------------------------------------------------------------------------
 ARG BASE=nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.5.0-efa
@@ -84,6 +93,28 @@ PY
 COPY patches/apply_pp_patch.py /opt/vllm-patches/apply_pp_patch.py
 RUN python3 /opt/vllm-patches/apply_pp_patch.py
 
+# ---- 3b) OPTIONAL: NIXL pull-path pipeline-parallel (PP>1 prefill AND decode) for hybrid-Mamba, vLLM 0.28.0 ----
+#    Stock vLLM 0.28.0 raises at worker init for every PP>1 NIXL worker of a Mamba hybrid
+#    (base_worker.py: "does not support pipeline_parallel_size > 1 with hybrid KV cache layouts (HMA)"),
+#    which blocks disagg/lws-2pp, disagg/lws-pp2 and disagg/dgd-grove-pp2 (../test/RESULTS.md).
+#    patches/0002-nixl-pull-path-pipeline-parallel-0.28.0.vllm.diff is the backport of the open upstream PR
+#    vllm-project/vllm#53360 (head d20b060) onto the 0.28.0 nixl package: per-stage handshake and reads, pooled-region
+#    (HMA) member routing, symmetric PP consumers. It bumps the connector wire version 7 -> 10, so BOTH roles of a
+#    disagg pair must run the same build (a stock peer fails the handshake loudly).
+#    Opt-in (--build-arg NIXL_PP_PATCH=1): an unmerged upstream change stays out of the default image.
+#    Strict: --dry-run --fuzz=0 first, so a base drift fails the build and not a GPU node at serve time; the verifier
+#    then proves the patched package imports and carries the markers.
+ARG NIXL_PP_PATCH=0
+COPY patches/0002-nixl-pull-path-pipeline-parallel-0.28.0.vllm.diff patches/verify_nixl_pp_patch.py /opt/vllm-patches/
+RUN set -eux; \
+    if [ "${NIXL_PP_PATCH}" = "1" ]; then \
+      SITE="$(python3 -c 'import importlib.util; print(importlib.util.find_spec("vllm").submodule_search_locations[0].rsplit("/vllm",1)[0])')"; \
+      cd "${SITE}"; \
+      patch -p1 --dry-run --fuzz=0 --forward < /opt/vllm-patches/0002-nixl-pull-path-pipeline-parallel-0.28.0.vllm.diff; \
+      patch -p1 --fuzz=0 --forward < /opt/vllm-patches/0002-nixl-pull-path-pipeline-parallel-0.28.0.vllm.diff; \
+      python3 /opt/vllm-patches/verify_nixl_pp_patch.py; \
+    else echo "[nixl-pp] NIXL_PP_PATCH=0: stock NIXL connector (PP>1 disagg of hybrid-Mamba models stays unsupported)"; fi
+
 # ---- 4) CVE remediation: drop worker-UNUSED binaries ----------------------------------
 # 3a) nats-server (17 MB)
 RUN rm -f /usr/bin/nats-server || true
@@ -124,4 +155,4 @@ print(f"[golden-1.5.0-super-ray] all prerequisites OK: vllm={m.version('vllm')} 
 PY
 
 USER dynamo
-LABEL org.opencontainers.image.description="Golden-image 1.5.0 for Nemotron 3.5 Super VL + Ray + PP: Dynamo 1.5.0 (-efa base, EFA 1.50 + NIXL LIBFABRIC baked) + vLLM 0.28.0 + Ray 2.55.1 + NemotronH_Nano_VL_V2 SupportsPP patch (multi-node PP2) + CVE remediation"
+LABEL org.opencontainers.image.description="Golden-image 1.5.0 for Nemotron 3.5 Super VL + Ray + PP: Dynamo 1.5.0 (-efa base, EFA 1.50 + NIXL LIBFABRIC baked) + vLLM 0.28.0 + Ray 2.55.1 + NemotronH_Nano_VL_V2 SupportsPP patch (multi-node PP2) + optional NIXL PP>1 pull-path backport (vllm#53360, NIXL_PP_PATCH=1) + CVE remediation"
