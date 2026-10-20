@@ -65,7 +65,15 @@
 #     nats-server STILL baked (17 MB)            -> CVE removal layer KEPT
 #     etcd/etcdctl/etcdutl STILL baked (61 MB)   -> CVE removal layer KEPT
 #     apt launchpadlib chain STILL baked (python3-cryptography 41.0.7 et al) -> KEPT
-#     mooncake-transfer-engine ABSENT            -> ultra's 4c layer RETIRED (assert)
+#     mooncake-transfer-engine ABSENT under that name, BUT the 1.5.0 base ships the SAME optional Mooncake KV connector as
+#       mooncake-transfer-engine-cuda13 0.3.13.post1 (measured 2026-10-20 by the CVE gate: its bundled Go libetcd_wrapper.so
+#       carries 19 HIGH) -> the super recipe's "converged" assert on the old name passed vacuously; ultra's 4c removal layer
+#       is RESTORED as step 4e and the assert covers both names
+#     lmcache 0.5.4 PRESENT (optional LMCache KV connector, unused by every template; CRITICAL CVE-2026-105192; the fixed
+#       0.5.6 would pull grpcio 1.78 + nvidia-nccl-cu13 2.29.7 = a NCCL change) -> REMOVED in 4e, not bumped
+#     pyjwt 2.13.0 (CRITICAL CVE-2026-102268 + 5 HIGH; required only by mcp, msal), urllib3 2.7.0 (2 HIGH), aiohttp 3.14.3
+#       (2 HIGH; ray also vendors a 3.13.5 copy under ray/_private/runtime_env/agent/thirdparty_files that pip cannot reach),
+#       openssl/libssl3t64 3.0.13-0ubuntu3.15 (1 HIGH, Ubuntu fix 3.0.13-0ubuntu3.16 available) -> measured bumps in 4f/4g
 #     /opt/uv/cache ABSENT                        -> ultra's 4d layer RETIRED (assert)
 #     venv cryptography 50.0.0                    -> ultra's 4f layer RETIRED (assert)
 #     flashinfer_cubin/cubins WRITABLE by uid 1000 (gid 0, mode 775 group-write; mkdir test PASSED) -> ultra's chmod layer RETIRED (assert)
@@ -226,6 +234,35 @@ RUN apt-get remove -y --purge \
 # 4d) ray_dist.jar (Ray's Java driver): our templates drive ray from Python only (`--distributed-executor-backend ray`);
 #     the jar carries Java-ecosystem CVEs. `import ray` + the step-5 assert stay green without it.
 RUN rm -f /usr/local/lib/python3.12/dist-packages/ray/jars/ray_dist.jar
+# 4e) Optional KV connectors no template uses (every disagg template here moves KV through NixlConnector LIBFABRIC;
+#     vLLM imports both only lazily, inside its MooncakeConnector / LMCacheConnectorV1 classes; `pip show` lists no requirer):
+#     - lmcache 0.5.4: CRITICAL CVE-2026-105192. The fixed release 0.5.6 would pull grpcio 1.78.0 + nvidia-nccl-cu13 2.29.7
+#       (a NCCL change under torch) - so REMOVE, do not bump.
+#     - mooncake-transfer-engine-cuda13 0.3.13.post1: the 1.5.0 base ships Mooncake under this cu13 wheel name; its bundled
+#       mooncake/libetcd_wrapper.so (Go stdlib 1.25.10, x/net v0.55.0, x/text v0.37.0, grpc v1.82.1) carries 19 HIGH -
+#       the same carrier ultra's 1.4.0 recipe removed as `mooncake-transfer-engine`. Restore path if a Mooncake scenario ever
+#       lands here: `pip install mooncake-transfer-engine-cuda13` (and re-run the CVE gate).
+#     MEASURED 2026-10-20 (throwaway container of this image): `pip check` delta vs stock empty; vllm, ray, dynamo.vllm.main,
+#     the KV-connector factory, the NIXL connector + base/pull workers and the Nemotron model classes all import afterwards.
+RUN pip uninstall -y lmcache mooncake-transfer-engine-cuda13
+# 4f) Measured pip bumps - pure-Python libraries, no vllm/torch/ray/nixl pin touched (asserted in step 5):
+#     pyjwt 2.13.0 -> 2.14.0 (CRITICAL CVE-2026-102268 + HIGH CVE-2026-102266/-102267/-102271/-102272/-102273; required
+#     only by mcp and msal), urllib3 2.7.0 -> 2.8.0 (HIGH CVE-2026-97687/-97689), aiohttp 3.14.3 -> 3.14.4 (HIGH
+#     CVE-2026-111064, GHSA-2g87-pp6c-29x5; pulls yarl 1.25.1). `pip install --dry-run` resolved exactly these four wheels and
+#     `pip check` delta vs stock is empty (MEASURED 2026-10-20, as above). Ray's vendored aiohttp 3.13.5 copy is not pip-reachable
+#     and stays (KNOWN-OPEN below).
+RUN pip install --no-cache-dir "pyjwt==2.14.0" "urllib3==2.8.0" "aiohttp==3.14.4"
+# 4g) openssl / libssl3t64 3.0.13-0ubuntu3.15 -> 3.0.13-0ubuntu3.16 (HIGH CVE-2026-84782): the Ubuntu 24.04 security fix,
+#     --only-upgrade so nothing else moves.
+RUN apt-get update \
+    && apt-get install -y --only-upgrade openssl libssl3t64 \
+    && rm -rf /var/lib/apt/lists/*
+
+# KNOWN-OPEN after 4a-4g (HIGH, deliberate; counted by the buildspec's MAX_HIGH): ray 2.55.1 CVE-2026-57516 (fixed 2.56.0 -
+# 2.55.1 is the PP2-PROVEN pin of both trees and this image's golden rule is measure-before-bump; the bump is queued behind an
+# E2E PP>1 smoke, do NOT fold it into a CVE pass); ray's vendored aiohttp 3.13.5 under ray/_private/runtime_env/agent/
+# thirdparty_files (CVE-2026-69244, CVE-2026-111064, GHSA-2g87-pp6c-29x5; rides the same ray pin); nltk 3.10.3 CVE-2026-81726
+# (no fixed release; pulled in by cosmos-guardrail).
 
 # ---- 5) Final assert: every scenario's prerequisites present; converged ultra layers stay converged ----
 RUN set -eux; \
@@ -239,13 +276,22 @@ assert os.path.exists("/opt/amazon/efa/bin/fi_info"), "EFA userspace missing"
 assert not os.path.exists("/usr/bin/nats-server"), "nats-server still present (step 4a)"
 assert not os.path.exists("/usr/local/bin/etcd"), "etcd bins still present (step 4b)"
 # Converged-in-GA asserts (ultra's 1.4.0 layers 4c/4d/4f + cubin chmod, retired here — fail loud on regression):
-try:
-    m.version("mooncake-transfer-engine"); raise AssertionError("mooncake re-appeared - restore ultra's removal layer")
-except m.PackageNotFoundError:
-    pass
+for gone in ("mooncake-transfer-engine", "mooncake-transfer-engine-cuda13", "lmcache"):
+    try:
+        m.version(gone); raise AssertionError(f"{gone} present - step 4e did not remove it")
+    except m.PackageNotFoundError:
+        pass
 assert not os.path.exists("/opt/uv/cache"), "uv wheel cache re-appeared - restore ultra's removal layer"
 cv = tuple(int(x) for x in m.version("cryptography").split(".")[:1])
 assert cv >= (50,), f"venv cryptography {m.version('cryptography')} < 50 - restore ultra's bump layer"
+def ver(p): return tuple(int(x) for x in m.version(p).split(".")[:3])
+assert ver("pyjwt") >= (2, 14, 0), f"pyjwt {m.version('pyjwt')} < 2.14.0 (step 4f)"
+assert ver("urllib3") >= (2, 8, 0), f"urllib3 {m.version('urllib3')} < 2.8.0 (step 4f)"
+assert ver("aiohttp") >= (3, 14, 4), f"aiohttp {m.version('aiohttp')} < 3.14.4 (step 4f)"
+assert m.version("torch").startswith("2.13."), f"torch {m.version('torch')} moved - a step-4 bump drifted the torch pin"
+assert m.version("nixl").startswith("1.3."), f"nixl {m.version('nixl')} moved"
+ssl = subprocess.run(["dpkg-query", "-W", "-f=${Version}", "libssl3t64"], capture_output=True, text=True).stdout.strip()
+assert subprocess.run(["dpkg", "--compare-versions", ssl, "ge", "3.0.13-0ubuntu3.16"]).returncode == 0, f"libssl3t64 {ssl} < 3.0.13-0ubuntu3.16 (step 4g)"
 # Cubin dir writability for the non-root worker (ultra's chmod layer, retired: measured writable on this base).
 # Checked as a REAL write by the dynamo uid, not a mode read (NVFP4 MoE on SM100 writes here at first call).
 import flashinfer_cubin
@@ -254,10 +300,11 @@ rc = subprocess.run(["su", "dynamo", "-s", "/bin/bash", "-c", f"mkdir '{d}/.writ
 assert rc == 0, f"{d} not writable by the dynamo user - restore ultra's chmod -R a+rwX layer"
 import ray  # step 4d dropped only the Java jar — the Python driver must still import
 print(f"[golden-1.5.0-nemotron] agg + EP16 + P/D disagg (PP1; PP>1 with NIXL_PP_PATCH=1) + E/PD (DYNAMO_EPD_NEMOTRON_PATCH=1) "
-      f"prerequisites present; EFA present; worker-unused CVE carriers absent; converged layers verified: "
+      f"prerequisites present; EFA present; worker-unused CVE carriers absent (nats, etcd, launchpadlib, ray_dist.jar, lmcache, mooncake); "
+      f"measured bumps in place (pyjwt/urllib3/aiohttp/openssl); converged layers verified: "
       f"vllm={m.version('vllm')} ai-dynamo={m.version('ai-dynamo')} ray={m.version('ray')}")
 PY
 
 USER dynamo
-LABEL org.opencontainers.image.description="Golden-image 1.5.0 for the Nemotron family (3.5 Super VL, 3 Ultra): Dynamo 1.5.0 (-efa base, EFA 1.50 + NIXL LIBFABRIC baked) + vLLM 0.28.0 + Ray 2.55.1 + NemotronH_Nano_VL_V2 SupportsPP patch (multi-node PP) + optional NIXL PP>1 pull-path backport (vllm#53360, NIXL_PP_PATCH=1) + optional dynamo encode-worker NemotronH Omni family (disagg/epd, DYNAMO_EPD_NEMOTRON_PATCH=1) + CVE remediation (nats/etcd/launchpadlib/ray_dist.jar removed); Dockerfile-only reproducible"
+LABEL org.opencontainers.image.description="Golden-image 1.5.0 for the Nemotron family (3.5 Super VL, 3 Ultra): Dynamo 1.5.0 (-efa base, EFA 1.50 + NIXL LIBFABRIC baked) + vLLM 0.28.0 + Ray 2.55.1 + NemotronH_Nano_VL_V2 SupportsPP patch (multi-node PP) + optional NIXL PP>1 pull-path backport (vllm#53360, NIXL_PP_PATCH=1) + optional dynamo encode-worker NemotronH Omni family (disagg/epd, DYNAMO_EPD_NEMOTRON_PATCH=1) + CVE remediation (nats/etcd/launchpadlib/ray_dist.jar/lmcache/mooncake removed; pyjwt/urllib3/aiohttp/openssl bumped); Dockerfile-only reproducible"
 LABEL org.opencontainers.image.source="https://github.com/aws-samples/aws-do-eks/tree/main/Container-Root/eks/deployment/inference/agentic-ai/nemotron/dynamo-vllm-efa"
