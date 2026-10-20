@@ -32,4 +32,6 @@ from vllm.transformers_utils.processors.nano_nemotron_vl import DynamicResolutio
 import vllm.model_executor.models.nano_nemotron_vl as nnvl
 assert "num_patches = None if raw_num_patches is None else int(raw_num_patches)" in open(nnvl.__file__).read(), \
     "marker missing: vLLM nano_nemotron_vl image_embeds num_patches guard (patches/0004-*.vllm.diff)"
+assert 'if (image_embeds := kwargs.pop("image_embeds", None)) is not None:' in open(nnvl.__file__).read(), \
+    "marker missing: vLLM nano_nemotron_vl image_embeds presence test (patches/0004-*.vllm.diff hunk 2)"
 print("[dynamo-epd] NemotronH Omni encode-worker patch applied: family registered, vLLM encoder-only loader + per-image features + list-aware PD ingestion present; vLLM image_embeds num_patches guard present")

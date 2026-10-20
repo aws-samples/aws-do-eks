@@ -140,7 +140,10 @@ RUN set -eux; \
 #    The PD side also needs patches/0004-nano-nemotron-vl-image-embeds-num-patches-0.28.0.vllm.diff: vLLM 0.28.0's
 #    NanoNemotronVL processor builds `image_num_patches = [None] * n` for pre-computed image_embeds and then runs
 #    int(None) in get_image_replacement (TypeError -> HTTP 500 on every image request; MEASURED 2026-10-20; still
-#    present on vLLM main) - a one-line guard keeps the None that get_image_repl() already accepts.
+#    present on vLLM main) - a one-line guard keeps the None that get_image_repl() already accepts; and the model's
+#    _parse_and_validate_image_input tests the embeds tensor for truthiness (`if image_embeds := ...:`) which raises
+#    "Boolean value of Tensor with more than one value is ambiguous" and kills the EngineCore (MEASURED 2026-10-20) -
+#    the second hunk tests for presence instead.
 #    Opt-in (--build-arg DYNAMO_EPD_NEMOTRON_PATCH=1): out-of-tree dynamo/vLLM changes stay out of the default image.
 #    Strict apply (--dry-run --fuzz=0 --forward) + patches/verify_dynamo_epd_patch.py marker/import proof, as in 3b.
 ARG DYNAMO_EPD_NEMOTRON_PATCH=0
