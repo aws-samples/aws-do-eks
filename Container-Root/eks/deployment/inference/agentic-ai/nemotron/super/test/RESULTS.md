@@ -147,6 +147,12 @@ template requests and what the counters did. GPU counts are the `.env` defaults.
 - **Single-node templates and EFA:** none of the three single-node agg templates (`agg/deployment`, `agg/dgd`, `agg/dgd-v1beta1`)
   requests `vpc.amazonaws.com/efa` (`agg/deployment` only tolerates the EFA taint; TP8 runs over NVLink), so their worker pods carry
   no EFA device and their nodes' counters do not move during a run. Their rows say so; the EFA proof is a multi-node matter.
+- **The FSx for Lustre client also rides EFA on these nodes:** a node's `rdma_read_bytes` grows by tens of GB while a worker streams the
+  checkpoint, before any request is served. The byte proof therefore reads the host counters only around the aiperf windows (after the
+  engine is Ready) and pairs the delta with the NCCL / NIXL log lines, so weight loading is never counted as inference traffic.
+- **Auto Mode node health events are worth reading alongside a failure:** one GPU node (`i-0eb475c73550e80c4`, the prefill node of every
+  PP>1 cell) reported `Warning AcceleratedHardwareReady … NvidiaPCIeError: detected 141 PCIe replays` at 00:53Z; no cell on it failed, and
+  the event is recorded here so a later failure on that node can be read against it.
 - **Shipped-file fixes found by these runs** are listed in the footnotes of the rows that found them.
 
 ### EFA proof (per cell, under the cell's evidence)
