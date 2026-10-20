@@ -372,6 +372,9 @@ spec:
       labels:
         app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
         app.kubernetes.io/component: frontend
+      # Auto Mode: keep Karpenter consolidation from draining the node under a live frontend (../../super/test/RESULTS.md p5e notes; inert without Karpenter).
+      annotations:
+        karpenter.sh/do-not-disrupt: "true"
     spec:
       nodeSelector:
         node.kubernetes.io/instance-type: ${INSTANCE_TYPE_FRONTEND}

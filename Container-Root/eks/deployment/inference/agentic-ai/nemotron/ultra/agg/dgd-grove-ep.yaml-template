@@ -101,7 +101,10 @@ spec:
       type: frontend
       replicas: 1
       # runtimeVersionOverride: "1.4.0"   # uncomment for a non-semver custom TAG (see header)
+      # Auto Mode: keep Karpenter consolidation from draining the node under a live frontend (../../super/test/RESULTS.md p5e notes; inert without Karpenter).
       podTemplate:
+        metadata:
+          annotations: { karpenter.sh/do-not-disrupt: "true" }
         spec:
           nodeSelector: { node.kubernetes.io/instance-type: ${INSTANCE_TYPE_FRONTEND} }
           volumes:
