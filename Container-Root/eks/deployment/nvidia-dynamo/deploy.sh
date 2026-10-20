@@ -8,15 +8,13 @@
 # In-place upgrades are not supported (etcd 3.5->3.6 data-dir and kai-scheduler CRD conflicts).
 
 export DYNAMO_NAMESPACE=${DYNAMO_NAMESPACE:-dynamo-system}
-export DYNAMO_VERSION=${DYNAMO_VERSION:-"1.4.0"}
+export DYNAMO_VERSION=${DYNAMO_VERSION:-"1.5.1"}
 
-# The 1.3.x operator reconciles PodSnapshot/PodSnapshotContent but the chart tarball does not
-# ship those two CRDs (they normally come from a crd-apply init container). Apply them from the
-# matching upstream tag first so the operator can never CrashLoop on a missing restmapping.
-# This is additive and idempotent - existing CRDs are left as-is.
-for CRD in podsnapshotcontents podsnapshots; do
-    kubectl apply -f https://raw.githubusercontent.com/ai-dynamo/dynamo/v${DYNAMO_VERSION}/deploy/operator/config/crd/bases/nvidia.com_${CRD}.yaml
-done
+# 1.5.1 needs no CRD pre-apply. The PodSnapshot/PodSnapshotContent CRDs the 1.3.x/1.4.0 operator
+# reconciled are no longer under deploy/operator/config/crd/bases at the v1.5.1 tag (the raw URLs
+# the 1.4.0 version of this script applied now return 404): they ship in the chart's new standalone
+# `snapshot` subchart (global.snapshot.install, default false - checkpoint/restore stays off in
+# values.yaml) and the operator chart installs its own CRDs (dynamo-operator.crdInstaller.enabled=true).
 
 helm fetch https://helm.ngc.nvidia.com/nvidia/ai-dynamo/charts/dynamo-platform-${DYNAMO_VERSION}.tgz
 
@@ -29,6 +27,6 @@ kubectl -n "$DYNAMO_NAMESPACE" wait pod dynamo-platform-nats-0 --for=condition=R
 
 echo ""
 echo "Dynamo CRDs:"
-kubectl get crd | grep "nvidia.com" | grep -E "dynamo|podsnapshot"
+kubectl get crd | grep "nvidia.com" | grep -E "dynamo|podsnapshot|snapshotjob"
 echo ""
 kubectl -n "$DYNAMO_NAMESPACE" get pods
