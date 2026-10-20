@@ -1,0 +1,89 @@
+version: 0.2
+
+# =============================================================================
+# CodeBuild buildspec for the ONE Nemotron dynamo-vllm-efa image (../super AND ../ultra).
+#
+# Author: Anton Alexander
+#
+# Reproducible build from the PUBLIC base nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.5.0-efa
+# (EFA 1.50 + NIXL LIBFABRIC + vLLM 0.28.0 baked). The Dockerfile's two opt-in patch layers are
+# switched ON here (DOCKER_BUILD_ARGS), so the published image covers every ../super cell measured
+# in RESULTS.md (incl. PP>1 disagg and disagg/epd) and ../ultra's PP>1 shapes - the "-patched"
+# semantics of the former 1.4.0-patched ultra image. A bare `docker build` (no args) reproduces the
+# ray-only variant instead; see the Dockerfile header for which measured digest carried which cells.
+#
+# Reuses build-sbom-scan.sh, so the CodeBuild path produces the SAME artifacts as the local path:
+# image + syft SBOM (SPDX + CycloneDX) + trivy CVE gate (0 CRITICAL; HIGH <= MAX_HIGH).
+#
+# Project env vars (PLAINTEXT unless noted). REGISTRY / IMAGE (incl. the tag) are the maintainer's
+# call; the defaults below follow the 1.x.y-patched line of the ultra image:
+#   REGISTRY=public.ecr.aws/hpc-cloud/
+#   IMAGE=dynamo-vllm-efa:1.5.0-patched
+#   DOCKER_BUILD_ARGS="--build-arg NIXL_PP_PATCH=1 --build-arg DYNAMO_EPD_NEMOTRON_PATCH=1"
+#   GATE_SEVERITY=CRITICAL,HIGH
+#   MAX_HIGH=10
+#   BASE=nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.5.0-efa
+#   NGC_API_KEY (SECRETS MANAGER, optional - public -efa tags pull anonymously)
+# =============================================================================
+
+env:
+  variables:
+    BASE: "nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.5.0-efa"
+    DOCKER_BUILD_ARGS: "--build-arg NIXL_PP_PATCH=1 --build-arg DYNAMO_EPD_NEMOTRON_PATCH=1"
+    GATE_SEVERITY: "CRITICAL,HIGH"
+    # measured 5 HIGH on 2026-10-20 with this exact recipe and args (0 CRITICAL; the residual HIGHs are the deliberate
+    # ray 2.55.1 pin, ray's vendored aiohttp 3.13.5 and nltk 3.10.3 - see the Dockerfile's KNOWN-OPEN note); headroom for
+    # newly-disclosed CVEs between rebuilds. Ratchet it down after each pipeline report, never up without a reason in the log.
+    MAX_HIGH: "10"
+    REGISTRY: "public.ecr.aws/hpc-cloud/"
+    IMAGE: "dynamo-vllm-efa:1.5.0-patched"
+
+phases:
+  install:
+    commands:
+      # syft + trivy (the SBOM + CVE-gate tools build-sbom-scan.sh expects).
+      - curl -sSfL https://raw.githubusercontent.com/anchore/syft/main/install.sh | sh -s -- -b /usr/local/bin
+      - curl -sSfL https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
+      - syft version && trivy --version
+
+  pre_build:
+    commands:
+      - cd "${CODEBUILD_SRC_DIR}/Container-Root/eks/deployment/inference/agentic-ai/nemotron/dynamo-vllm-efa"
+      # NGC login ONLY if a key is supplied; public -efa tags pull anonymously.
+      - |
+        if [ -n "${NGC_API_KEY:-}" ]; then
+          echo "[ngc] logging in to nvcr.io"
+          echo "${NGC_API_KEY}" | docker login nvcr.io -u '$oauthtoken' --password-stdin
+        else
+          echo "[ngc] no NGC_API_KEY set - relying on anonymous pull of ${BASE}"
+        fi
+      - aws ecr-public get-login-password --region us-east-1 | docker login --username AWS --password-stdin ${REGISTRY}
+
+  build:
+    commands:
+      - cd "${CODEBUILD_SRC_DIR}/Container-Root/eks/deployment/inference/agentic-ai/nemotron/dynamo-vllm-efa"
+      # build (BASE + DOCKER_BUILD_ARGS forwarded as --build-arg) -> syft SBOM -> trivy CVE gate.
+      # build-sbom-scan.sh exits NONZERO on any CRITICAL, on HIGH > MAX_HIGH, or on a missing scan,
+      # which fails this phase (no false-pass - see the script's fail-loud guard).
+      - REGISTRY="${REGISTRY}" IMAGE="${IMAGE}" BASE="${BASE}" DOCKER_BUILD_ARGS="${DOCKER_BUILD_ARGS}" GATE_SEVERITY="${GATE_SEVERITY}" MAX_HIGH="${MAX_HIGH}" ./build-sbom-scan.sh
+
+  post_build:
+    commands:
+      # Push ONLY on a succeeding build (never push/preflight on a failed BUILD -
+      # it masks the real failure).
+      - |
+        if [ "${CODEBUILD_BUILD_SUCCEEDING:-0}" != "1" ]; then
+          echo "[post_build] BUILD/gate failed -  NOT pushing to ECR"
+          exit 0
+        fi
+      - export IMAGE_URI="${REGISTRY}${IMAGE}"
+      - docker tag "${IMAGE}" "${IMAGE_URI}"
+      - docker push "${IMAGE_URI}"
+      - echo "[post_build] pushed ${IMAGE_URI}"
+
+artifacts:
+  # Ship the SBOM + gate summary as build artifacts (provenance record): SPDX + CycloneDX SBOMs, trivy json + table.
+  base-directory: Container-Root/eks/deployment/inference/agentic-ai/nemotron/dynamo-vllm-efa/sbom
+  files:
+    - "*.json"
+    - "*.txt"
