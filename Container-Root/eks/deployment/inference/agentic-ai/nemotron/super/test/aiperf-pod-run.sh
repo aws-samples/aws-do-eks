@@ -13,9 +13,10 @@ _NS_ARG=""
 if [ "${NAMESPACE}" != "" ]; then _NS_ARG="-n ${NAMESPACE}"; fi
 
 echo ""
-echo "Starting do-aiperf pod ..."
+AIPERF_POD_NAME="${AIPERF_POD_NAME:-do-aiperf}"
+echo "Starting ${AIPERF_POD_NAME} pod ..."
 
-export CMD="kubectl ${_NS_ARG} run do-aiperf --image=iankoulski/do-aiperf --overrides='{\"spec\": {\"containers\": [{\"name\": \"do-aiperf\", \"image\": \"iankoulski/do-aiperf\", \"volumeMounts\": [{\"name\": \"fsx-vol\", \"mountPath\": \"/shared\"}]}], \"volumes\": [{\"name\": \"fsx-vol\", \"persistentVolumeClaim\": {\"claimName\": \"fsx-pvc\"}}]}}'"
+export CMD="kubectl ${_NS_ARG} run ${AIPERF_POD_NAME} --image=iankoulski/do-aiperf --overrides='{\"spec\": {\"containers\": [{\"name\": \"do-aiperf\", \"image\": \"iankoulski/do-aiperf\", \"volumeMounts\": [{\"name\": \"fsx-vol\", \"mountPath\": \"/shared\"}]}], \"volumes\": [{\"name\": \"fsx-vol\", \"persistentVolumeClaim\": {\"claimName\": \"fsx-pvc\"}}]}}'"
 
 if [ ! "$VERBOSE" == "false" ]; then echo -e "\n${CMD}\n"; fi
 

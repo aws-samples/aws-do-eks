@@ -4,6 +4,10 @@
 
 source .env
 
+# -t only when stdin is a terminal: from a script or CI there is no TTY, `kubectl run -it` then fails to
+# attach ("Unable to use a TTY" + "couldn't attach to pod") and the response is lost.
+_TTY=""; if [ -t 0 ]; then _TTY="t"; fi
+
 LLM_PROMPT=${1:-"Hello, give me a one sentence status."}
 API_URL="${SERVICE_URL}/v1/chat/completions"
 
@@ -23,7 +27,7 @@ CURL_CMD="echo $B64_BODY | base64 -d | curl -s $API_URL -H 'Content-Type: applic
 
 if [ ! "$VERBOSE" == "false" ]; then echo -e "\n${CURL_CMD}\n"; fi
 
-export CMD="kubectl run -it --rm do-curl --image=iankoulski/do-curl --restart=Never -- bash -c \"$CURL_CMD\""
+export CMD="kubectl run -i${_TTY} --rm do-curl --image=iankoulski/do-curl --restart=Never -- bash -c \"$CURL_CMD\""
 
 if [ ! "$VERBOSE" == "false" ]; then echo -e "\n${CMD}\n"; fi
 

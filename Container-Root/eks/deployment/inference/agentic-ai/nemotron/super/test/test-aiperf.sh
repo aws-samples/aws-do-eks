@@ -40,8 +40,21 @@ if [ "${NAMESPACE}" != "" ]; then _NS_ARG="-n ${NAMESPACE}"; fi
 source ./aiperf-pod-run.sh
 
 # Wait for pod to be running
-echo "Waiting for the do-aiperf pod to be ready..."
-kubectl ${_NS_ARG} wait --for=condition=Ready pod/do-aiperf --timeout=120s
+AIPERF_POD_NAME="${AIPERF_POD_NAME:-do-aiperf}"
+echo "Waiting for the ${AIPERF_POD_NAME} pod to be ready..."
+kubectl ${_NS_ARG} wait --for=condition=Ready pod/${AIPERF_POD_NAME} --timeout=120s
+
+# Pin the aiperf version (AIPERF_VERSION in .env, default 0.13.0). The iankoulski/do-aiperf image
+# ships 0.9.0, whose extract_chat_response_data raises on a streaming chunk without an "object"
+# key (ai-dynamo/aiperf#1010, fixed by PR #1026, first in v0.11.0). Upgrade in place only when the
+# installed version differs, so a pod that already carries the pinned version is untouched.
+AIPERF_VERSION="${AIPERF_VERSION:-0.13.0}"
+_AIPERF_HAVE="$(kubectl ${_NS_ARG} exec ${AIPERF_POD_NAME} -- aiperf --version 2>/dev/null | tr -d '\r\n')"
+if [ "${_AIPERF_HAVE}" != "${AIPERF_VERSION}" ]; then
+  echo "aiperf in pod is '${_AIPERF_HAVE}', installing aiperf==${AIPERF_VERSION} ..."
+  kubectl ${_NS_ARG} exec ${AIPERF_POD_NAME} -- pip install -q "aiperf==${AIPERF_VERSION}" || { echo "ERROR: pip install aiperf==${AIPERF_VERSION} failed" >&2; source ./aiperf-pod-stop.sh; exit 1; }
+fi
+echo "aiperf $(kubectl ${_NS_ARG} exec ${AIPERF_POD_NAME} -- aiperf --version 2>/dev/null | tr -d '\r\n')"
 
 # AIPerf runs a separate Warmup phase and EXCLUDES those records from the report, which is
 # what keeps a cold engine out of the published numbers. On this model family the first
@@ -78,9 +91,9 @@ export ARTIFACT_DIR="${MODEL_PATH}/aiperf/${DEPLOYMENT_TYPE}/${MANIFEST_TYPE}/${
 echo "Artifacts: ${ARTIFACT_DIR}"
 
 # Execute the aiperf command interactively
-echo "Executing aiperf command in do-aiperf pod ..."
+echo "Executing aiperf command in ${AIPERF_POD_NAME} pod ..."
 
-export CMD="kubectl ${_NS_ARG} exec -it do-aiperf -- aiperf profile --model \"${MODEL_NAME}\" --tokenizer \"${MODEL_PATH}\" --artifact-dir \"${ARTIFACT_DIR}\" --url \"${SERVICE_URL}\" --transport http --endpoint-type chat --streaming --concurrency 10 --request-count 100 ${_WARMUP_ARG}${_IMAGE_ARGS} --synthetic-input-tokens-mean 1024 --synthetic-input-tokens-stddev 0 --output-tokens-mean 512 --extra-inputs \"ignore_eos:true\" --random-seed 42"
+export CMD="kubectl ${_NS_ARG} exec -it ${AIPERF_POD_NAME} -- aiperf profile --model \"${MODEL_NAME}\" --tokenizer \"${MODEL_PATH}\" --artifact-dir \"${ARTIFACT_DIR}\" --url \"${SERVICE_URL}\" --transport http --endpoint-type chat --streaming --concurrency 10 --request-count 100 ${_WARMUP_ARG}${_IMAGE_ARGS} --synthetic-input-tokens-mean 1024 --synthetic-input-tokens-stddev 0 --output-tokens-mean 512 --extra-inputs \"ignore_eos:true\" --random-seed 42"
 
 if [ ! "$VERBOSE" == "false" ]; then echo -e "\n${CMD}\n"; fi
 
@@ -129,9 +142,10 @@ case "${AIPERF_WORKLOAD}" in
   *)  _IMAGE_JSON="" ;;
 esac
 
-kubectl ${_NS_ARG} exec -i do-aiperf -- sh -c "mkdir -p '${ARTIFACT_DIR}' && cat > '${ARTIFACT_DIR}/run-meta.json'" <<EOF
+kubectl ${_NS_ARG} exec -i ${AIPERF_POD_NAME} -- sh -c "mkdir -p '${ARTIFACT_DIR}' && cat > '${ARTIFACT_DIR}/run-meta.json'" <<EOF
 {
   "run_id": "${AIPERF_RUN_ID}",
+  "aiperf_version": "${AIPERF_VERSION}",
   "recorded_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "asserted": {
     "deployment_type": "${DEPLOYMENT_TYPE}",

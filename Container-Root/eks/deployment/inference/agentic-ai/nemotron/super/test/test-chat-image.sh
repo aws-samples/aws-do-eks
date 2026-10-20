@@ -6,8 +6,18 @@
 
 source .env
 
+# -t only when stdin is a terminal: from a script or CI there is no TTY, `kubectl run -it` then fails to
+# attach ("Unable to use a TTY" + "couldn't attach to pod") and the response is lost.
+_TTY=""; if [ -t 0 ]; then _TTY="t"; fi
+
 LLM_PROMPT=${1:-"Describe the image in one sentence."}
-IMAGE_URL=${2:-"https://upload.wikimedia.org/wikipedia/commons/thumb/4/47/PNG_transparency_demonstration_1.png/300px-PNG_transparency_demonstration_1.png"}
+# Default image = an inline data: URL (a 64x64 solid red PNG, generated offline), so the smoke is
+# self-contained. The previous default, a Wikimedia thumbnail, is fetched by the WORKER (dynamo's
+# image_loader via aiohttp) and Wikimedia answers its default User-Agent with HTTP 403 - measured
+# 2026-10-19 on dynamo 1.5.0: `HttpStatusError: HTTP 403 for https://upload.wikimedia.org/...: Forbidden`,
+# surfaced to the client as {"message":"Forbidden","code":403}. Pass any https URL as the 2nd argument
+# to exercise the remote-fetch path instead.
+IMAGE_URL=${2:-"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAIAAAAlC+aJAAAAS0lEQVR42u3PQQkAAAgAsetfWiP4FgYrsKZeS0BAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEDgsqnc8OJg6Ln3AAAAAElFTkSuQmCC"}
 API_URL="${SERVICE_URL}/v1/chat/completions"
 
 # Write request body to a variable with no quoting conflicts
@@ -26,7 +36,7 @@ CURL_CMD="echo $B64_BODY | base64 -d | curl -s $API_URL -H 'Content-Type: applic
 
 if [ ! "$VERBOSE" == "false" ]; then echo -e "\n${CURL_CMD}\n"; fi
 
-export CMD="kubectl run -it --rm do-curl --image=iankoulski/do-curl --restart=Never -- bash -c \"$CURL_CMD\""
+export CMD="kubectl run -i${_TTY} --rm do-curl --image=iankoulski/do-curl --restart=Never -- bash -c \"$CURL_CMD\""
 
 if [ ! "$VERBOSE" == "false" ]; then echo -e "\n${CMD}\n"; fi
 

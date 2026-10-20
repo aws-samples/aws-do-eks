@@ -13,7 +13,7 @@ metadata:
     model: nemotron35-super-vl-120b
   annotations:
     awesome-inferencing/benchmark: aiperf-nemotron35-super-vl-1.5.0
-    awesome-inferencing/aiperf-version: "0.9.0"
+    awesome-inferencing/aiperf-version: "${AIPERF_VERSION}"
     awesome-inferencing/target: ${DEPLOYMENT_TYPE}/${MANIFEST_TYPE} ${MODEL_VARIANT} via ${SERVICE_NAME}
 spec:
   restartPolicy: Never
@@ -29,9 +29,9 @@ spec:
           B=/tmp/run-bundle
           mkdir -p ${DOLLAR}B/aiperf-args
 
-          echo "=== installing aiperf 0.9.0 ==="
+          echo "=== installing aiperf ${AIPERF_VERSION} ==="
           pip install -q --upgrade pip
-          pip install -q aiperf==0.9.0 httpx
+          pip install -q aiperf==${AIPERF_VERSION} httpx
           AIPERF_VERSION=${DOLLAR}(aiperf --version 2>&1 | tr -d '\n')
           echo "aiperf=${DOLLAR}AIPERF_VERSION"
 
