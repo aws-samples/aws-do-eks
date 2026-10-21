@@ -210,6 +210,16 @@ RUN pip install --no-cache-dir "cryptography>=50.0.0"
 #     httpcore5 CVE-2026-54399). `import ray` + the step-5 assert stay green without it.
 RUN rm -f /usr/local/lib/python3.12/dist-packages/ray/jars/ray_dist.jar
 
+# 4h) lmcache 0.5.2 (CRITICAL CVE-2026-105192, RCE via unsafe deserialization; fixed 0.5.6):
+#     the OPTIONAL LMCache KV connector — unused by every template in this tree (NIXL is the
+#     KV transport throughout); vLLM imports it only lazily, inside LMCacheConnectorV1, and
+#     `pip show` lists no requirer. Removed rather than bumped: nothing here runs it, and on
+#     the 1.5.0 base the fixed release pulled a NCCL wheel under torch (that recipe's step 4e).
+#     MEASURED 2026-10-21 in a throwaway container of this image: `pip check` delta vs stock
+#     empty; vllm, ray, the KV-connector factory, the NIXL pull/base workers, nemotron_h and
+#     dynamo.vllm.main import afterwards. Restore path: `pip install lmcache` (+ re-gate).
+RUN pip uninstall -y lmcache
+
 # KNOWN-OPEN (2 HIGH, deliberate): ray 2.55.1 CVE-2026-57516 (fixed 2.56.0) and its
 # vendored aiohttp 3.13.5 CVE-2026-69244 (ray/_private/runtime_env/agent/
 # thirdparty_files, fixed 3.14.3). Both clear with a ray >=2.56 bump — but 2.55.1 is the
@@ -231,6 +241,10 @@ assert not os.path.exists("/usr/local/bin/etcd"), "etcd bins still present (step
 assert not os.path.exists("/opt/uv/cache"), "uv cache still baked (step 4d)"
 try:
     m.version("mooncake-transfer-engine"); raise AssertionError("mooncake still installed (step 4c)")
+except m.PackageNotFoundError:
+    pass
+try:
+    m.version("lmcache"); raise AssertionError("lmcache still installed (step 4h)")
 except m.PackageNotFoundError:
     pass
 import ray  # step 4g dropped only the Java jar — the Python driver must still import
