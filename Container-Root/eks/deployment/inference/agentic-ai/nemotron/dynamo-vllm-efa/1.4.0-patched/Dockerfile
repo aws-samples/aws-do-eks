@@ -236,6 +236,13 @@ RUN apt-get update \
     && apt-get install -y --only-upgrade openssl libssl3t64 \
     && rm -rf /var/lib/apt/lists/*
 
+# 4k) certifi 2026.7.22 -> 2026.10.19 (CRITICAL GHSA-6q48-6c7w-9gw2: emSign roots with compromised
+#     intermediate CA keys): the CA-bundle package; its requirers (httpcore, httpx, requests,
+#     sentry-sdk) carry no upper bound. `pip install --dry-run` resolves exactly this one wheel,
+#     the `pip check` delta vs stock is empty and the new bundle loads into an ssl context (120
+#     CAs) (MEASURED 2026-10-21, throwaway container).
+RUN pip install --no-cache-dir "certifi==2026.10.19"
+
 # KNOWN-OPEN (2 HIGH, deliberate): ray 2.55.1 CVE-2026-57516 (fixed 2.56.0) and its
 # vendored aiohttp 3.13.5 CVE-2026-69244 (ray/_private/runtime_env/agent/
 # thirdparty_files, fixed 3.14.3). Both clear with a ray >=2.56 bump — but 2.55.1 is the
@@ -271,6 +278,7 @@ assert m.version("torch").startswith("2.11."), f"torch {m.version('torch')} move
 assert m.version("nixl").startswith("1.3."), f"nixl {m.version('nixl')} moved"
 ssl = subprocess.run(["dpkg-query", "-W", "-f=${Version}", "libssl3t64"], capture_output=True, text=True).stdout.strip()
 assert subprocess.run(["dpkg", "--compare-versions", ssl, "ge", "3.0.13-0ubuntu3.16"]).returncode == 0, f"libssl3t64 {ssl} < 3.0.13-0ubuntu3.16 (step 4j)"
+assert ver("certifi") >= (2026, 10, 19), f"certifi {m.version('certifi')} < 2026.10.19 (step 4k)"
 import ray  # step 4g dropped only the Java jar — the Python driver must still import
 print("[golden-1.4.0] agg + EP16 + hybrid-disagg (PP1 and PP>1) prerequisites present; "
       "EFA present; 0-CRITICAL precondition met; worker-unused CVE carriers absent")
