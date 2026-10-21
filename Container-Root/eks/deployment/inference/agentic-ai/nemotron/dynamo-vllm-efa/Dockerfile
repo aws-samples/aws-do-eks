@@ -277,6 +277,13 @@ RUN pip install --no-cache-dir "pillow==13.0.0"
 #     wheel and leave the /opt/uv binary, which `trivy image` flags separately as a Rust binary. pip stays. `pip check` delta vs stock empty
 #     (MEASURED 2026-10-21). Restore path for a debugging session: `pip install uv`.
 RUN pip uninstall -y uv && rm -rf /opt/uv
+# 4k) cosmos-guardrail 0.3.1 + nltk 3.10.3 (HIGH CVE-2026-81726 on nltk, no fixed release): the Cosmos world-model guardrail package is the
+#     ONLY requirer of nltk; it is itself required only by vllm-omni (imported lazily, inside its cosmos3 guardrails module) and by diffusers'
+#     Cosmos pipelines - nothing on the Nemotron path - and in the stock base it is already non-functional: its hard dependency opencv-python
+#     is not installed (stock `pip check` says so). REMOVED. `pip check` delta vs stock = that one line swapped for "vllm-omni 0.28.0rc1
+#     requires cosmos-guardrail" (vllm-omni already ships with `av` missing); vllm_omni, vllm, ray and dynamo.vllm.main import afterwards
+#     (MEASURED 2026-10-21). Restore path: `pip install cosmos-guardrail opencv-python-headless`.
+RUN pip uninstall -y cosmos-guardrail nltk
 
 # KNOWN-OPEN after 4a-4g (HIGH, deliberate; counted by the buildspec's MAX_HIGH): ray 2.55.1 CVE-2026-57516 (fixed 2.56.0 -
 # 2.55.1 is the PP2-PROVEN pin of both trees and this image's golden rule is measure-before-bump; the bump is queued behind an
@@ -296,7 +303,8 @@ assert os.path.exists("/opt/amazon/efa/bin/fi_info"), "EFA userspace missing"
 assert not os.path.exists("/usr/bin/nats-server"), "nats-server still present (step 4a)"
 assert not os.path.exists("/usr/local/bin/etcd"), "etcd bins still present (step 4b)"
 # Converged-in-GA asserts (ultra's 1.4.0 layers 4c/4d/4f + cubin chmod, retired here — fail loud on regression):
-for gone, step in (("mooncake-transfer-engine", "4e"), ("mooncake-transfer-engine-cuda13", "4e"), ("lmcache", "4e"), ("uv", "4j")):
+for gone, step in (("mooncake-transfer-engine", "4e"), ("mooncake-transfer-engine-cuda13", "4e"), ("lmcache", "4e"), ("uv", "4j"),
+                   ("cosmos-guardrail", "4k"), ("nltk", "4k")):
     try:
         m.version(gone); raise AssertionError(f"{gone} present - step {step} did not remove it")
     except m.PackageNotFoundError:
