@@ -220,6 +220,15 @@ RUN rm -f /usr/local/lib/python3.12/dist-packages/ray/jars/ray_dist.jar
 #     dynamo.vllm.main import afterwards. Restore path: `pip install lmcache` (+ re-gate).
 RUN pip uninstall -y lmcache
 
+# 4i) Measured pip bumps — pure-Python libraries, no vllm/torch/ray/nixl pin touched (asserted
+#     in step 5): pyjwt 2.13.0 -> 2.14.0 (CRITICAL CVE-2026-102268 + HIGH CVE-2026-102266/
+#     -102267/-102271/-102272/-102273), urllib3 2.7.0 -> 2.8.0 (HIGH CVE-2026-97687/-97689),
+#     aiohttp 3.14.3 -> 3.14.4 (HIGH CVE-2026-111064/-111066, GHSA-2g87-pp6c-29x5).
+#     `pip install --dry-run` resolves exactly these three wheels plus yarl 1.25.1 and the
+#     `pip check` delta vs stock is empty (MEASURED 2026-10-21, throwaway container). Ray's
+#     vendored aiohttp 3.13.5 copy is not pip-reachable and stays (KNOWN-OPEN below).
+RUN pip install --no-cache-dir "pyjwt==2.14.0" "urllib3==2.8.0" "aiohttp==3.14.4"
+
 # KNOWN-OPEN (2 HIGH, deliberate): ray 2.55.1 CVE-2026-57516 (fixed 2.56.0) and its
 # vendored aiohttp 3.13.5 CVE-2026-69244 (ray/_private/runtime_env/agent/
 # thirdparty_files, fixed 3.14.3). Both clear with a ray >=2.56 bump — but 2.55.1 is the
@@ -247,6 +256,12 @@ try:
     m.version("lmcache"); raise AssertionError("lmcache still installed (step 4h)")
 except m.PackageNotFoundError:
     pass
+def ver(p): return tuple(int(x) for x in m.version(p).split(".")[:3])
+assert ver("pyjwt") >= (2, 14, 0), f"pyjwt {m.version('pyjwt')} < 2.14.0 (step 4i)"
+assert ver("urllib3") >= (2, 8, 0), f"urllib3 {m.version('urllib3')} < 2.8.0 (step 4i)"
+assert ver("aiohttp") >= (3, 14, 4), f"aiohttp {m.version('aiohttp')} < 3.14.4 (step 4i)"
+assert m.version("torch").startswith("2.11."), f"torch {m.version('torch')} moved - a step-4 bump drifted the torch pin"
+assert m.version("nixl").startswith("1.3."), f"nixl {m.version('nixl')} moved"
 import ray  # step 4g dropped only the Java jar — the Python driver must still import
 print("[golden-1.4.0] agg + EP16 + hybrid-disagg (PP1 and PP>1) prerequisites present; "
       "EFA present; 0-CRITICAL precondition met; worker-unused CVE carriers absent")
