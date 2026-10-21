@@ -229,6 +229,13 @@ RUN pip uninstall -y lmcache
 #     vendored aiohttp 3.13.5 copy is not pip-reachable and stays (KNOWN-OPEN below).
 RUN pip install --no-cache-dir "pyjwt==2.14.0" "urllib3==2.8.0" "aiohttp==3.14.4"
 
+# 4j) openssl / libssl3t64 3.0.13-0ubuntu3.12 -> 3.0.13-0ubuntu3.16 (HIGH CVE-2026-84782): the
+#     Ubuntu 24.04 security fix, --only-upgrade so nothing else moves (MEASURED 2026-10-21 in a
+#     throwaway container: dpkg reports 3.0.13-0ubuntu3.16 for both afterwards).
+RUN apt-get update \
+    && apt-get install -y --only-upgrade openssl libssl3t64 \
+    && rm -rf /var/lib/apt/lists/*
+
 # KNOWN-OPEN (2 HIGH, deliberate): ray 2.55.1 CVE-2026-57516 (fixed 2.56.0) and its
 # vendored aiohttp 3.13.5 CVE-2026-69244 (ray/_private/runtime_env/agent/
 # thirdparty_files, fixed 3.14.3). Both clear with a ray >=2.56 bump — but 2.55.1 is the
@@ -238,7 +245,7 @@ RUN pip install --no-cache-dir "pyjwt==2.14.0" "urllib3==2.8.0" "aiohttp==3.14.4
 # ---- 5) Final assert: every scenario's prerequisites present in ONE image -------------
 RUN set -eux; \
     python3 - <<'PY'
-import importlib.metadata as m, importlib.util, os
+import importlib.metadata as m, importlib.util, os, subprocess
 need = {"vllm": "0.26", "ai-dynamo": "1.4", "ray": "2.55.1"}
 for p, want in need.items():
     got = m.version(p); assert got.startswith(want), f"{p} {got} !~ {want}"
@@ -262,6 +269,8 @@ assert ver("urllib3") >= (2, 8, 0), f"urllib3 {m.version('urllib3')} < 2.8.0 (st
 assert ver("aiohttp") >= (3, 14, 4), f"aiohttp {m.version('aiohttp')} < 3.14.4 (step 4i)"
 assert m.version("torch").startswith("2.11."), f"torch {m.version('torch')} moved - a step-4 bump drifted the torch pin"
 assert m.version("nixl").startswith("1.3."), f"nixl {m.version('nixl')} moved"
+ssl = subprocess.run(["dpkg-query", "-W", "-f=${Version}", "libssl3t64"], capture_output=True, text=True).stdout.strip()
+assert subprocess.run(["dpkg", "--compare-versions", ssl, "ge", "3.0.13-0ubuntu3.16"]).returncode == 0, f"libssl3t64 {ssl} < 3.0.13-0ubuntu3.16 (step 4j)"
 import ray  # step 4g dropped only the Java jar — the Python driver must still import
 print("[golden-1.4.0] agg + EP16 + hybrid-disagg (PP1 and PP>1) prerequisites present; "
       "EFA present; 0-CRITICAL precondition met; worker-unused CVE carriers absent")
