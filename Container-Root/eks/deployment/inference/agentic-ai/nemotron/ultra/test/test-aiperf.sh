@@ -16,8 +16,9 @@ if [ "${NAMESPACE}" != "" ]; then _NS_ARG="-n ${NAMESPACE}"; fi
 source ./aiperf-pod-run.sh
 
 # Wait for pod to be running
-echo "Waiting for the do-aiperf pod to be ready..."
-kubectl ${_NS_ARG} wait --for=condition=Ready pod/do-aiperf --timeout=120s
+AIPERF_POD_NAME="${AIPERF_POD_NAME:-do-aiperf}"
+echo "Waiting for the ${AIPERF_POD_NAME} pod to be ready..."
+kubectl ${_NS_ARG} wait --for=condition=Ready pod/${AIPERF_POD_NAME} --timeout=120s
 
 # AIPerf runs a separate Warmup phase and EXCLUDES those records from the report, which is
 # what keeps a cold engine out of the published numbers. On NVFP4 the first requests pay a
@@ -78,9 +79,9 @@ export ARTIFACT_DIR="${MODEL_PATH}/aiperf/${DEPLOYMENT_TYPE}/${MANIFEST_TYPE}/${
 echo "Artifacts: ${ARTIFACT_DIR}"
 
 # Execute the aiperf command interactively
-echo "Executing aiperf command in do-aiperf pod ..."
+echo "Executing aiperf command in ${AIPERF_POD_NAME} pod ..."
 
-export CMD="kubectl ${_NS_ARG} exec -it do-aiperf -- aiperf profile --model \"${MODEL_NAME}\" --tokenizer \"${MODEL_PATH}\" --artifact-dir \"${ARTIFACT_DIR}\" --url \"${SERVICE_URL}\" --transport http --endpoint-type chat --streaming --concurrency 10 --request-count 100 ${_WARMUP_ARG} --synthetic-input-tokens-mean 1024 --synthetic-input-tokens-stddev 0 --output-tokens-mean 512 --extra-inputs \"ignore_eos:true\" --random-seed 42"
+export CMD="kubectl ${_NS_ARG} exec -it ${AIPERF_POD_NAME} -- aiperf profile --model \"${MODEL_NAME}\" --tokenizer \"${MODEL_PATH}\" --artifact-dir \"${ARTIFACT_DIR}\" --url \"${SERVICE_URL}\" --transport http --endpoint-type chat --streaming --concurrency 10 --request-count 100 ${_WARMUP_ARG} --synthetic-input-tokens-mean 1024 --synthetic-input-tokens-stddev 0 --output-tokens-mean 512 --extra-inputs \"ignore_eos:true\" --random-seed 42"
 
 if [ ! "$VERBOSE" == "false" ]; then echo -e "\n${CMD}\n"; fi
 
@@ -155,7 +156,7 @@ case "${_WARMUP_COUNT}" in
   *)           _WARMUP_JSON="${_WARMUP_COUNT}" ;;
 esac
 
-kubectl ${_NS_ARG} exec -i do-aiperf -- sh -c "mkdir -p '${ARTIFACT_DIR}' && cat > '${ARTIFACT_DIR}/run-meta.json'" <<EOF
+kubectl ${_NS_ARG} exec -i ${AIPERF_POD_NAME} -- sh -c "mkdir -p '${ARTIFACT_DIR}' && cat > '${ARTIFACT_DIR}/run-meta.json'" <<EOF
 {
   "run_id": "${AIPERF_RUN_ID}",
   "recorded_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",

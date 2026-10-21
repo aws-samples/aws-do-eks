@@ -205,7 +205,7 @@ spec:
                     --load-format ${LOAD_FORMAT} \
                     --tensor-parallel-size ${GPU_PER_WORKER} \
                     --pipeline-parallel-size ${NODE_COUNT_PER_WORKER} \
-                    --max-model-len 4096 --gpu-memory-utilization 0.97 --enforce-eager \
+                    --max-model-len ${MAX_MODEL_LEN} --gpu-memory-utilization ${GPU_MEM_UTIL}${VLLM_EXTRA_ENGINE_ARGS_RENDERED} --enforce-eager \
                     --max-num-seqs 16 \
                     --no-enable-flashinfer-autotune \
                     --trust-remote-code ${MOE_BACKEND_FLAG} \
