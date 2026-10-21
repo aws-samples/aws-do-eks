@@ -257,6 +257,10 @@ RUN pip install --no-cache-dir "pyjwt==2.14.0" "urllib3==2.8.0" "aiohttp==3.14.4
 RUN apt-get update \
     && apt-get install -y --only-upgrade openssl libssl3t64 \
     && rm -rf /var/lib/apt/lists/*
+# 4h) certifi 2026.7.22 -> 2026.10.19 (CRITICAL GHSA-6q48-6c7w-9gw2, published 2026-10-20): the CA-bundle package; its requirers (requests,
+#     httpx, httpcore, sentry-sdk) carry no upper bound. `pip install --dry-run` resolves exactly this one wheel and the `pip check` delta vs
+#     stock is empty (MEASURED 2026-10-21 in a throwaway container of the pipeline's image public.ecr.aws/hpc-cloud/dynamo-vllm-efa:1.5.0-patched).
+RUN pip install --no-cache-dir "certifi==2026.10.19"
 
 # KNOWN-OPEN after 4a-4g (HIGH, deliberate; counted by the buildspec's MAX_HIGH): ray 2.55.1 CVE-2026-57516 (fixed 2.56.0 -
 # 2.55.1 is the PP2-PROVEN pin of both trees and this image's golden rule is measure-before-bump; the bump is queued behind an
@@ -288,6 +292,7 @@ def ver(p): return tuple(int(x) for x in m.version(p).split(".")[:3])
 assert ver("pyjwt") >= (2, 14, 0), f"pyjwt {m.version('pyjwt')} < 2.14.0 (step 4f)"
 assert ver("urllib3") >= (2, 8, 0), f"urllib3 {m.version('urllib3')} < 2.8.0 (step 4f)"
 assert ver("aiohttp") >= (3, 14, 4), f"aiohttp {m.version('aiohttp')} < 3.14.4 (step 4f)"
+assert ver("certifi") >= (2026, 10, 19), f"certifi {m.version('certifi')} < 2026.10.19 (step 4h)"
 assert m.version("torch").startswith("2.13."), f"torch {m.version('torch')} moved - a step-4 bump drifted the torch pin"
 assert m.version("nixl").startswith("1.3."), f"nixl {m.version('nixl')} moved"
 ssl = subprocess.run(["dpkg-query", "-W", "-f=${Version}", "libssl3t64"], capture_output=True, text=True).stdout.strip()
