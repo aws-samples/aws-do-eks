@@ -243,6 +243,18 @@ RUN apt-get update \
 #     CAs) (MEASURED 2026-10-21, throwaway container).
 RUN pip install --no-cache-dir "certifi==2026.10.19"
 
+# 4l) pillow 12.3.0 -> 13.0.0 (CRITICAL CVE-2026-112403 + HIGH CVE-2026-112397/-112400/-112404/
+#     -112895/-112896/-112897; the only fixed release is the 13.0.0 major). The 550B model is
+#     text-only, so nothing on this tree's serving path decodes images, but pillow is a hard
+#     dependency of vllm, torchvision, diffusers, imageio and mistral_common (lower bounds only)
+#     and vllm.multimodal imports it — bumped, not removed. MEASURED 2026-10-21 (throwaway
+#     container): `pip install --dry-run` resolves exactly this one wheel, `pip check` delta vs
+#     stock empty, the resampling constants (BILINEAR/NEAREST/LANCZOS/BICUBIC) exist and a resize
+#     runs, vllm.multimodal.image and torchvision.transforms.functional import and run, and every
+#     step-5 import still passes. A GPU cell on this layer is still a measurement to take (the
+#     1.5.0 recipe's step 4i carries the same bump with the same caveat).
+RUN pip install --no-cache-dir "pillow==13.0.0"
+
 # KNOWN-OPEN (2 HIGH, deliberate): ray 2.55.1 CVE-2026-57516 (fixed 2.56.0) and its
 # vendored aiohttp 3.13.5 CVE-2026-69244 (ray/_private/runtime_env/agent/
 # thirdparty_files, fixed 3.14.3). Both clear with a ray >=2.56 bump — but 2.55.1 is the
@@ -279,6 +291,7 @@ assert m.version("nixl").startswith("1.3."), f"nixl {m.version('nixl')} moved"
 ssl = subprocess.run(["dpkg-query", "-W", "-f=${Version}", "libssl3t64"], capture_output=True, text=True).stdout.strip()
 assert subprocess.run(["dpkg", "--compare-versions", ssl, "ge", "3.0.13-0ubuntu3.16"]).returncode == 0, f"libssl3t64 {ssl} < 3.0.13-0ubuntu3.16 (step 4j)"
 assert ver("certifi") >= (2026, 10, 19), f"certifi {m.version('certifi')} < 2026.10.19 (step 4k)"
+assert ver("pillow") >= (13, 0, 0), f"pillow {m.version('pillow')} < 13.0.0 (step 4l)"
 import ray  # step 4g dropped only the Java jar — the Python driver must still import
 print("[golden-1.4.0] agg + EP16 + hybrid-disagg (PP1 and PP>1) prerequisites present; "
       "EFA present; 0-CRITICAL precondition met; worker-unused CVE carriers absent")
