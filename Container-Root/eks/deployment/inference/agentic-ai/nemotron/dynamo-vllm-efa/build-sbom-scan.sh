@@ -15,6 +15,9 @@
 #   GATE_SEVERITY=CRITICAL,HIGH ./build-sbom-scan.sh       # stricter gate
 #   MAX_HIGH=40 ./build-sbom-scan.sh                       # also fail if HIGH exceeds a ceiling
 #   SCAN_IMAGE=1 ./build-sbom-scan.sh                      # + a report-only `trivy image` of the built image beside the gate artifacts
+#   CONTEXT=./1.4.0-patched IMAGE=dynamo-vllm-efa:1.4.0-patched BASE=nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.4.0-efa ./build-sbom-scan.sh
+#                                                          # build a sibling recipe folder (its Dockerfile + patches/) through this same gate;
+#                                                          # SBOMs + gate records land in <CONTEXT>/sbom (what 1.4.0-patched/buildspec.yaml runs)
 #
 # The gate's counts depend on the trivy vulnerability DB in use as much as on the image (2026-10-21: the same image and tools went
 # from 0 CRITICAL / 5 HIGH to 3 / 12 between the 2026-10-20T13:14Z and the 2026-10-21T01:19Z DB builds), so the summary names
@@ -31,10 +34,13 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Docker build context = the folder whose Dockerfile is built. Default: this folder (the shared 1.5.0 recipe). A sibling recipe
+# that reuses this gate (1.4.0-patched/) sets CONTEXT to its own folder; OUTDIR follows it, so each recipe's sbom/ holds its own records.
+CONTEXT="$(cd "${CONTEXT:-$HERE}" && pwd)"
 IMAGE="${IMAGE:-dynamo-vllm-efa:1.5.0-patched}"
 GATE_SEVERITY="${GATE_SEVERITY:-CRITICAL}"
 MAX_HIGH="${MAX_HIGH:-}"                       # empty = report HIGH, do not gate on it
-OUTDIR="${OUTDIR:-$HERE/sbom}"
+OUTDIR="${OUTDIR:-$CONTEXT/sbom}"
 # Extra `docker build` arguments, e.g. the opt-in patch ARGs (see the Dockerfile header). Default empty = the
 # Dockerfile's own ARG defaults (both patches OFF). BASE, when set in the environment (the buildspec sets it), is
 # forwarded as --build-arg BASE= so the pinned base is the one that was actually built, not just the one printed.
@@ -68,7 +74,7 @@ if [ "$SCAN_ONLY" = 0 ]; then
   # shellcheck disable=SC2206  # DOCKER_BUILD_ARGS is a deliberate space-separated list of flags
   [ -n "$DOCKER_BUILD_ARGS" ] && BUILD_ARGS+=($DOCKER_BUILD_ARGS)
   echo "[1/3 BUILD] docker build ${BUILD_ARGS[*]:-} -> $IMAGE"
-  docker build "${BUILD_ARGS[@]}" -t "$IMAGE" "$HERE" || { echo "[1/3 BUILD] FAIL"; exit 2; }
+  docker build "${BUILD_ARGS[@]}" -t "$IMAGE" "$CONTEXT" || { echo "[1/3 BUILD] FAIL"; exit 2; }
 else
   echo "[1/3 BUILD] skipped (--scan-only)"
   docker image inspect "$IMAGE" >/dev/null 2>&1 || { echo "FATAL: $IMAGE not present"; exit 2; }
