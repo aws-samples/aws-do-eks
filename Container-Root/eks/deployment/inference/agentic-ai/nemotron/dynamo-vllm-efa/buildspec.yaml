@@ -13,7 +13,8 @@ version: 0.2
 # ray-only variant instead; see the Dockerfile header for which measured digest carried which cells.
 #
 # Reuses build-sbom-scan.sh, so the CodeBuild path produces the SAME artifacts as the local path:
-# image + syft SBOM (SPDX + CycloneDX) + trivy CVE gate (0 CRITICAL; HIGH <= MAX_HIGH).
+# image + syft SBOM (SPDX + CycloneDX) + trivy CVE gate (0 CRITICAL; HIGH <= MAX_HIGH) + the gate PASS record.
+# The push (post_build) happens only for an image id that has that PASS record - see post_build.
 #
 # Project env vars (PLAINTEXT unless noted). REGISTRY / IMAGE (incl. the tag) are the maintainer's
 # call; the defaults below follow the 1.x.y-patched line of the ultra image:
@@ -72,20 +73,40 @@ phases:
 
   post_build:
     commands:
-      # Push ONLY on a succeeding build (never push/preflight on a failed BUILD -
-      # it masks the real failure).
+      # The push is CONDITIONED ON THE GATE, inside ONE command: `docker push` is reachable only through the checks above it.
+      # CodeBuild runs post_build even when the build phase failed, and an `exit 0` in one command does not stop the commands
+      # after it (2026-10-21T03:11Z: the previous guard printed "NOT pushing" and the separate `docker push` command below it
+      # pushed a 3-CRITICAL image anyway). The condition is the gate's own PASS record (sbom/<image>.gate-pass.txt, written by
+      # build-sbom-scan.sh ONLY after every check passed, removed at the start of each run) for the exact image id about to be
+      # pushed, plus CODEBUILD_BUILD_SUCCEEDING. Any failed check exits nonzero, so a run that did not push is RED, never a
+      # quiet success.
       - |
+        set -eu
+        cd "${CODEBUILD_SRC_DIR}/Container-Root/eks/deployment/inference/agentic-ai/nemotron/dynamo-vllm-efa"
+        IMAGE_URI="${REGISTRY}${IMAGE}"
+        GATE_PASS="sbom/$(echo "${IMAGE}" | tr '/:' '__').gate-pass.txt"
         if [ "${CODEBUILD_BUILD_SUCCEEDING:-0}" != "1" ]; then
-          echo "[post_build] BUILD/gate failed -  NOT pushing to ECR"
-          exit 0
+          echo "[post_build] build phase FAILED (CODEBUILD_BUILD_SUCCEEDING=${CODEBUILD_BUILD_SUCCEEDING:-unset}) - NOT pushing ${IMAGE_URI}"
+          exit 1
         fi
-      - export IMAGE_URI="${REGISTRY}${IMAGE}"
-      - docker tag "${IMAGE}" "${IMAGE_URI}"
-      - docker push "${IMAGE_URI}"
-      - echo "[post_build] pushed ${IMAGE_URI}"
+        if [ ! -s "${GATE_PASS}" ]; then
+          echo "[post_build] no gate PASS record at ${GATE_PASS} (the gate did not pass, or did not run) - NOT pushing ${IMAGE_URI}"
+          exit 1
+        fi
+        IMAGE_ID="$(docker image inspect --format '{{.Id}}' "${IMAGE}")"
+        if ! grep -qx "image_id=${IMAGE_ID}" "${GATE_PASS}"; then
+          echo "[post_build] gate PASS record is not for the image about to be pushed (${IMAGE_ID}) - NOT pushing ${IMAGE_URI}"
+          cat "${GATE_PASS}"
+          exit 1
+        fi
+        echo "[post_build] gate PASS record accepted for ${IMAGE_ID}:"
+        cat "${GATE_PASS}"
+        docker tag "${IMAGE}" "${IMAGE_URI}"
+        docker push "${IMAGE_URI}"
+        echo "[post_build] pushed ${IMAGE_URI} ($(grep -E '^(critical|high|tooling)=' "${GATE_PASS}" | tr '\n' ';'))"
 
 artifacts:
-  # Ship the SBOM + gate summary as build artifacts (provenance record): SPDX + CycloneDX SBOMs, trivy json + table.
+  # Ship the SBOM + gate summary + gate PASS record as build artifacts (provenance record): SPDX + CycloneDX SBOMs, trivy json + table.
   base-directory: Container-Root/eks/deployment/inference/agentic-ai/nemotron/dynamo-vllm-efa/sbom
   files:
     - "*.json"
