@@ -204,6 +204,8 @@ spec:
               - { name: NIXL_LIBFABRIC_MAX_RAILS, value: "1" }
               - { name: NIXL_SKIP_TOPOLOGY_CHECK, value: "1" }
               - { name: NCCL_NET_PLUGIN, value: ofi }
+              - { name: NCCL_DEBUG, value: INFO }
+              - { name: NCCL_DEBUG_SUBSYS, value: "INIT,NET" }
               - { name: NCCL_TUNER_PLUGIN, value: ofi }
               - { name: OFI_NCCL_FORCE_NUM_RAILS, value: "4" }
               - { name: NCCL_RUNTIME_CONNECT, value: "0" }
@@ -321,6 +323,8 @@ spec:
               - { name: NIXL_LIBFABRIC_MAX_RAILS, value: "1" }
               - { name: NIXL_SKIP_TOPOLOGY_CHECK, value: "1" }
               - { name: NCCL_NET_PLUGIN, value: ofi }
+              - { name: NCCL_DEBUG, value: INFO }
+              - { name: NCCL_DEBUG_SUBSYS, value: "INIT,NET" }
               - { name: NCCL_TUNER_PLUGIN, value: ofi }
               - { name: OFI_NCCL_FORCE_NUM_RAILS, value: "4" }
             resources:
@@ -544,6 +548,8 @@ spec:
               - { name: NIXL_LIBFABRIC_MAX_RAILS, value: "1" }
               - { name: NIXL_SKIP_TOPOLOGY_CHECK, value: "1" }
               - { name: NCCL_NET_PLUGIN, value: ofi }
+              - { name: NCCL_DEBUG, value: INFO }
+              - { name: NCCL_DEBUG_SUBSYS, value: "INIT,NET" }
               - { name: NCCL_TUNER_PLUGIN, value: ofi }
               - { name: OFI_NCCL_FORCE_NUM_RAILS, value: "4" }
               - { name: NCCL_RUNTIME_CONNECT, value: "0" }
@@ -658,6 +664,8 @@ spec:
               - { name: NIXL_LIBFABRIC_MAX_RAILS, value: "1" }
               - { name: NIXL_SKIP_TOPOLOGY_CHECK, value: "1" }
               - { name: NCCL_NET_PLUGIN, value: ofi }
+              - { name: NCCL_DEBUG, value: INFO }
+              - { name: NCCL_DEBUG_SUBSYS, value: "INIT,NET" }
               - { name: NCCL_TUNER_PLUGIN, value: ofi }
               - { name: OFI_NCCL_FORCE_NUM_RAILS, value: "4" }
             resources:
@@ -689,6 +697,9 @@ spec:
       labels:
         app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
         app.kubernetes.io/component: frontend
+      # Auto Mode: keep Karpenter consolidation from draining the node under a live frontend (test/RESULTS.md p5e notes).
+      annotations:
+        karpenter.sh/do-not-disrupt: "true"
     spec:
       # PREFER the small CPU node when the cluster has one, but stay schedulable when it
       # does not (all-GPU cluster): a hard nodeSelector on an absent instance type pins

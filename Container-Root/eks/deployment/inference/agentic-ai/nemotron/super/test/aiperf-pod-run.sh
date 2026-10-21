@@ -16,7 +16,11 @@ echo ""
 AIPERF_POD_NAME="${AIPERF_POD_NAME:-do-aiperf}"
 echo "Starting ${AIPERF_POD_NAME} pod ..."
 
-export CMD="kubectl ${_NS_ARG} run ${AIPERF_POD_NAME} --image=iankoulski/do-aiperf --overrides='{\"spec\": {\"containers\": [{\"name\": \"do-aiperf\", \"image\": \"iankoulski/do-aiperf\", \"volumeMounts\": [{\"name\": \"fsx-vol\", \"mountPath\": \"/shared\"}]}], \"volumes\": [{\"name\": \"fsx-vol\", \"persistentVolumeClaim\": {\"claimName\": \"fsx-pvc\"}}]}}'"
+# karpenter.sh/do-not-disrupt: on an EKS Auto Mode cluster the utility NodePool consolidates
+# `WhenEmptyOrUnderutilized` after 30 s and drains nodes under live pods. A drain evicted a running
+# do-aiperf pod mid-run (exit 137, no export) on 2026-10-19; the annotation makes Karpenter leave
+# this pod's node alone while it exists. Inert on clusters without Karpenter.
+export CMD="kubectl ${_NS_ARG} run ${AIPERF_POD_NAME} --image=iankoulski/do-aiperf --overrides='{\"metadata\": {\"annotations\": {\"karpenter.sh/do-not-disrupt\": \"true\"}}, \"spec\": {\"containers\": [{\"name\": \"do-aiperf\", \"image\": \"iankoulski/do-aiperf\", \"volumeMounts\": [{\"name\": \"fsx-vol\", \"mountPath\": \"/shared\"}]}], \"volumes\": [{\"name\": \"fsx-vol\", \"persistentVolumeClaim\": {\"claimName\": \"fsx-pvc\"}}]}}'"
 
 if [ ! "$VERBOSE" == "false" ]; then echo -e "\n${CMD}\n"; fi
 
