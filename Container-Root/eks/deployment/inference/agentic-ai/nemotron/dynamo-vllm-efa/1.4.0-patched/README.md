@@ -30,10 +30,13 @@ docker build -t dynamo-vllm-efa:1.4.0-patched .
 
 `../build-sbom-scan.sh` with `CONTEXT=.` builds this folder (forwarding `BASE` as `--build-arg`), writes the SBOM (SPDX + CycloneDX) into
 `sbom/` here, scans the CycloneDX SBOM with trivy and fails on any CRITICAL or on HIGH above `MAX_HIGH`; a PASS writes
-`sbom/<image>.gate-pass.txt` for the exact image id. `buildspec.yaml` runs exactly that in CodeBuild as a **second CodeBuild project** on
-this repo (buildspec path `Container-Root/eks/deployment/inference/agentic-ai/nemotron/dynamo-vllm-efa/1.4.0-patched/buildspec.yaml`; the
-sibling `../buildspec.yaml` is the 1.5.0 project) and publishes `dynamo-vllm-efa:1.4.0-patched` (`REGISTRY` / `IMAGE` are the maintainer's
-call). **The push is conditioned on the gate:** post_build is one command that pushes only when the build phase succeeded AND the PASS
+`sbom/<image>.gate-pass.txt` for the exact image id. In CodeBuild the **shared** [`../buildspec.yaml`](../buildspec.yaml) builds this folder
+when its `RECIPE` variable is `1.4.0-patched` (a start-build environment override of the existing project, or a project-level value; nothing
+else to set): `../select-recipe.sh` sources this folder's [`recipe.env`](recipe.env) (`BASE=…vllm-runtime:1.4.0-efa`,
+`IMAGE=dynamo-vllm-efa:1.4.0-patched`, no build args) in place of the buildspec's 1.5.0 values, builds this folder through the shared gate
+and writes the SBOMs + PASS record into `../sbom/` (the build artifacts), then publishes `dynamo-vllm-efa:1.4.0-patched` (`REGISTRY` /
+`IMAGE` stay the maintainer's call). With `RECIPE` unset, the default, the same buildspec builds `dynamo-vllm-efa:1.5.0-patched`; there is
+no second buildspec. **The push is conditioned on the gate:** post_build is one command that pushes only when the build phase succeeded AND the PASS
 record exists for the exact image id being pushed; otherwise it exits nonzero and the run is red.
 
 ## Measured (2026-10-21, GPU-free: docker build + syft 1.55.0 + trivy 0.76.0, vulnerability DB UpdatedAt 2026-10-21T19:18:22Z)

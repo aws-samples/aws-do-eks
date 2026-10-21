@@ -4,8 +4,9 @@ The image this tree defaults to, `public.ecr.aws/hpc-cloud/dynamo-vllm-efa:1.4.0
 [`../disagg/.env`](../disagg/.env); every row of [`../test/RESULTS.md`](../test/RESULTS.md) was measured on it), has its recipe in
 [`../../dynamo-vllm-efa/1.4.0-patched/`](../../dynamo-vllm-efa/1.4.0-patched/): `nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.4.0-efa` (Dynamo 1.4.0 /
 vLLM 0.26 / EFA 1.49) + Ray 2.55.1 + the strict 0.26-era NIXL pull-path pipeline-parallel patch layer (PP>1 disaggregation) + CVE removals + the
-NVFP4 cubin-dir fix, with its own `buildspec.yaml` (a second CodeBuild project) that runs the shared gate `../../dynamo-vllm-efa/build-sbom-scan.sh`
-with `CONTEXT=.`. The build and pipeline lines, the measured gate numbers and what is unmeasured are in that folder's README.
+NVFP4 cubin-dir fix, built by the shared [`../../dynamo-vllm-efa/buildspec.yaml`](../../dynamo-vllm-efa/buildspec.yaml) when its `RECIPE`
+variable is `1.4.0-patched` (that folder's `recipe.env` supplies base, tag and build args; with `RECIPE` unset the buildspec builds its default,
+`dynamo-vllm-efa:1.5.0-patched`), through the shared gate `../../dynamo-vllm-efa/build-sbom-scan.sh`. The build and pipeline lines, the measured gate numbers and what is unmeasured are in that folder's README.
 
 The shared recipe [`../../dynamo-vllm-efa/`](../../dynamo-vllm-efa/) (`Dockerfile`, `patches/`, `build-sbom-scan.sh`, `buildspec.yaml`) builds the
 1.5.0 line for [`../../super`](../../super) and this tree on `nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.5.0-efa` (Dynamo 1.5.0 / vLLM 0.28.0); its

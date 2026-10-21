@@ -32,8 +32,9 @@ CRITICAL/HIGH table into the log (also written to `sbom/<image>.gate-summary.txt
 A PASS also writes `sbom/<image>.gate-pass.txt` (image id, counts, tooling, DB date, thresholds) - removed at the start of every run,
 written only after every check passed. `CONTEXT=<folder>` builds a sibling recipe's Dockerfile through the same gate and writes its `sbom/`
 there (what [`1.4.0-patched/`](1.4.0-patched/) does, below). `buildspec.yaml` runs exactly that in CodeBuild with both patch layers ON and publishes
-`dynamo-vllm-efa:1.5.0-patched` (`REGISTRY` / `IMAGE` are the maintainer's call; the SBOMs, the trivy report and the PASS record are
-the build artifacts). **The push is conditioned on the gate:** post_build is one command that pushes only when the build phase
+`dynamo-vllm-efa:1.5.0-patched`, its default (`RECIPE` unset; `RECIPE=1.4.0-patched` builds the ultra sibling through the same
+buildspec, below; `REGISTRY` / `IMAGE` are the maintainer's call; the SBOMs, the trivy report and the PASS record are the build
+artifacts). **The push is conditioned on the gate:** post_build is one command that pushes only when the build phase
 succeeded AND the PASS record exists for the exact image id being pushed; otherwise it exits nonzero and the run is red. (The first
 pipeline run pushed its 3-CRITICAL image because the old guard was a separate `exit 0` command and CodeBuild ran the push commands
 after it.)
@@ -43,7 +44,10 @@ after it.)
 [`1.4.0-patched/`](1.4.0-patched/) is the sibling recipe of the image [`../ultra`](../ultra) defaults to and was measured on,
 `dynamo-vllm-efa:1.4.0-patched` (`nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.4.0-efa`: Dynamo 1.4.0 / vLLM 0.26.0 / EFA 1.49): Ray 2.55.1, the
 0.26-era NIXL pull-path pipeline-parallel patch (always on; it does not apply to the 0.28.0 package this Dockerfile builds on), CVE removals
-and the NVFP4 cubin-dir fix. It has its own `buildspec.yaml` (a second CodeBuild project) and runs this folder's `build-sbom-scan.sh`:
+and the NVFP4 cubin-dir fix. The same `buildspec.yaml` builds it when its `RECIPE` variable is `1.4.0-patched` (a start-build or
+project-level environment override; `select-recipe.sh` then sources `1.4.0-patched/recipe.env`, which supplies `BASE` / `IMAGE` /
+`DOCKER_BUILD_ARGS` in place of the 1.5.0 values, and the SBOMs + PASS record land in this folder's `sbom/`); with `RECIPE` unset the
+buildspec builds `dynamo-vllm-efa:1.5.0-patched`. There is no second buildspec. By hand, through this folder's `build-sbom-scan.sh`:
 
 ```bash
 cd 1.4.0-patched && CONTEXT=. IMAGE=dynamo-vllm-efa:1.4.0-patched BASE=nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.4.0-efa GATE_SEVERITY=CRITICAL,HIGH MAX_HIGH=10 ../build-sbom-scan.sh
