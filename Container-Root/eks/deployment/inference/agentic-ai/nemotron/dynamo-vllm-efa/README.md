@@ -28,8 +28,14 @@ DOCKER_BUILD_ARGS="--build-arg NIXL_PP_PATCH=1 --build-arg DYNAMO_EPD_NEMOTRON_P
 `build-sbom-scan.sh` builds (forwarding `BASE` and `DOCKER_BUILD_ARGS` as `--build-arg`), writes the SBOM (SPDX + CycloneDX) with
 syft into `sbom/`, scans the CycloneDX SBOM with trivy and fails on any CRITICAL (or on HIGH above `MAX_HIGH`); a missing report is a
 failure, never a pass. The GATE SUMMARY names the syft / trivy versions and the trivy DB date it matched against and prints the
-CRITICAL/HIGH table into the log (also written to `sbom/<image>.gate-summary.txt`); `SCAN_IMAGE=1` adds a report-only `trivy image`. `buildspec.yaml` runs exactly that in CodeBuild with both patch layers ON and publishes
-`dynamo-vllm-efa:1.5.0-patched` (`REGISTRY` / `IMAGE` are the maintainer's call; the SBOMs and the trivy report are the build artifacts).
+CRITICAL/HIGH table into the log (also written to `sbom/<image>.gate-summary.txt`); `SCAN_IMAGE=1` adds a report-only `trivy image`.
+A PASS also writes `sbom/<image>.gate-pass.txt` (image id, counts, tooling, DB date, thresholds) - removed at the start of every run,
+written only after every check passed. `buildspec.yaml` runs exactly that in CodeBuild with both patch layers ON and publishes
+`dynamo-vllm-efa:1.5.0-patched` (`REGISTRY` / `IMAGE` are the maintainer's call; the SBOMs, the trivy report and the PASS record are
+the build artifacts). **The push is conditioned on the gate:** post_build is one command that pushes only when the build phase
+succeeded AND the PASS record exists for the exact image id being pushed; otherwise it exits nonzero and the run is red. (The first
+pipeline run pushed its 3-CRITICAL image because the old guard was a separate `exit 0` command and CodeBuild ran the push commands
+after it.)
 
 ## What is measured, and what is not
 
