@@ -21,6 +21,11 @@
 # the syft / trivy versions and the DB UpdatedAt and prints the CRITICAL/HIGH table into the log; both also land in
 # $OUTDIR/<image>.gate-summary.txt next to the SBOMs.
 #
+# The gate's verdict is also a FILE: $OUTDIR/<image>.gate-pass.txt is written ONLY after every check passed (image id, counts,
+# tooling, DB, thresholds) and is removed at the start of every run, so a stale PASS cannot leak into a later decision. The push
+# (buildspec.yaml post_build) requires that record for the image id it is about to push - a nonzero exit alone is not what
+# conditions the push (2026-10-21: the pipeline pushed a 3-CRITICAL image because its push commands ran after a failed gate).
+#
 # Exit codes: 0 pass | 2 build failed | 3 gate could not be evaluated (never a silent pass)
 #             4 CVE gate failed on severity | 5 HIGH ceiling exceeded
 set -euo pipefail
@@ -48,7 +53,9 @@ CVE_TXT="$OUTDIR/${SAFE_TAG}.trivy.txt"
 IMG_JSON="$OUTDIR/${SAFE_TAG}.trivy-image.json"
 IMG_TXT="$OUTDIR/${SAFE_TAG}.trivy-image.txt"
 GATE_TXT="$OUTDIR/${SAFE_TAG}.gate-summary.txt"
+GATE_PASS="$OUTDIR/${SAFE_TAG}.gate-pass.txt"   # written ONLY on PASS (see the end); the push keys on it
 mkdir -p "$OUTDIR"
+rm -f "$GATE_PASS"                               # a previous run's PASS must never speak for this one
 
 for t in syft trivy docker; do
   command -v "$t" >/dev/null 2>&1 || { echo "FATAL: $t not on PATH"; exit 3; }
@@ -169,4 +176,17 @@ if [ -n "$MAX_HIGH" ] && [ "$HIGH" -gt "$MAX_HIGH" ]; then
   echo "GATE FAIL — HIGH=$HIGH exceeds MAX_HIGH=$MAX_HIGH."
   exit 5
 fi
-echo "GATE PASS — 0 CRITICAL${MAX_HIGH:+, HIGH $HIGH <= $MAX_HIGH}."
+# PASS record: the only artifact the push accepts. One key=value per line; image_id is matched exactly by the buildspec.
+{
+  echo "image=$IMAGE"
+  echo "image_id=$IMAGE_ID"
+  echo "build_args=${DOCKER_BUILD_ARGS:-<none>}${BASE:+  BASE=$BASE}"
+  echo "critical=$CRIT"
+  echo "high=$HIGH"
+  echo "total=$TOTAL"
+  echo "gate_severity=$GATE_SEVERITY"
+  echo "max_high=${MAX_HIGH:-<not gated>}"
+  echo "tooling=syft ${SYFT_VER:-?}, trivy ${TRIVY_VER:-?}, vulnerability DB UpdatedAt ${TRIVY_DB:-?}"
+  echo "passed_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+} > "$GATE_PASS"
+echo "GATE PASS — 0 CRITICAL${MAX_HIGH:+, HIGH $HIGH <= $MAX_HIGH}. Record: $GATE_PASS"
