@@ -271,6 +271,12 @@ RUN pip install --no-cache-dir "certifi==2026.10.19"
 #     (NemotronH_Omni_Reasoning_V3ImageProcessor, the class vLLM wraps at serve time) returns byte-identical pixel_values / num_patches /
 #     num_tokens for five test images on 12.3.0 and 13.0.0 (MEASURED 2026-10-21, CPU). A GPU cell on this layer is still a measurement to take.
 RUN pip install --no-cache-dir "pillow==13.0.0"
+# 4j) uv 0.12.5 (CRITICAL GHSA-hq85-5cpj-mr62, published 2026-10-20; fixed 0.13.4): a package INSTALLER, present twice - the pip wheel's
+#     /usr/local/bin/uv + uvx and the base's own 0.12.0 musl build under /opt/uv/bin at the head of PATH. No requirer, and nothing in either
+#     tree calls it (templates, .env, run.sh and the runtime bootstrap use pip). Worker-unused -> REMOVED, both copies: a bump would fix the
+#     wheel and leave the /opt/uv binary, which `trivy image` flags separately as a Rust binary. pip stays. `pip check` delta vs stock empty
+#     (MEASURED 2026-10-21). Restore path for a debugging session: `pip install uv`.
+RUN pip uninstall -y uv && rm -rf /opt/uv
 
 # KNOWN-OPEN after 4a-4g (HIGH, deliberate; counted by the buildspec's MAX_HIGH): ray 2.55.1 CVE-2026-57516 (fixed 2.56.0 -
 # 2.55.1 is the PP2-PROVEN pin of both trees and this image's golden rule is measure-before-bump; the bump is queued behind an
@@ -290,12 +296,13 @@ assert os.path.exists("/opt/amazon/efa/bin/fi_info"), "EFA userspace missing"
 assert not os.path.exists("/usr/bin/nats-server"), "nats-server still present (step 4a)"
 assert not os.path.exists("/usr/local/bin/etcd"), "etcd bins still present (step 4b)"
 # Converged-in-GA asserts (ultra's 1.4.0 layers 4c/4d/4f + cubin chmod, retired here — fail loud on regression):
-for gone in ("mooncake-transfer-engine", "mooncake-transfer-engine-cuda13", "lmcache"):
+for gone, step in (("mooncake-transfer-engine", "4e"), ("mooncake-transfer-engine-cuda13", "4e"), ("lmcache", "4e"), ("uv", "4j")):
     try:
-        m.version(gone); raise AssertionError(f"{gone} present - step 4e did not remove it")
+        m.version(gone); raise AssertionError(f"{gone} present - step {step} did not remove it")
     except m.PackageNotFoundError:
         pass
-assert not os.path.exists("/opt/uv/cache"), "uv wheel cache re-appeared - restore ultra's removal layer"
+assert not os.path.exists("/opt/uv") and not os.path.exists("/usr/local/bin/uv"), \
+    "a uv binary is still present - step 4j removes both copies (and with /opt/uv the former /opt/uv/cache location)"
 cv = tuple(int(x) for x in m.version("cryptography").split(".")[:1])
 assert cv >= (50,), f"venv cryptography {m.version('cryptography')} < 50 - restore ultra's bump layer"
 def ver(p): return tuple(int(x) for x in m.version(p).split(".")[:3])
