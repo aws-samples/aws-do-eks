@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Prove the NIXL pull-path pipeline-parallel backport (patches/0002-nixl-pull-path-pipeline-parallel-0.28.0.vllm.diff,
 vllm-project/vllm#53360 onto vLLM 0.28.0) is applied and loads: imports the patched package and checks its markers.
-Run at build time after the patch step (Dockerfile.ray, NIXL_PP_PATCH=1); exits non-zero on any missing marker."""
+Run at build time after the patch step (Dockerfile, NIXL_PP_PATCH=1); exits non-zero on any missing marker."""
 import vllm.distributed.kv_transfer.kv_connector.v1.nixl.base_worker as bw
 import vllm.distributed.kv_transfer.kv_connector.v1.nixl.pull_worker as pw
 import vllm.distributed.kv_transfer.kv_connector.v1.nixl.push_worker as pushw

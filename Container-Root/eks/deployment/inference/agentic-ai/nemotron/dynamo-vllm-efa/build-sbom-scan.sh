@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# build-sbom-scan.sh — pipeline gate for the ONE GOLDEN nemotron-disagg image:
+# build-sbom-scan.sh — pipeline gate for the ONE Nemotron dynamo-vllm-efa image (../super and ../ultra):
 #   reproducible build  +  SBOM (SPDX + CycloneDX)  +  CVE gate (0 CRITICAL, HIGH counted).
 #
 # Author: Anton Alexander
@@ -7,8 +7,11 @@
 # Designed to be dropped straight into a build pipeline: no interactive steps, every
 # artifact written to $OUTDIR, and a nonzero exit on any gate failure.
 #
-#   ./build-sbom-scan.sh                                   # build + SBOM + gate on CRITICAL
-#   IMAGE=nemotron-disagg:golden ./build-sbom-scan.sh --scan-only    # scan a prebuilt image
+#   ./build-sbom-scan.sh                                   # build (Dockerfile defaults: no patches) + SBOM + gate on CRITICAL
+#   DOCKER_BUILD_ARGS="--build-arg NIXL_PP_PATCH=1 --build-arg DYNAMO_EPD_NEMOTRON_PATCH=1" ./build-sbom-scan.sh
+#                                                          # the published "-patched" image (what buildspec.yaml runs)
+#   BASE=nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.5.0-efa ./build-sbom-scan.sh   # pin/override the base (passed as --build-arg BASE)
+#   IMAGE=dynamo-vllm-efa:1.5.0-patched ./build-sbom-scan.sh --scan-only          # scan a prebuilt image
 #   GATE_SEVERITY=CRITICAL,HIGH ./build-sbom-scan.sh       # stricter gate
 #   MAX_HIGH=40 ./build-sbom-scan.sh                       # also fail if HIGH exceeds a ceiling
 #
@@ -17,10 +20,15 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-IMAGE="${IMAGE:-dynamo-vllm-efa:1.5.0-super-patched}"
+IMAGE="${IMAGE:-dynamo-vllm-efa:1.5.0-patched}"
 GATE_SEVERITY="${GATE_SEVERITY:-CRITICAL}"
 MAX_HIGH="${MAX_HIGH:-}"                       # empty = report HIGH, do not gate on it
 OUTDIR="${OUTDIR:-$HERE/sbom}"
+# Extra `docker build` arguments, e.g. the opt-in patch ARGs (see the Dockerfile header). Default empty = the
+# Dockerfile's own ARG defaults (both patches OFF). BASE, when set in the environment (the buildspec sets it), is
+# forwarded as --build-arg BASE= so the pinned base is the one that was actually built, not just the one printed.
+DOCKER_BUILD_ARGS="${DOCKER_BUILD_ARGS:-}"
+BASE="${BASE:-}"
 SCAN_ONLY=0
 [ "${1:-}" = "--scan-only" ] && SCAN_ONLY=1
 
@@ -37,12 +45,17 @@ done
 
 # ---- 1) build -------------------------------------------------------------------------
 if [ "$SCAN_ONLY" = 0 ]; then
-  echo "[1/3 BUILD] docker build -> $IMAGE"
-  docker build -t "$IMAGE" "$HERE" || { echo "[1/3 BUILD] FAIL"; exit 2; }
+  BUILD_ARGS=()
+  [ -n "$BASE" ] && BUILD_ARGS+=(--build-arg "BASE=$BASE")
+  # shellcheck disable=SC2206  # DOCKER_BUILD_ARGS is a deliberate space-separated list of flags
+  [ -n "$DOCKER_BUILD_ARGS" ] && BUILD_ARGS+=($DOCKER_BUILD_ARGS)
+  echo "[1/3 BUILD] docker build ${BUILD_ARGS[*]:-} -> $IMAGE"
+  docker build "${BUILD_ARGS[@]}" -t "$IMAGE" "$HERE" || { echo "[1/3 BUILD] FAIL"; exit 2; }
 else
   echo "[1/3 BUILD] skipped (--scan-only)"
   docker image inspect "$IMAGE" >/dev/null 2>&1 || { echo "FATAL: $IMAGE not present"; exit 2; }
 fi
+IMAGE_ID="$(docker image inspect --format '{{.Id}}' "$IMAGE")"
 
 # ---- 2) SBOM --------------------------------------------------------------------------
 echo "[2/3 SBOM] syft -> SPDX + CycloneDX ..."
@@ -50,7 +63,7 @@ syft "docker:$IMAGE" -o "spdx-json=$SBOM_SPDX" -o "cyclonedx-json=$SBOM_CDX" -q
 
 # ---- 3) CVE gate ----------------------------------------------------------------------
 # Scan the SBOM, NOT the image. A `trivy image` scan walks every layer's filesystem and
-# reliably hits the default timeout on an image this size (~20GB); the timeout produced an
+# reliably hits the default timeout on an image this size (~33GB); the timeout produced an
 # EMPTY report, an empty count, and `[ "" -gt 0 ]` fell through to a FALSE PASS. The SBOM
 # scan is filesystem-free and covers the exact package set syft recorded.
 echo "[3/3 GATE] trivy sbom scan ($SBOM_CDX) ..."
@@ -85,7 +98,8 @@ PKG_COUNT="$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))
 
 echo
 echo "=============================== GATE SUMMARY ==============================="
-echo "image      : $IMAGE"
+echo "image      : $IMAGE ($IMAGE_ID)"
+echo "build args : ${DOCKER_BUILD_ARGS:-<none>}${BASE:+  BASE=$BASE}"
 echo "sbom_spdx  : $SBOM_SPDX ($PKG_COUNT packages)"
 echo "sbom_cdx   : $SBOM_CDX"
 echo "cve_report : $CVE_JSON / $CVE_TXT"
@@ -103,4 +117,3 @@ if [ -n "$MAX_HIGH" ] && [ "$HIGH" -gt "$MAX_HIGH" ]; then
   exit 5
 fi
 echo "GATE PASS — 0 CRITICAL${MAX_HIGH:+, HIGH $HIGH <= $MAX_HIGH}."
-

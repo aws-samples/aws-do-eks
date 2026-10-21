@@ -15,7 +15,13 @@ if [ "${NAMESPACE}" != "" ]; then _NS_ARG="-n ${NAMESPACE}"; fi
 echo ""
 echo "Starting do-aiperf pod ..."
 
-export CMD="kubectl ${_NS_ARG} run do-aiperf --image=iankoulski/do-aiperf --overrides='{\"spec\": {\"nodeSelector\": {\"nvidia.com/gpu.present\": \"true\"}, \"containers\": [{\"name\": \"do-aiperf\", \"image\": \"iankoulski/do-aiperf\", \"volumeMounts\": [{\"name\": \"fsx-vol\", \"mountPath\": \"/shared\"}]}], \"volumes\": [{\"name\": \"fsx-vol\", \"persistentVolumeClaim\": {\"claimName\": \"fsx-pvc\"}}]}}'"
+# karpenter.sh/do-not-disrupt: on an EKS Auto Mode cluster the utility NodePool consolidates
+# `WhenEmptyOrUnderutilized` after 30 s and drains nodes under live pods. A drain evicted a running
+# do-aiperf pod mid-run (exit 137, no export) on 2026-10-19 (super tree, ../../super/test/RESULTS.md p5e
+# notes); the annotation makes Karpenter leave this pod's node alone while it exists. Inert on clusters
+# without Karpenter. The former nodeSelector nvidia.com/gpu.present=true (a GPU-operator / NFD label that
+# Auto Mode nodes do not carry) is dropped: the client needs only fsx-pvc, as in ../../super/test.
+export CMD="kubectl ${_NS_ARG} run do-aiperf --image=iankoulski/do-aiperf --overrides='{\"metadata\": {\"annotations\": {\"karpenter.sh/do-not-disrupt\": \"true\"}}, \"spec\": {\"containers\": [{\"name\": \"do-aiperf\", \"image\": \"iankoulski/do-aiperf\", \"volumeMounts\": [{\"name\": \"fsx-vol\", \"mountPath\": \"/shared\"}]}], \"volumes\": [{\"name\": \"fsx-vol\", \"persistentVolumeClaim\": {\"claimName\": \"fsx-pvc\"}}]}}'"
 
 if [ ! "$VERBOSE" == "false" ]; then echo -e "\n${CMD}\n"; fi
 

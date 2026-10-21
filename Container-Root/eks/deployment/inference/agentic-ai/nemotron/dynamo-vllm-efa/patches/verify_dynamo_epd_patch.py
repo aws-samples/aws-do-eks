@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Prove the NemotronH Omni encode-worker patch (patches/0003-dynamo-encode-worker-nemotron-h-omni-1.5.0.dynamo.diff)
 is applied to dynamo's vllm backend and loads: imports the patched modules and checks their markers. Run at build time
-after the patch step (Dockerfile.ray, DYNAMO_EPD_NEMOTRON_PATCH=1); exits non-zero on any missing marker."""
+after the patch step (Dockerfile, DYNAMO_EPD_NEMOTRON_PATCH=1); exits non-zero on any missing marker."""
 import inspect, json, os, tempfile
 
 import dynamo.vllm.multimodal_handlers.encode_worker_handler as handler

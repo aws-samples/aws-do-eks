@@ -119,7 +119,10 @@ spec:
       type: frontend
       replicas: 1
       # runtimeVersionOverride: "1.4.0"   # uncomment for a non-semver custom TAG (see header)
+      # Auto Mode: keep Karpenter consolidation from draining the node under a live frontend (../../super/test/RESULTS.md p5e notes; inert without Karpenter).
       podTemplate:
+        metadata:
+          annotations: { karpenter.sh/do-not-disrupt: "true" }
         spec:
           nodeSelector: { node.kubernetes.io/instance-type: ${INSTANCE_TYPE_FRONTEND} }
           volumes:
@@ -252,6 +255,8 @@ spec:
                 - { name: NIXL_LIBFABRIC_MAX_RAILS, value: "1" }
                 - { name: NIXL_SKIP_TOPOLOGY_CHECK, value: "1" }
                 - { name: NCCL_NET_PLUGIN, value: ofi }
+                - { name: NCCL_DEBUG, value: INFO }
+                - { name: NCCL_DEBUG_SUBSYS, value: "INIT,NET" }
                 - { name: NCCL_TUNER_PLUGIN, value: ofi }
                 - { name: OFI_NCCL_FORCE_NUM_RAILS, value: "4" }
                 # lws-pp2's proven NCCL trio for the cross-node PP engine, carried verbatim.
@@ -354,6 +359,8 @@ spec:
                 - { name: NIXL_LIBFABRIC_MAX_RAILS, value: "1" }
                 - { name: NIXL_SKIP_TOPOLOGY_CHECK, value: "1" }
                 - { name: NCCL_NET_PLUGIN, value: ofi }
+                - { name: NCCL_DEBUG, value: INFO }
+                - { name: NCCL_DEBUG_SUBSYS, value: "INIT,NET" }
                 - { name: NCCL_TUNER_PLUGIN, value: ofi }
                 - { name: OFI_NCCL_FORCE_NUM_RAILS, value: "4" }
                 # lws-pp2's proven NCCL trio for the cross-node PP engine, carried verbatim.

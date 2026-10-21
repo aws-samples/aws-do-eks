@@ -23,6 +23,19 @@
 #   nodes, socket_fallback=0, coherent completions).
 #
 # RENDER: MANIFEST_TYPE=lws-ep ./run.sh   (run.sh envsubst's this + kubectl apply)
+#
+# LOAD FORMAT (read before adding a flag): unlike the other agg templates, both ranks here run vLLM's
+#   DEFAULT loader - there is NO --load-format. This is the measured EP16 leg of ../test/RESULTS.md, and
+#   dgd-grove-ep.yaml-template keeps the same omission on purpose so its Grove-vs-LWS A/B stays
+#   single-variable (its header). EKS Auto Mode finding from the super tree (2026-10-20, 4x p5e.48xlarge,
+#   FSx for Lustre 1.2 TiB; ../../super/test/RESULTS.md p5e notes): with 16 EP ranks mmap-reading the same
+#   files the default loader read 2 of 64 shards in 16 min (ETA > 7 h) while the streamer-based templates
+#   loaded the same 249 GB checkpoint in 25-30 min, so ../../super/agg/lws-ep.yaml-template now passes
+#   --load-format ${LOAD_FORMAT}; the sibling super/agg/dgd-grove-ep (also default loader, by design)
+#   loaded the same checkpoint in 12-13 min on the same FSx, so the default loader is not uniformly
+#   unusable there. Nemotron-3 Ultra was NOT run on an Auto Mode cluster. To opt in here, add
+#   `--load-format ${LOAD_FORMAT}` (.env default runai_streamer) to BOTH `vllm serve` blocks below -
+#   and note that doing so changes the measured configuration of this template's RESULTS rows.
 # =============================================================================
 ---
 apiVersion: leaderworkerset.x-k8s.io/v1

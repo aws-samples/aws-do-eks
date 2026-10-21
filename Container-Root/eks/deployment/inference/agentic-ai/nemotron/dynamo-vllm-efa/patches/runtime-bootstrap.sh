@@ -1,10 +1,10 @@
 #!/bin/bash
-# Test-only runtime bootstrap for the Ray / PP>1 shapes (RUNTIME_BOOTSTRAP=1 in ../../agg/.env or
-# ../../disagg/.env). run.sh publishes this folder as a ConfigMap that those templates mount at
+# Test-only runtime bootstrap for the Ray / PP>1 shapes (RUNTIME_BOOTSTRAP=1 in ../../super/agg/.env or
+# ../../super/disagg/.env). run.sh publishes this folder as a ConfigMap that those templates mount at
 # /opt/runtime-bootstrap; the vllm container then runs this as root at start and applies what
-# ../Dockerfile.ray bakes at build time: ray[default]==2.55.1 (its step 2, `ray` mode only) and the
+# ../Dockerfile bakes at build time: ray[default]==2.55.1 (its step 2, `ray` mode only) and the
 # NemotronH_Nano_VL_V2 SupportsPP patch (its step 3, both modes). The production path is the golden
-# image built from ../Dockerfile.ray; this exists for a cluster that cannot pull one yet, and adds
+# image built from ../Dockerfile; this exists for a cluster that cannot pull one yet, and adds
 # roughly 2-4 minutes to every pod start it runs in.
 #
 #   bash /opt/runtime-bootstrap/runtime-bootstrap.sh ray     # Ray-bootstrapped PP2 (lws, lws-2pp, lws-pp2)

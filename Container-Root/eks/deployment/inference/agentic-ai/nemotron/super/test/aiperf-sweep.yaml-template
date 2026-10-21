@@ -12,9 +12,9 @@ metadata:
     role: benchmark
     model: nemotron35-super-vl-120b
   annotations:
-    awesome-inferencing/benchmark: aiperf-nemotron35-super-vl-1.5.0
-    awesome-inferencing/aiperf-version: "${AIPERF_VERSION}"
-    awesome-inferencing/target: ${DEPLOYMENT_TYPE}/${MANIFEST_TYPE} ${MODEL_VARIANT} via ${SERVICE_NAME}
+    aws-do-eks/benchmark: aiperf-nemotron35-super-vl-1.5.0
+    aws-do-eks/aiperf-version: "${AIPERF_VERSION}"
+    aws-do-eks/target: ${DEPLOYMENT_TYPE}/${MANIFEST_TYPE} ${MODEL_VARIANT} via ${SERVICE_NAME}
 spec:
   restartPolicy: Never
   #nodeSelector:

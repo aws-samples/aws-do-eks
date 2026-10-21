@@ -273,7 +273,7 @@ spec:
                 for i in ${DOLLAR}(seq 1 150); do
                   LEADER_IP=${DOLLAR}(getent hosts "${DOLLAR}LWS_LEADER_ADDRESS" | awk 'NR==1{print ${DOLLAR}1; exit}')
                   if [ -n "${DOLLAR}LEADER_IP" ]; then break; fi
-                  echo "[worker] waiting for DNS LWS_LEADER_ADDRESS=$LWS_LEADER_ADDRESS (${DOLLAR}i)"
+                  echo "[worker] waiting for DNS LWS_LEADER_ADDRESS=${DOLLAR}LWS_LEADER_ADDRESS (${DOLLAR}i)"
                   sleep 2
                 done
                 if [ -z "${DOLLAR}LEADER_IP" ]; then
@@ -372,6 +372,9 @@ spec:
       labels:
         app.kubernetes.io/part-of: ${DEPLOYMENT_NAME}
         app.kubernetes.io/component: frontend
+      # Auto Mode: keep Karpenter consolidation from draining the node under a live frontend (../../super/test/RESULTS.md p5e notes; inert without Karpenter).
+      annotations:
+        karpenter.sh/do-not-disrupt: "true"
     spec:
       nodeSelector:
         node.kubernetes.io/instance-type: ${INSTANCE_TYPE_FRONTEND}
