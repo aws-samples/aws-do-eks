@@ -261,6 +261,16 @@ RUN apt-get update \
 #     httpx, httpcore, sentry-sdk) carry no upper bound. `pip install --dry-run` resolves exactly this one wheel and the `pip check` delta vs
 #     stock is empty (MEASURED 2026-10-21 in a throwaway container of the pipeline's image public.ecr.aws/hpc-cloud/dynamo-vllm-efa:1.5.0-patched).
 RUN pip install --no-cache-dir "certifi==2026.10.19"
+# 4i) pillow 12.3.0 -> 13.0.0 (CRITICAL CVE-2026-112403 + HIGH CVE-2026-112397/-112400/-112404/-112895/-112896/-112897, all published
+#     2026-10-19; the only fixed release is the 13.0.0 major). pillow is on the VL serving path (vLLM's image loader, the checkpoint's HF
+#     image processor, torchvision), so it is bumped, not removed, and the bump was measured rather than assumed: every requirer (vllm,
+#     torchvision, transformers, diffusers, mistral_common, scikit-image, imageio) has only a lower bound (>=8.3.2 .. >=11.1.0); `pip check`
+#     delta vs stock empty; the resampling constants the consumers use (Image.BILINEAR/NEAREST/LANCZOS/BICUBIC) exist and a resize through
+#     each is byte-identical to 12.3.0; ImageOps.exif_transpose/pad/expand, torchvision to_tensor/pil_to_tensor/resize/to_pil_image,
+#     transformers resize/to_pil_image/load_image and vLLM's ImageMediaIO run; and the Super VL checkpoint's own image processor
+#     (NemotronH_Omni_Reasoning_V3ImageProcessor, the class vLLM wraps at serve time) returns byte-identical pixel_values / num_patches /
+#     num_tokens for five test images on 12.3.0 and 13.0.0 (MEASURED 2026-10-21, CPU). A GPU cell on this layer is still a measurement to take.
+RUN pip install --no-cache-dir "pillow==13.0.0"
 
 # KNOWN-OPEN after 4a-4g (HIGH, deliberate; counted by the buildspec's MAX_HIGH): ray 2.55.1 CVE-2026-57516 (fixed 2.56.0 -
 # 2.55.1 is the PP2-PROVEN pin of both trees and this image's golden rule is measure-before-bump; the bump is queued behind an
@@ -293,6 +303,7 @@ assert ver("pyjwt") >= (2, 14, 0), f"pyjwt {m.version('pyjwt')} < 2.14.0 (step 4
 assert ver("urllib3") >= (2, 8, 0), f"urllib3 {m.version('urllib3')} < 2.8.0 (step 4f)"
 assert ver("aiohttp") >= (3, 14, 4), f"aiohttp {m.version('aiohttp')} < 3.14.4 (step 4f)"
 assert ver("certifi") >= (2026, 10, 19), f"certifi {m.version('certifi')} < 2026.10.19 (step 4h)"
+assert ver("pillow") >= (13, 0, 0), f"pillow {m.version('pillow')} < 13.0.0 (step 4i)"
 assert m.version("torch").startswith("2.13."), f"torch {m.version('torch')} moved - a step-4 bump drifted the torch pin"
 assert m.version("nixl").startswith("1.3."), f"nixl {m.version('nixl')} moved"
 ssl = subprocess.run(["dpkg-query", "-W", "-f=${Version}", "libssl3t64"], capture_output=True, text=True).stdout.strip()
