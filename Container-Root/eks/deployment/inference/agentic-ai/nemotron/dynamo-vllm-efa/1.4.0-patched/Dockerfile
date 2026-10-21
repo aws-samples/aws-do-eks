@@ -255,11 +255,22 @@ RUN pip install --no-cache-dir "certifi==2026.10.19"
 #     1.5.0 recipe's step 4i carries the same bump with the same caveat).
 RUN pip install --no-cache-dir "pillow==13.0.0"
 
-# KNOWN-OPEN (2 HIGH, deliberate): ray 2.55.1 CVE-2026-57516 (fixed 2.56.0) and its
-# vendored aiohttp 3.13.5 CVE-2026-69244 (ray/_private/runtime_env/agent/
-# thirdparty_files, fixed 3.14.3). Both clear with a ray >=2.56 bump — but 2.55.1 is the
-# PP2-PROVEN pin (step 2) and this image's own golden rule is measure-before-bump. The
-# bump is queued behind an E2E PP>1 smoke; do NOT fold it into a CVE pass.
+# 4m) uv 0.11.32 (CRITICAL GHSA-hq85-5cpj-mr62; fixed 0.13.4): a package INSTALLER, present twice —
+#     the pip wheel's /usr/local/bin/uv and the base's own build under /opt/uv/bin at the head of
+#     PATH (step 4d already dropped /opt/uv/cache). No requirer, and nothing in this tree calls it
+#     (templates, .env and run.sh use pip). Worker-unused -> REMOVED, both copies; pip stays.
+#     MEASURED 2026-10-21 (throwaway container): `pip check` delta vs stock empty, python3 and pip
+#     run afterwards. Restore path for a debugging session: `pip install uv`.
+RUN pip uninstall -y uv && rm -rf /opt/uv
+
+# KNOWN-OPEN after 4a-4m (HIGH, deliberate; counted by the buildspec's MAX_HIGH — the measured
+# count under a named trivy DB is in README.md): ray 2.55.1 CVE-2026-57516 (fixed 2.56.0) and
+# its vendored aiohttp 3.13.5 under ray/_private/runtime_env/agent/thirdparty_files
+# (CVE-2026-69244, CVE-2026-111064, CVE-2026-111066, GHSA-2g87-pp6c-29x5; not pip-reachable).
+# All clear with a ray >=2.56 bump — but 2.55.1 is the PP2-PROVEN pin (step 2) and this
+# image's own golden rule is measure-before-bump. The bump is queued behind an E2E PP>1
+# smoke; do NOT fold it into a CVE pass. The counts move with the trivy DB date, not only
+# with this file: the gate prints the DB it matched against.
 
 # ---- 5) Final assert: every scenario's prerequisites present in ONE image -------------
 RUN set -eux; \
@@ -292,9 +303,15 @@ ssl = subprocess.run(["dpkg-query", "-W", "-f=${Version}", "libssl3t64"], captur
 assert subprocess.run(["dpkg", "--compare-versions", ssl, "ge", "3.0.13-0ubuntu3.16"]).returncode == 0, f"libssl3t64 {ssl} < 3.0.13-0ubuntu3.16 (step 4j)"
 assert ver("certifi") >= (2026, 10, 19), f"certifi {m.version('certifi')} < 2026.10.19 (step 4k)"
 assert ver("pillow") >= (13, 0, 0), f"pillow {m.version('pillow')} < 13.0.0 (step 4l)"
+try:
+    m.version("uv"); raise AssertionError("uv still installed (step 4m)")
+except m.PackageNotFoundError:
+    pass
+assert not os.path.exists("/opt/uv") and not os.path.exists("/usr/local/bin/uv"), "a uv binary is still present (step 4m removes both copies)"
 import ray  # step 4g dropped only the Java jar — the Python driver must still import
-print("[golden-1.4.0] agg + EP16 + hybrid-disagg (PP1 and PP>1) prerequisites present; "
-      "EFA present; 0-CRITICAL precondition met; worker-unused CVE carriers absent")
+print("[golden-1.4.0] agg + EP16 + hybrid-disagg (PP1 and PP>1) prerequisites present; EFA present; "
+      "worker-unused CVE carriers absent (nats, etcd, mooncake, uv cache, launchpadlib, ray_dist.jar, lmcache, uv); "
+      "measured bumps in place (cryptography, pyjwt/urllib3/aiohttp, openssl, certifi, pillow)")
 PY
 
 # ---- 6) NVFP4 fix: make flashinfer's cubin package dir writable -----------------------
@@ -312,5 +329,5 @@ RUN set -eux; \
     echo "[nvfp4-cubin-fix] ${CUBINS} made writable (chmod -R a+rwX; flashinfer/ subtree left for the worker to own)"
 
 USER dynamo
-LABEL org.opencontainers.image.description="Golden-image 1.4.0: Dynamo 1.4.0 (-efa base, EFA 1.49 baked) + vLLM 0.26 nixl connector v6 (pull-path pipeline-parallel + hybrid-Mamba patches, 0.26-era #48263 successor) + ray 2.55.1 (agg + EP16 + hybrid-Mamba disagg at PP1 and PP>1; Dockerfile-only reproducible)"
+LABEL org.opencontainers.image.description="Golden-image 1.4.0: Dynamo 1.4.0 (-efa base, EFA 1.49 baked) + vLLM 0.26 nixl connector v6 (pull-path pipeline-parallel + hybrid-Mamba patches, 0.26-era #48263 successor) + ray 2.55.1 (agg + EP16 + hybrid-Mamba disagg at PP1 and PP>1) + CVE remediation (nats/etcd/mooncake/uv-cache/launchpadlib/ray_dist.jar/lmcache/uv removed; cryptography/pyjwt/urllib3/aiohttp/openssl/certifi/pillow bumped); Dockerfile-only reproducible"
 LABEL org.opencontainers.image.source="https://github.com/vllm-project/vllm/pull/48263"
