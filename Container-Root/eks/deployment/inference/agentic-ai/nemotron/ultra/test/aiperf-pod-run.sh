@@ -13,7 +13,8 @@ _NS_ARG=""
 if [ "${NAMESPACE}" != "" ]; then _NS_ARG="-n ${NAMESPACE}"; fi
 
 echo ""
-echo "Starting do-aiperf pod ..."
+AIPERF_POD_NAME="${AIPERF_POD_NAME:-do-aiperf}"
+echo "Starting ${AIPERF_POD_NAME} pod ..."
 
 # karpenter.sh/do-not-disrupt: on an EKS Auto Mode cluster the utility NodePool consolidates
 # `WhenEmptyOrUnderutilized` after 30 s and drains nodes under live pods. A drain evicted a running
@@ -21,7 +22,7 @@ echo "Starting do-aiperf pod ..."
 # notes); the annotation makes Karpenter leave this pod's node alone while it exists. Inert on clusters
 # without Karpenter. The former nodeSelector nvidia.com/gpu.present=true (a GPU-operator / NFD label that
 # Auto Mode nodes do not carry) is dropped: the client needs only fsx-pvc, as in ../../super/test.
-export CMD="kubectl ${_NS_ARG} run do-aiperf --image=iankoulski/do-aiperf --overrides='{\"metadata\": {\"annotations\": {\"karpenter.sh/do-not-disrupt\": \"true\"}}, \"spec\": {\"containers\": [{\"name\": \"do-aiperf\", \"image\": \"iankoulski/do-aiperf\", \"volumeMounts\": [{\"name\": \"fsx-vol\", \"mountPath\": \"/shared\"}]}], \"volumes\": [{\"name\": \"fsx-vol\", \"persistentVolumeClaim\": {\"claimName\": \"fsx-pvc\"}}]}}'"
+export CMD="kubectl ${_NS_ARG} run ${AIPERF_POD_NAME} --image=iankoulski/do-aiperf --overrides='{\"metadata\": {\"annotations\": {\"karpenter.sh/do-not-disrupt\": \"true\"}}, \"spec\": {\"containers\": [{\"name\": \"do-aiperf\", \"image\": \"iankoulski/do-aiperf\", \"volumeMounts\": [{\"name\": \"fsx-vol\", \"mountPath\": \"/shared\"}]}], \"volumes\": [{\"name\": \"fsx-vol\", \"persistentVolumeClaim\": {\"claimName\": \"fsx-pvc\"}}]}}'"
 
 if [ ! "$VERBOSE" == "false" ]; then echo -e "\n${CMD}\n"; fi
 
