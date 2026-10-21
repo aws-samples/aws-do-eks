@@ -33,6 +33,8 @@
 #     The 0.26 PP>1 patch cannot apply to the rewritten 0.28.0 nixl package; step 3b is its 0.28.0 successor (same intent).
 #   - This consolidated build has not been run on a GPU cell: the lane that cut it was GPU-free (docker build + syft SBOM + trivy
 #     CVE gate + template renders + server-side dry-runs). The first cell on it is a measurement to take, not a result to quote.
+#   - The 2026-10-21 CVE layer (steps 4h-4k: certifi + pillow 13 bumps, uv and cosmos-guardrail/nltk removed) is likewise measured
+#     GPU-free only (throwaway-container imports, pip check deltas, the Super VL image processor on CPU).
 #
 #   patch 1 (SupportsPP, always on): NemotronH_Nano_VL_V2 (resolved from the NemotronH_Super_Omni_Reasoning_V3 --hf-overrides alias)
 #            wraps NemotronHForCausalLM, which implements SupportsPP, but the VL wrapper does not inherit it and lacks
@@ -74,6 +76,10 @@
 #     pyjwt 2.13.0 (CRITICAL CVE-2026-102268 + 5 HIGH; required only by mcp, msal), urllib3 2.7.0 (2 HIGH), aiohttp 3.14.3
 #       (2 HIGH; ray also vendors a 3.13.5 copy under ray/_private/runtime_env/agent/thirdparty_files that pip cannot reach),
 #       openssl/libssl3t64 3.0.13-0ubuntu3.15 (1 HIGH, Ubuntu fix 3.0.13-0ubuntu3.16 available) -> measured bumps in 4f/4g
+#     2026-10-21, first pipeline report (3 CRITICAL / 12 HIGH with the 2026-10-21T01:19Z trivy DB on the UNCHANGED package set):
+#       certifi 2026.7.22 (CRITICAL GHSA-6q48-6c7w-9gw2), pillow 12.3.0 (CRITICAL CVE-2026-112403 + 6 HIGH), uv 0.12.5 (CRITICAL
+#       GHSA-hq85-5cpj-mr62; a 2nd 0.12.0 copy under /opt/uv), one more HIGH on ray's vendored aiohttp -> measured bump / bump /
+#       removal in 4h-4j; nltk's only carrier cosmos-guardrail removed in 4k
 #     /opt/uv/cache ABSENT                        -> ultra's 4d layer RETIRED (assert)
 #     venv cryptography 50.0.0                    -> ultra's 4f layer RETIRED (assert)
 #     flashinfer_cubin/cubins WRITABLE by uid 1000 (gid 0, mode 775 group-write; mkdir test PASSED) -> ultra's chmod layer RETIRED (assert)
@@ -285,11 +291,13 @@ RUN pip uninstall -y uv && rm -rf /opt/uv
 #     (MEASURED 2026-10-21). Restore path: `pip install cosmos-guardrail opencv-python-headless`.
 RUN pip uninstall -y cosmos-guardrail nltk
 
-# KNOWN-OPEN after 4a-4g (HIGH, deliberate; counted by the buildspec's MAX_HIGH): ray 2.55.1 CVE-2026-57516 (fixed 2.56.0 -
-# 2.55.1 is the PP2-PROVEN pin of both trees and this image's golden rule is measure-before-bump; the bump is queued behind an
-# E2E PP>1 smoke, do NOT fold it into a CVE pass); ray's vendored aiohttp 3.13.5 under ray/_private/runtime_env/agent/
-# thirdparty_files (CVE-2026-69244, CVE-2026-111064, GHSA-2g87-pp6c-29x5; rides the same ray pin); nltk 3.10.3 CVE-2026-81726
-# (no fixed release; pulled in by cosmos-guardrail).
+# KNOWN-OPEN after 4a-4k (HIGH, deliberate; counted by the buildspec's MAX_HIGH; 5 on 2026-10-21 with the 2026-10-21T01:19Z trivy DB,
+# all five on the ray 2.55.1 tree): ray 2.55.1 CVE-2026-57516 (fixed 2.56.0 - 2.55.1 is the PP2-PROVEN pin of both trees and this
+# image's golden rule is measure-before-bump; the bump is queued behind an E2E PP>1 smoke, do NOT fold it into a CVE pass); ray's
+# vendored aiohttp 3.13.5 under ray/_private/runtime_env/agent/thirdparty_files (CVE-2026-69244, CVE-2026-111064, CVE-2026-111066,
+# GHSA-2g87-pp6c-29x5; not pip-reachable, rides the same ray pin - replacing only that vendored tree is the next lever if the ceiling
+# is ever reached, measured by importing ray and its runtime_env agent plus a `ray start --head` round trip). The counts move with
+# the trivy DB date, not only with this file: the gate prints the DB it matched against.
 
 # ---- 5) Final assert: every scenario's prerequisites present; converged ultra layers stay converged ----
 RUN set -eux; \
@@ -331,11 +339,11 @@ rc = subprocess.run(["su", "dynamo", "-s", "/bin/bash", "-c", f"mkdir '{d}/.writ
 assert rc == 0, f"{d} not writable by the dynamo user - restore ultra's chmod -R a+rwX layer"
 import ray  # step 4d dropped only the Java jar — the Python driver must still import
 print(f"[golden-1.5.0-nemotron] agg + EP16 + P/D disagg (PP1; PP>1 with NIXL_PP_PATCH=1) + E/PD (DYNAMO_EPD_NEMOTRON_PATCH=1) "
-      f"prerequisites present; EFA present; worker-unused CVE carriers absent (nats, etcd, launchpadlib, ray_dist.jar, lmcache, mooncake); "
-      f"measured bumps in place (pyjwt/urllib3/aiohttp/openssl); converged layers verified: "
+      f"prerequisites present; EFA present; worker-unused CVE carriers absent (nats, etcd, launchpadlib, ray_dist.jar, lmcache, mooncake, "
+      f"uv, cosmos-guardrail/nltk); measured bumps in place (pyjwt/urllib3/aiohttp/openssl/certifi/pillow); converged layers verified: "
       f"vllm={m.version('vllm')} ai-dynamo={m.version('ai-dynamo')} ray={m.version('ray')}")
 PY
 
 USER dynamo
-LABEL org.opencontainers.image.description="Golden-image 1.5.0 for the Nemotron family (3.5 Super VL, 3 Ultra): Dynamo 1.5.0 (-efa base, EFA 1.50 + NIXL LIBFABRIC baked) + vLLM 0.28.0 + Ray 2.55.1 + NemotronH_Nano_VL_V2 SupportsPP patch (multi-node PP) + optional NIXL PP>1 pull-path backport (vllm#53360, NIXL_PP_PATCH=1) + optional dynamo encode-worker NemotronH Omni family (disagg/epd, DYNAMO_EPD_NEMOTRON_PATCH=1) + CVE remediation (nats/etcd/launchpadlib/ray_dist.jar/lmcache/mooncake removed; pyjwt/urllib3/aiohttp/openssl bumped); Dockerfile-only reproducible"
+LABEL org.opencontainers.image.description="Golden-image 1.5.0 for the Nemotron family (3.5 Super VL, 3 Ultra): Dynamo 1.5.0 (-efa base, EFA 1.50 + NIXL LIBFABRIC baked) + vLLM 0.28.0 + Ray 2.55.1 + NemotronH_Nano_VL_V2 SupportsPP patch (multi-node PP) + optional NIXL PP>1 pull-path backport (vllm#53360, NIXL_PP_PATCH=1) + optional dynamo encode-worker NemotronH Omni family (disagg/epd, DYNAMO_EPD_NEMOTRON_PATCH=1) + CVE remediation (nats/etcd/launchpadlib/ray_dist.jar/lmcache/mooncake/uv/cosmos-guardrail+nltk removed; pyjwt/urllib3/aiohttp/openssl/certifi/pillow bumped); Dockerfile-only reproducible"
 LABEL org.opencontainers.image.source="https://github.com/aws-samples/aws-do-eks/tree/main/Container-Root/eks/deployment/inference/agentic-ai/nemotron/dynamo-vllm-efa"
