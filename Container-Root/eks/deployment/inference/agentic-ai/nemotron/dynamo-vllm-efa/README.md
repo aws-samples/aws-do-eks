@@ -13,7 +13,7 @@ former per-tree recipes are preserved in those folders' git history (their READM
 | 3 | `NemotronH_Nano_VL_V2` SupportsPP patch (always on) | every super PP>1 shape; a no-op for the text-only 550B |
 | 3b | `--build-arg NIXL_PP_PATCH=1`: the vllm-project/vllm#53360 backport onto 0.28.0 | PP>1 prefill and decode of a hybrid-Mamba model over NIXL (`disagg/lws-2pp`, `lws-pp2`, `dgd-grove-pp2`, both trees); wire version 7 -> 10, so both roles need the same build |
 | 3c | `--build-arg DYNAMO_EPD_NEMOTRON_PATCH=1`: dynamo encode-worker NemotronH Omni family + vLLM image_embeds fixes | `super/disagg/epd` |
-| 4 | CVE remediation: remove nats-server, etcd, the apt launchpadlib chain, `ray_dist.jar`, lmcache, mooncake; bump pyjwt / urllib3 / aiohttp / openssl | see the gate below; REMOVE what the workers never execute, measured bumps only, never `.trivyignore` |
+| 4 | CVE remediation: remove nats-server, etcd, the apt launchpadlib chain, `ray_dist.jar`, lmcache, mooncake, uv, cosmos-guardrail + nltk; bump pyjwt / urllib3 / aiohttp / openssl / certifi / pillow | see the gate below; REMOVE what the workers never execute, measured bumps only, never `.trivyignore` |
 | 5 | final assert (pins intact, carriers gone, bumps present, cubin dir writable by the `dynamo` user) | fail loud on regression |
 
 ## Build
@@ -27,7 +27,8 @@ DOCKER_BUILD_ARGS="--build-arg NIXL_PP_PATCH=1 --build-arg DYNAMO_EPD_NEMOTRON_P
 
 `build-sbom-scan.sh` builds (forwarding `BASE` and `DOCKER_BUILD_ARGS` as `--build-arg`), writes the SBOM (SPDX + CycloneDX) with
 syft into `sbom/`, scans the CycloneDX SBOM with trivy and fails on any CRITICAL (or on HIGH above `MAX_HIGH`); a missing report is a
-failure, never a pass. `buildspec.yaml` runs exactly that in CodeBuild with both patch layers ON and publishes
+failure, never a pass. The GATE SUMMARY names the syft / trivy versions and the trivy DB date it matched against and prints the
+CRITICAL/HIGH table into the log (also written to `sbom/<image>.gate-summary.txt`); `SCAN_IMAGE=1` adds a report-only `trivy image`. `buildspec.yaml` runs exactly that in CodeBuild with both patch layers ON and publishes
 `dynamo-vllm-efa:1.5.0-patched` (`REGISTRY` / `IMAGE` are the maintainer's call; the SBOMs and the trivy report are the build artifacts).
 
 ## What is measured, and what is not
@@ -44,21 +45,38 @@ Measured on 1.5.0-efa builds of these steps (node-recorded digests; `../super/te
 `dynamo-vllm-efa:1.4.0-patched`, vLLM 0.26, and its `.env` stays there; `TAG=":1.5.0-patched"` is the override to test); the
 consolidated build itself has not been run on a GPU cell — it was built, SBOM-ed and CVE-gated only.
 
-## SBOM + CVE gate (2026-10-20, syft 1.55.0, trivy 0.76.0, DB UTC)
+## SBOM + CVE gate (2026-10-21, syft 1.55.0, trivy 0.76.0, vulnerability DB UpdatedAt 2026-10-21T01:19Z)
 
-| variant | build args | image id | SBOM packages | trivy (SBOM scan) |
+| variant | build args | image id (local build) | SBOM packages | trivy (SBOM scan = the gate) |
 |---|---|---|---|---|
-| published (`1.5.0-patched`) | `--build-arg NIXL_PP_PATCH=1 --build-arg DYNAMO_EPD_NEMOTRON_PATCH=1` | `sha256:21e7c406237cadbea5e319caa2e1ba2b5de77e03f8b5fc27ddcf75dcc294cb61` | 2774 | CRITICAL 0 / HIGH 5 / MEDIUM 80 / LOW 26 / total 111 |
-| plain (`1.5.0-ray`) | none | `sha256:846bf7012cca39c79c4b9eaf414ff536b0f6d048be9b93d4591e4b3ab62d9ced` | 2774 | CRITICAL 0 / HIGH 5 / MEDIUM 80 / LOW 26 / total 111 |
+| published (`1.5.0-patched`) | `--build-arg NIXL_PP_PATCH=1 --build-arg DYNAMO_EPD_NEMOTRON_PATCH=1` | `sha256:695004fbd5ee8a02197f56a11b97b69eff0c51dfd6acc63a0b61cdcda64e3113` | 687 | CRITICAL 0 / HIGH 5 / MEDIUM 81 / LOW 27 / total 113 — PASS |
+| plain (`1.5.0-ray`) | none | `sha256:604764f89fe6b1c6ab5d78407af7f69647b4d8fc5af89a717a3a1a2e1c3201d6` | 687 | CRITICAL 0 / HIGH 5 / MEDIUM 81 / LOW 27 / total 113 — PASS |
 
-Before step 4e-4g the same two builds scanned CRITICAL 2 / HIGH 34 / MEDIUM 103 / LOW 33 / total 172 — the 1.5.0 base ships `lmcache` 0.5.4 (CRITICAL
-CVE-2026-105192), `pyjwt` 2.13.0 (CRITICAL CVE-2026-102268), and Mooncake under the wheel name `mooncake-transfer-engine-cuda13`
-whose Go `libetcd_wrapper.so` carries 19 HIGH (the former assert checked the old wheel name). Both connectors are optional KV
-transports no template uses (every disaggregated template moves KV through `NixlConnector` LIBFABRIC), so they are removed, not
-bumped (lmcache's fix release would pull a different NCCL); pyjwt, urllib3, aiohttp and openssl get the measured fix versions
-(`pip check` delta empty, vllm/torch/ray/nixl pins unchanged, imports verified). The residual HIGHs are deliberate and listed in the
-Dockerfile's KNOWN-OPEN note: ray 2.55.1 (CVE-2026-57516; the PP2-proven pin, bump only behind an E2E PP>1 smoke), ray's vendored
-aiohttp 3.13.5 (not pip-reachable), nltk 3.10.3 (no fixed release). `MAX_HIGH=10` in the buildspec = measured 5 + headroom;
-ratchet it after each pipeline report.
+The five residual HIGHs all ride the deliberate `ray==2.55.1` pin: ray itself (CVE-2026-57516) and its vendored `aiohttp` 3.13.5
+under `ray/_private/runtime_env/agent/thirdparty_files` (CVE-2026-69244, CVE-2026-111064, CVE-2026-111066, GHSA-2g87-pp6c-29x5; not
+pip-reachable). They are listed in the Dockerfile's KNOWN-OPEN note; `MAX_HIGH=10` in the buildspec = measured 5 + headroom.
+
+**What the first pipeline run reported, and why.** The pipeline's first build (`public.ecr.aws/hpc-cloud/dynamo-vllm-efa:1.5.0-patched`,
+2026-10-21T03:11Z) reported CRITICAL 3 / HIGH 12 / total 127 on the recipe as merged, where the 2026-10-20 gate had measured 0 / 5 / 111 on
+the same package set with the same syft 1.55.0 / trivy 0.76.0. The only variable was the trivy vulnerability DB: the 10-20 gate ran
+against the 2026-10-20T13:14Z build, the pipeline's fresh install downloaded the 2026-10-21T01:19Z build, and re-scanning the 10-20 SBOM
+with that DB gives exactly 3 / 12 / 127. The new findings, all published 2026-10-19/20: certifi 2026.7.22 (CRITICAL), pillow 12.3.0
+(CRITICAL + 6 HIGH), uv 0.12.5 (CRITICAL) and a fourth id on ray's vendored aiohttp. Steps 4h-4k answer them the way steps 4a-4g did:
+certifi and pillow bumped to the fixed releases (both measured in a throwaway container first: `pip check` delta vs stock empty, the
+recipe's imports, and for pillow 13 the Super VL checkpoint's own HF image processor returning byte-identical `pixel_values` on 12.3.0 and
+13.0.0), uv removed (a package installer nothing here runs, present twice), and nltk's only carrier cosmos-guardrail removed with it
+(the Cosmos world-model guardrail, non-functional in the stock base because its opencv-python dependency is absent). A `trivy sbom` of
+the 10-20 image with the 10-20 DB still reports 0 / 5, so **a pipeline report should always be read together with the DB date the gate
+now prints** (`tooling : syft …, trivy …, vulnerability DB UpdatedAt …` in the GATE SUMMARY and in `sbom/<image>.gate-summary.txt`).
+
+**`trivy image` is a different universe, by design, not a gate.** A full image walk of the same image (`SCAN_IMAGE=1 ./build-sbom-scan.sh`,
+report-only, 3 min on this host with a warm docker cache) reports CRITICAL 27 / HIGH 558 / total 4888 on the published variant. The difference is structural, not
+unfixed work: (1) Ubuntu packages whose source name differs from the binary name — above all `linux-libc-dev` (source `linux`, 4342
+kernel CVEs attributed to the header package; 21 CRITICAL, 12 of them with no fixed version) — are invisible to the SBOM scan because
+trivy's purl parser (v0.76.0 `pkg/purl/purl.go`) does not read syft's `upstream=` qualifier; the headers are inert in a container and
+`libc6-dev` depends on them, so they stay. (2) The base ships NVIDIA's legal SBOM at `/legal/osrb.cdx.json`, and `trivy image` reports
+its components (the BASE's pyjwt 2.13.0, lmcache 0.5.4, pillow 12.3.0, uv 0.12.5, openssl 3.0.13-0ubuntu3.15 …) as if installed, after
+steps 4e-4k removed or bumped them. (3) The remaining real findings are the same ray tree as above. The SBOM scan stays the gate; the
+image-scan report is written beside the SBOMs when asked for, so both views are on record.
 
 `sbom/` is git-ignored: the SBOMs are build artifacts, regenerated by every run.

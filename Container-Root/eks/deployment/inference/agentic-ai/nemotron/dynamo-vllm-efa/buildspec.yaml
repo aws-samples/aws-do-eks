@@ -31,9 +31,12 @@ env:
     BASE: "nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.5.0-efa"
     DOCKER_BUILD_ARGS: "--build-arg NIXL_PP_PATCH=1 --build-arg DYNAMO_EPD_NEMOTRON_PATCH=1"
     GATE_SEVERITY: "CRITICAL,HIGH"
-    # measured 5 HIGH on 2026-10-20 with this exact recipe and args (0 CRITICAL; the residual HIGHs are the deliberate
-    # ray 2.55.1 pin, ray's vendored aiohttp 3.13.5 and nltk 3.10.3 - see the Dockerfile's KNOWN-OPEN note); headroom for
-    # newly-disclosed CVEs between rebuilds. Ratchet it down after each pipeline report, never up without a reason in the log.
+    # measured 5 HIGH on 2026-10-21 with this exact recipe and args and the 2026-10-21T01:19Z trivy DB (0 CRITICAL; all five
+    # residual HIGHs ride the deliberate ray 2.55.1 pin: ray itself + its vendored aiohttp 3.13.5 x4 - see the Dockerfile's
+    # KNOWN-OPEN note). The first pipeline run (2026-10-21T03:11Z) reported 3 CRITICAL / 12 HIGH on the previous recipe: same
+    # tools and package set, newer DB (certifi, pillow, uv advisories published 2026-10-19/20) - answered by steps 4h-4k.
+    # Headroom for newly-disclosed CVEs between rebuilds; the GATE SUMMARY names the DB it used. Ratchet it down after each
+    # pipeline report, never up without a reason in the log.
     MAX_HIGH: "10"
     REGISTRY: "public.ecr.aws/hpc-cloud/"
     IMAGE: "dynamo-vllm-efa:1.5.0-patched"
