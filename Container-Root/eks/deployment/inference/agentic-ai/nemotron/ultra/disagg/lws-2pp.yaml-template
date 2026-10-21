@@ -430,8 +430,8 @@ spec:
                   --served-model-name ${MODEL_NAME} \
                   --tensor-parallel-size ${GPU_PER_WORKER} \
                   --pipeline-parallel-size 1 \
-                  --max-model-len 4096 \
-                  --gpu-memory-utilization 0.97 \
+                  --max-model-len ${MAX_MODEL_LEN} \
+                  --gpu-memory-utilization ${GPU_MEM_UTIL}${VLLM_EXTRA_ENGINE_ARGS_RENDERED} \
                   --max-num-seqs 16 \
                   --enforce-eager \
                   --trust-remote-code ${MOE_BACKEND_FLAG} \
