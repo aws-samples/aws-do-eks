@@ -1,6 +1,6 @@
 # Nemotron 3.5 Super VL 120B-A12B — AIPerf results
 
-**Measured on H200 (p5en.48xlarge, Dynamo 1.4.0 platform, stock `vllm-runtime:1.5.0-efa` or the `dynamo-vllm-efa/Dockerfile.ray` golden image, shipped Hugging Face checkpoints): 26 of the 34 fixed-concurrency cells below (BF16: `agg/deployment`, `agg/lws`, `agg/lws-ep`, `agg/dgd`, `agg/dgd-v1beta1`, `agg/dgd-grove`, `agg/dgd-grove-ep`, `disagg/deployment`, `disagg/lws-ep`, `disagg/dgd`, `disagg/dgd-v1beta1`, `disagg/dgd-grove`, `disagg/dgd-grove-ep`; NVFP4: `agg/deployment`, `agg/lws`, `agg/lws-ep`, `agg/dgd`, `agg/dgd-v1beta1`, `agg/dgd-grove`, `agg/dgd-grove-ep`, `disagg/deployment`, `disagg/lws-ep`, `disagg/dgd`, `disagg/dgd-v1beta1`, `disagg/dgd-grove`, `disagg/dgd-grove-ep`), one launch each, footnotes 16-45. 8 cells are NOT SUPPORTED on this software stack with the exact upstream rejection recorded (BF16: `disagg/lws-2pp`, `disagg/lws-pp2`, `disagg/dgd-grove-pp2`, `disagg/epd`; NVFP4: `disagg/lws-2pp`, `disagg/lws-pp2`, `disagg/dgd-grove-pp2`, `disagg/epd`): `disagg/epd` because dynamo 1.5.0's encode worker only knows the LLaVA and Qwen-VL families (footnote 19), the PP>1 disaggregated shapes because vLLM's NIXL connector refuses pipeline_parallel_size > 1 with a hybrid-Mamba KV layout — still true upstream through v0.32.0 (footnotes 26, 42). No cell is PENDING. The four `deployment` rows measured on 2026-10-12/13 against the Early-Access GA-candidate checkpoint were re-measured on 2026-10-19 on the shipped checkpoint after the candidate was deprecated; their old footnotes (4, 5, 10, 11) stay, marked superseded. The two BF16 spec-decode cells remain NOT MEASURED (the engine rejects `--speculative-config` for this architecture; "Spec-decode cells" below), and the two concurrency sweeps below were measured on the deprecated candidate and not re-run.** **2026-10-20 update (Dynamo 1.5.1 platform, same cluster): 6 of the 8 NOT SUPPORTED cells are now MEASURED with opt-in `dynamo-vllm-efa/Dockerfile.ray` builds — `--build-arg NIXL_PP_PATCH=1` (vllm-project/vllm#53360 backport) for `disagg/lws-2pp`, `disagg/lws-pp2`; `--build-arg DYNAMO_EPD_NEMOTRON_PATCH=1` for `disagg/epd` — footnotes ¹⁰²–¹⁰⁶; the old footnotes (19, 26, 42) say which rows they still cover and which were superseded.** **2026-10-20, later the same day, with the platform's Grove and KAI feature gates switched on (`dynamo-platform` Helm revision 2, 04:47:45Z — the `eks/deployment/grove` flip): the two `disagg/dgd-grove-pp2` cells, NOT MEASURED ¹⁰⁷ while the operator had no multinode orchestrator, are MEASURED with the same `--build-arg NIXL_PP_PATCH=1` image and the unchanged manifest — footnotes BF16 ¹⁰⁸, NVFP4 ¹⁰⁹. All 34 fixed-concurrency cells are now MEASURED.**
+**Measured on H200 (p5en.48xlarge, Dynamo 1.4.0 platform, stock `vllm-runtime:1.5.0-efa` or the `dynamo-vllm-efa/Dockerfile.ray` golden image, shipped Hugging Face checkpoints): 26 of the 34 fixed-concurrency cells below (BF16: `agg/deployment`, `agg/lws`, `agg/lws-ep`, `agg/dgd`, `agg/dgd-v1beta1`, `agg/dgd-grove`, `agg/dgd-grove-ep`, `disagg/deployment`, `disagg/lws-ep`, `disagg/dgd`, `disagg/dgd-v1beta1`, `disagg/dgd-grove`, `disagg/dgd-grove-ep`; NVFP4: `agg/deployment`, `agg/lws`, `agg/lws-ep`, `agg/dgd`, `agg/dgd-v1beta1`, `agg/dgd-grove`, `agg/dgd-grove-ep`, `disagg/deployment`, `disagg/lws-ep`, `disagg/dgd`, `disagg/dgd-v1beta1`, `disagg/dgd-grove`, `disagg/dgd-grove-ep`), one launch each, footnotes 16-45. 8 cells are NOT SUPPORTED on this software stack with the exact upstream rejection recorded (BF16: `disagg/lws-2pp`, `disagg/lws-pp2`, `disagg/dgd-grove-pp2`, `disagg/deployment-e-pd`; NVFP4: `disagg/lws-2pp`, `disagg/lws-pp2`, `disagg/dgd-grove-pp2`, `disagg/deployment-e-pd`): `disagg/deployment-e-pd` because dynamo 1.5.0's encode worker only knows the LLaVA and Qwen-VL families (footnote 19), the PP>1 disaggregated shapes because vLLM's NIXL connector refuses pipeline_parallel_size > 1 with a hybrid-Mamba KV layout — still true upstream through v0.32.0 (footnotes 26, 42). No cell is PENDING. The four `deployment` rows measured on 2026-10-12/13 against the Early-Access GA-candidate checkpoint were re-measured on 2026-10-19 on the shipped checkpoint after the candidate was deprecated; their old footnotes (4, 5, 10, 11) stay, marked superseded. The two BF16 spec-decode cells remain NOT MEASURED (the engine rejects `--speculative-config` for this architecture; "Spec-decode cells" below), and the two concurrency sweeps below were measured on the deprecated candidate and not re-run.** **2026-10-20 update (Dynamo 1.5.1 platform, same cluster): 6 of the 8 NOT SUPPORTED cells are now MEASURED with opt-in `dynamo-vllm-efa/Dockerfile.ray` builds — `--build-arg NIXL_PP_PATCH=1` (vllm-project/vllm#53360 backport) for `disagg/lws-2pp`, `disagg/lws-pp2`; `--build-arg DYNAMO_EPD_NEMOTRON_PATCH=1` for `disagg/deployment-e-pd` — footnotes ¹⁰²–¹⁰⁶; the old footnotes (19, 26, 42) say which rows they still cover and which were superseded.** **2026-10-20, later the same day, with the platform's Grove and KAI feature gates switched on (`dynamo-platform` Helm revision 2, 04:47:45Z — the `eks/deployment/grove` flip): the two `disagg/dgd-grove-pp2` cells, NOT MEASURED ¹⁰⁷ while the operator had no multinode orchestrator, are MEASURED with the same `--build-arg NIXL_PP_PATCH=1` image and the unchanged manifest — footnotes BF16 ¹⁰⁸, NVFP4 ¹⁰⁹. All 34 fixed-concurrency cells are now MEASURED.**
 A row leaves PENDING only when a run through `test-aiperf.sh` in its default LLM workload
 (`AIPERF_WORKLOAD=llm`: the text profile identical to `../../ultra/test/test-aiperf.sh` —
 ISL 1024 / OSL 512, `--concurrency 10`, `--request-count 100`, `--random-seed 42`, no image
@@ -20,6 +20,8 @@ NVFP4 row measures a different kernel path than a B200 one.
 
 ## Fixed-concurrency grid (c=10)
 
+Rename note (2026-10-22): the manifest type `disagg/epd` is now `disagg/deployment-e-pd` — the same template, the same Dynamo namespace `dynamo-epd`, no change to what was measured. The rows of this file use the current name; footnotes that quote the launch line `MANIFEST_TYPE=epd` or the old cell names keep them verbatim, because that is what ran.
+
 | precision | template | GPU | GPUs | TTFT p50 (ms) | ITL p50 (ms) | tok/s/user p50 | tok/s total | status |
 |---|---|---|---|---|---|---|---|---|
 | BF16 | `agg/deployment` | NVIDIA H200 | 8 | 355.56 | 86.62 | 11.55 | 114.55 | MEASURED ³⁵ |
@@ -38,7 +40,7 @@ NVFP4 row measures a different kernel path than a B200 one.
 | BF16 | `disagg/dgd-grove` | NVIDIA H200 | 16 | 526.56 | 88.33 | 11.32 | 112.04 | MEASURED ²⁷ |
 | BF16 | `disagg/dgd-grove-pp2` | NVIDIA H200 | 32 | 363.71 | 45.92 | 21.78 | 214.29 | MEASURED ¹⁰⁸ |
 | BF16 | `disagg/dgd-grove-ep` | NVIDIA H200 | 32 | 757.44 | 104.21 | 9.60 | 94.40 | MEASURED ³⁶ |
-| BF16 | `disagg/epd` | NVIDIA H200 | 8+enc | 352.61 | 86.54 | 11.56 | 114.68 | MEASURED ¹⁰¹ |
+| BF16 | `disagg/deployment-e-pd` | NVIDIA H200 | 8+enc | 352.61 | 86.54 | 11.56 | 114.68 | MEASURED ¹⁰¹ |
 | NVFP4 | `agg/deployment` | NVIDIA H200 | 8 | 399.73 | 95.13 | 10.51 | 104.44 | MEASURED ³⁸ |
 | NVFP4 | `agg/lws` | NVIDIA H200 | 16 | 290.24 | 52.34 | 19.11 | 189.18 | MEASURED ³¹ |
 | NVFP4 | `agg/lws-ep` | NVIDIA H200 | 16 | 396.51 | 108.75 | 9.20 | 91.63 | MEASURED ⁴⁰ |
@@ -55,7 +57,7 @@ NVFP4 row measures a different kernel path than a B200 one.
 | NVFP4 | `disagg/dgd-grove` | NVIDIA H200 | 16 | 579.41 | 96.67 | 10.34 | 102.28 | MEASURED ⁴⁵ |
 | NVFP4 | `disagg/dgd-grove-pp2` | NVIDIA H200 | 32 | 362.03 | 51.46 | 19.43 | 191.13 | MEASURED ¹⁰⁹ |
 | NVFP4 | `disagg/dgd-grove-ep` | NVIDIA H200 | 32 | 654.17 | 109.12 | 9.16 | 90.69 | MEASURED ⁴³ |
-| NVFP4 | `disagg/epd` | NVIDIA H200 | 8+enc | 411.02 | 95.40 | 10.48 | 104.05 | MEASURED ¹⁰⁵ |
+| NVFP4 | `disagg/deployment-e-pd` | NVIDIA H200 | 8+enc | 411.02 | 95.40 | 10.48 | 104.05 | MEASURED ¹⁰⁵ |
 
 ¹ `disagg/epd` carries a verified structural caveat before any run is attempted: at
 dynamo v1.5.0 the encode worker's loader
@@ -63,7 +65,7 @@ dynamo v1.5.0 the encode worker's loader
 lightweight encoder-only path only for Qwen-VL families and full-loads every other VL
 checkpoint via `AutoModel.from_pretrained` — the BF16 Super-VL checkpoint (~249 GB)
 cannot fit the template's default 1-GPU encode worker. See the header of
-`../disagg/epd.yaml-template`.
+`../disagg/deployment-e-pd.yaml-template` (named `epd.yaml-template` when this footnote was written).
 
 ⁴ 2026-10-12, window 20261012T193453Z, one server launch on one p5en.48xlarge, TP8 agg worker, image `nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.5.0-efa` (node-recorded digest `sha256:a1bc3d20ea2b…`), the same `--hf-overrides` alias and engine flags as ². Measured with this folder's `test-aiperf.sh` in its default LLM workload (ISL 1024 / OSL 512, `ignore_eos:true`, `--concurrency 10`, `--request-count 100`, `--random-seed 42`, no image flags) and `AIPERF_WARMUP_REQUESTS=0` (no `--warmup-request-count`), i.e. the `../../ultra/test/RESULTS.md` table methodology: a cold run right after the health gate (run id `cold`: TTFT p50 452.09, ITL p50 87.26, tok/s/user p50 11.46, tok/s total 113.09; `profile_export_aiperf.json` sha256 `cd88f74b7eafa756…`), then a warm run on the same launch (run id `warm`), and **the warm run is the row**; both runs completed 100/100 requests with no errors (aiperf 0.9.0). The weights are the Early-Access checkpoint `/shared/nemotron/super/bf16/nemotron_3_5_super_ga_candidate_mtp_boosted_20261001_vv0.1` (`MODEL_PATH` export, the .env's documented override) on a shared FSx this lane may only mount read-only, so the manifest ran with namespace, a private etcd/NATS in place of the platform services, a node pin, a read-only `fsx-pvc` mount, and a teardown label (the same five deployment-only changes as ²), and the aiperf client pod mounted `fsx-pvc` read-only with its artifact directory on an emptyDir (copied out before the pod was deleted) and was pinned to the worker's node; the `aiperf profile` command itself is byte-identical to this script's (only `--artifact-dir` differs). Row artifacts (sha256): `profile_export_aiperf.json` `da503c3049efcf95…`, `profile_export.jsonl` `8c2a9ad6a8dae258…`, `run-meta.json` `6350fbc3ce05abb6…` (`workload: llm`, `warmup_requests: 0`). n=1 launch: one server start, two client runs; reproducibility across launches, tail columns, throughput at saturation, MTP, NVFP4, dgd/epd manifests, B200 and long context are not established. An earlier launch of the same cell the same day (window 20261012T191525Z, on another node of the same node group) passed the health gate and had completed 40 of the cold run's 100 requests when that node received an owner-side instance reboot (19:28:47Z); the frontend logged `Engine was shut down during generation`, the remaining requests failed with 404/503, and the window tore the stack down. That launch is kept as provenance only and contributes nothing to the row. **Superseded:** this footnote's checkpoint (the Early-Access GA candidate under `/shared/nemotron/super`) was deprecated by the model owner on 2026-10-19 ("use the shipped HF path"); the row above now carries the 2026-10-19 measurement on the shipped checkpoint (³⁵). The superseded row read TTFT p50 348.46 ms, ITL p50 87.30 ms, 11.45 tok/s/user p50, 113.56 tok/s total.
 
@@ -86,7 +88,7 @@ On 2026-10-21 the pipeline of [`../../dynamo-vllm-efa`](../../dynamo-vllm-efa) p
 | BF16 | `disagg/dgd` | NVIDIA H200 | 16 | 519.14 | 87.32 | 11.45 | 113.09 | MEASURED ¹¹⁸ |
 | BF16 | `disagg/dgd-v1beta1` | NVIDIA H200 | 16 | 517.43 | 87.38 | 11.44 | 112.88 | MEASURED ¹²⁹ |
 | BF16 | `disagg/dgd-grove` | NVIDIA H200 | 16 | 524.70 | 87.86 | 11.38 | 112.85 | MEASURED ¹²³ |
-| BF16 | `disagg/epd` | NVIDIA H200 | 8+enc | 355.48 | 86.36 | 11.58 | 115.04 | MEASURED ¹¹² |
+| BF16 | `disagg/deployment-e-pd` | NVIDIA H200 | 8+enc | 355.48 | 86.36 | 11.58 | 115.04 | MEASURED ¹¹² |
 | BF16 | `disagg/lws-2pp` | NVIDIA H200 | 32 | 515.23 | 85.81 | 11.65 | 114.79 | MEASURED ¹³⁵ |
 | BF16 | `disagg/lws-pp2` | NVIDIA H200 | 32 | 373.08 | 46.98 | 21.28 | 209.48 | MEASURED ¹¹⁵ |
 | BF16 | `disagg/lws-ep` | NVIDIA H200 | 32 | 790.78 | 104.37 | 9.58 | 94.61 | MEASURED ¹³⁰ |
@@ -103,7 +105,7 @@ On 2026-10-21 the pipeline of [`../../dynamo-vllm-efa`](../../dynamo-vllm-efa) p
 | NVFP4 | `disagg/dgd` | NVIDIA H200 | 16 | 577.59 | 96.63 | 10.35 | 102.33 | MEASURED ¹³¹ |
 | NVFP4 | `disagg/dgd-v1beta1` | NVIDIA H200 | 16 | 592.90 | 98.49 | 10.15 | 100.40 | MEASURED ¹⁴⁰ |
 | NVFP4 | `disagg/dgd-grove` | NVIDIA H200 | 16 | 586.61 | 96.65 | 10.35 | 101.79 | MEASURED ¹³⁴ |
-| NVFP4 | `disagg/epd` | NVIDIA H200 | 8+enc | 382.57 | 96.12 | 10.40 | 103.44 | MEASURED ¹¹⁴ |
+| NVFP4 | `disagg/deployment-e-pd` | NVIDIA H200 | 8+enc | 382.57 | 96.12 | 10.40 | 103.44 | MEASURED ¹¹⁴ |
 | NVFP4 | `disagg/lws-2pp` | NVIDIA H200 | 32 | 580.60 | 97.03 | 10.31 | 101.91 | MEASURED ¹⁴³ |
 | NVFP4 | `disagg/lws-pp2` | NVIDIA H200 | 32 | 430.19 | 54.50 | 18.35 | 180.71 | MEASURED ¹²⁵ |
 | NVFP4 | `disagg/lws-ep` | NVIDIA H200 | 32 | 656.87 | 109.78 | 9.11 | 90.04 | MEASURED ¹⁴¹ |
@@ -208,7 +210,7 @@ template requests and what the counters did. GPU counts are the `.env` defaults.
 | BF16 | `disagg/dgd-grove` | NVIDIA H200 | 16 | 544.95 | 90.31 | 11.07 | 108.97 | MEASURED ⁶⁶ |
 | BF16 | `disagg/dgd-grove-pp2` | NVIDIA H200 | 32 | 381.84 | 48.44 | 20.64 | 202.64 | MEASURED ⁵⁸ |
 | BF16 | `disagg/dgd-grove-ep` | NVIDIA H200 | 32 | 751.84 | 107.24 | 9.32 | 91.86 | MEASURED ⁶⁹ |
-| BF16 | `disagg/epd` |  | 8+enc | | | | | NOT RUN ⁸³ |
+| BF16 | `disagg/deployment-e-pd` |  | 8+enc | | | | | NOT RUN ⁸³ |
 | NVFP4 | `agg/deployment` | NVIDIA H200 | 8 | 358.75 | 99.48 | 10.05 | 99.81 | MEASURED ⁷⁰ |
 | NVFP4 | `agg/lws` | NVIDIA H200 | 16 | 264.70 | 54.09 | 18.49 | 182.75 | MEASURED ⁷³ |
 | NVFP4 | `agg/lws-ep` | NVIDIA H200 | 16 | 353.05 | 109.94 | 9.10 | 90.34 | MEASURED ⁷⁵ |
@@ -225,7 +227,7 @@ template requests and what the counters did. GPU counts are the `.env` defaults.
 | NVFP4 | `disagg/dgd-grove` | NVIDIA H200 | 16 | 603.64 | 100.22 | 9.98 | 98.59 | MEASURED ⁸⁰ |
 | NVFP4 | `disagg/dgd-grove-pp2` | NVIDIA H200 | 32 | 435.53 | 53.91 | 18.55 | 182.58 | MEASURED ⁶¹ |
 | NVFP4 | `disagg/dgd-grove-ep` | NVIDIA H200 | 32 | 770.50 | 111.73 | 8.95 | 88.45 | MEASURED ⁸² |
-| NVFP4 | `disagg/epd` |  | 8+enc | | | | | NOT RUN ⁸³ |
+| NVFP4 | `disagg/deployment-e-pd` |  | 8+enc | | | | | NOT RUN ⁸³ |
 ### p5e / EKS Auto Mode notes (what differed from the p5en cells above, and what was changed)
 
 - **Launch overrides, no template edits:** `INSTANCE_TYPE_WORKER=p5e.48xlarge EFA_PER_WORKER=32` (p5e advertises 32
