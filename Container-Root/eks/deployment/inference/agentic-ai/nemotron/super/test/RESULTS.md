@@ -21,6 +21,7 @@ NVFP4 row measures a different kernel path than a B200 one.
 ## Fixed-concurrency grid (c=10)
 
 Rename note (2026-10-22): the manifest type `disagg/epd` is now `disagg/deployment-e-pd` — the same template, the same Dynamo namespace `dynamo-epd`, no change to what was measured. The rows of this file use the current name; footnotes that quote the launch line `MANIFEST_TYPE=epd` or the old cell names keep them verbatim, because that is what ran.
+Added 2026-10-22: the manifest type `disagg/deployment-e-p-d` (dynamo v1.5.0's three-way `disagg_multimodal_epd.sh`: encode + prefill + decode) — 18 types / 36 cells with it; it has no row in this grid or in the p5e grid (those campaigns predate it) and is measured only in the public-image section below.
 
 | precision | template | GPU | GPUs | TTFT p50 (ms) | ITL p50 (ms) | tok/s/user p50 | tok/s total | status |
 |---|---|---|---|---|---|---|---|---|
@@ -89,6 +90,7 @@ On 2026-10-21 the pipeline of [`../../dynamo-vllm-efa`](../../dynamo-vllm-efa) p
 | BF16 | `disagg/dgd-v1beta1` | NVIDIA H200 | 16 | 517.43 | 87.38 | 11.44 | 112.88 | MEASURED ¹²⁹ |
 | BF16 | `disagg/dgd-grove` | NVIDIA H200 | 16 | 524.70 | 87.86 | 11.38 | 112.85 | MEASURED ¹²³ |
 | BF16 | `disagg/deployment-e-pd` | NVIDIA H200 | 8+enc | 355.48 | 86.36 | 11.58 | 115.04 | MEASURED ¹¹² |
+| BF16 | `disagg/deployment-e-p-d` |  | 8+8+enc | | | | | PENDING |
 | BF16 | `disagg/lws-2pp` | NVIDIA H200 | 32 | 515.23 | 85.81 | 11.65 | 114.79 | MEASURED ¹³⁵ |
 | BF16 | `disagg/lws-pp2` | NVIDIA H200 | 32 | 373.08 | 46.98 | 21.28 | 209.48 | MEASURED ¹¹⁵ |
 | BF16 | `disagg/lws-ep` | NVIDIA H200 | 32 | 790.78 | 104.37 | 9.58 | 94.61 | MEASURED ¹³⁰ |
@@ -106,6 +108,7 @@ On 2026-10-21 the pipeline of [`../../dynamo-vllm-efa`](../../dynamo-vllm-efa) p
 | NVFP4 | `disagg/dgd-v1beta1` | NVIDIA H200 | 16 | 592.90 | 98.49 | 10.15 | 100.40 | MEASURED ¹⁴⁰ |
 | NVFP4 | `disagg/dgd-grove` | NVIDIA H200 | 16 | 586.61 | 96.65 | 10.35 | 101.79 | MEASURED ¹³⁴ |
 | NVFP4 | `disagg/deployment-e-pd` | NVIDIA H200 | 8+enc | 382.57 | 96.12 | 10.40 | 103.44 | MEASURED ¹¹⁴ |
+| NVFP4 | `disagg/deployment-e-p-d` |  | 8+8+enc | | | | | PENDING |
 | NVFP4 | `disagg/lws-2pp` | NVIDIA H200 | 32 | 580.60 | 97.03 | 10.31 | 101.91 | MEASURED ¹⁴³ |
 | NVFP4 | `disagg/lws-pp2` | NVIDIA H200 | 32 | 430.19 | 54.50 | 18.35 | 180.71 | MEASURED ¹²⁵ |
 | NVFP4 | `disagg/lws-ep` | NVIDIA H200 | 32 | 656.87 | 109.78 | 9.11 | 90.04 | MEASURED ¹⁴¹ |
