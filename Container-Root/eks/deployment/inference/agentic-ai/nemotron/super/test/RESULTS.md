@@ -22,6 +22,7 @@ NVFP4 row measures a different kernel path than a B200 one.
 
 Rename note (2026-10-22): the manifest type `disagg/epd` is now `disagg/deployment-e-pd` — the same template, the same Dynamo namespace `dynamo-epd`, no change to what was measured. The rows of this file use the current name; footnotes that quote the launch line `MANIFEST_TYPE=epd` or the old cell names keep them verbatim, because that is what ran.
 Added 2026-10-22: the manifest type `disagg/deployment-e-p-d` (dynamo v1.5.0's three-way `disagg_multimodal_epd.sh`: encode + prefill + decode) — 18 types / 36 cells with it; it has no row in this grid or in the p5e grid (those campaigns predate it) and is measured only in the public-image section below.
+Fix 2026-10-22, both encode templates (`deployment-e-pd`, `deployment-e-p-d`): the encode container now sets `DYN_SYSTEM_USE_ENDPOINT_HEALTH_STATUS=["generate"]` — its startupProbe reads the dynamo system `/health`, which stayed `503 notready` in every epd cell (encode pod 0/1 for the cell's life; the kubelet would have restarted it at the probe's 60-min limit). The rows ¹⁰¹/¹⁰⁵/¹¹²/¹¹⁴ ran without the knob (cells shorter than 60 min, 0 restarts); with it the encode pod reports Ready within 2 min of start (measured on a standalone encode worker, then in the `deployment-e-p-d` cells).
 
 | precision | template | GPU | GPUs | TTFT p50 (ms) | ITL p50 (ms) | tok/s/user p50 | tok/s total | status |
 |---|---|---|---|---|---|---|---|---|

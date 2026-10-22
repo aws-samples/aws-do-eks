@@ -29,6 +29,8 @@
 # deployment.yaml-template's — prefill plus the two upstream flags --route-to-encoder --enable-mm-embeds, both plus
 # DYN_REQUEST_PLANE=tcp (base64 images in the request payload exceed the NATS 1 MB limit; upstream exports it for all
 # components); every component sets DYN_NAMESPACE dynamo-e-p-d (prefill discovers the encoder at dynamo-e-p-d.encode.generate).
+# The encode container also carries DYN_SYSTEM_USE_ENDPOINT_HEALTH_STATUS (2026-10-22, see the comment at its env): without it the
+# dynamo system /health the startupProbe reads never leaves 503 "notready" and the kubelet would restart the encode worker at 60 min.
 # Verified in the image's own source (dynamo 1.5.0, components/src/dynamo/vllm): with --route-to-encoder the prefill role uses
 # the SAME embedding loader the deployment-e-pd PD worker used (handlers.py BaseWorkerHandler.init_embedding_loader ->
 # multimodal_utils/prefill_worker_utils.py MultiModalEmbeddingLoader); for this model family prefill hands decode the expanded
@@ -109,6 +111,12 @@ spec:
             - { name: NATS_SERVER, value: "${NATS_URL}" }
             - { name: DYN_SYSTEM_ENABLED, value: "true" }
             - { name: DYN_SYSTEM_PORT, value: "9093" }
+            # The encode worker registers no health-check payload, so the dynamo system /health (the startupProbe below) stays
+            # 503 "notready" although its generate endpoint is ready, and the probe would restart the container at
+            # failureThreshold x periodSeconds = 60 min. This knob makes /health follow the generate endpoint (200 within ~2 min of
+            # start, measured 2026-10-22). Dynamo 1.5.0 logs it as deprecated but honors it (runtime config line
+            # use_endpoint_health_status=["generate"]); every epd cell before this fix ran with the pod 0/1 for its < 60 min life.
+            - { name: DYN_SYSTEM_USE_ENDPOINT_HEALTH_STATUS, value: '["generate"]' }
             - { name: HF_HOME, value: /tmp/hf_cache }
             - { name: HF_MODULES_CACHE, value: /tmp/hf_cache/modules }
             - { name: VLLM_LOGGING_LEVEL, value: INFO }
