@@ -1,7 +1,8 @@
 version: 0.2
 
 # =============================================================================
-# CodeBuild buildspec for the ONE Nemotron dynamo-vllm-efa image (../super AND ../ultra).
+# CodeBuild buildspec for the ONE Nemotron dynamo-vllm-efa image (../super AND ../ultra) - the one project
+# builds BOTH recipes of this folder; its DEFAULT (RECIPE unset) is dynamo-vllm-efa:1.5.0-patched.
 #
 # Author: Anton Alexander
 #
@@ -16,8 +17,18 @@ version: 0.2
 # image + syft SBOM (SPDX + CycloneDX) + trivy CVE gate (0 CRITICAL; HIGH <= MAX_HIGH) + the gate PASS record.
 # The push (post_build) happens only for an image id that has that PASS record - see post_build.
 #
+# RECIPE selects which recipe folder the run builds (select-recipe.sh resolves it in every phase):
+#   RECIPE unset / empty (THE DEFAULT)  this folder's Dockerfile -> dynamo-vllm-efa:1.5.0-patched, every value below as is
+#   RECIPE=1.4.0-patched                the ultra sibling 1.4.0-patched/ (vllm-runtime:1.4.0-efa, vLLM 0.26, PP>1 patch
+#                                       always on); its recipe.env REPLACES BASE / IMAGE / DOCKER_BUILD_ARGS with that
+#                                       recipe's (REGISTRY, GATE_SEVERITY, MAX_HIGH stay). Set it per build (start-build
+#                                       environment override) or on a second project - same buildspec path either way.
+#   anything else                       fails the run before the build (no folder, or not a sibling folder name).
+# Both recipes write their SBOMs + gate records into THIS folder's sbom/ (the artifacts below), named by image tag.
+#
 # Project env vars (PLAINTEXT unless noted). REGISTRY / IMAGE (incl. the tag) are the maintainer's
 # call; the defaults below follow the 1.x.y-patched line of the ultra image:
+#   RECIPE=                 (empty = the 1.5.0 recipe of this folder; 1.4.0-patched = the ultra sibling, see 1.4.0-patched/recipe.env)
 #   REGISTRY=public.ecr.aws/hpc-cloud/
 #   IMAGE=dynamo-vllm-efa:1.5.0-patched
 #   DOCKER_BUILD_ARGS="--build-arg NIXL_PP_PATCH=1 --build-arg DYNAMO_EPD_NEMOTRON_PATCH=1"
@@ -29,6 +40,9 @@ version: 0.2
 
 env:
   variables:
+    # Which recipe folder this run builds. Empty = THIS folder = dynamo-vllm-efa:1.5.0-patched (the default image of the
+    # pipeline); "1.4.0-patched" = the ultra sibling, whose recipe.env then replaces BASE / IMAGE / DOCKER_BUILD_ARGS below.
+    RECIPE: ""
     BASE: "nvcr.io/nvidia/ai-dynamo/vllm-runtime:1.5.0-efa"
     DOCKER_BUILD_ARGS: "--build-arg NIXL_PP_PATCH=1 --build-arg DYNAMO_EPD_NEMOTRON_PATCH=1"
     GATE_SEVERITY: "CRITICAL,HIGH"
@@ -55,6 +69,7 @@ phases:
       - cd "${CODEBUILD_SRC_DIR}/Container-Root/eks/deployment/inference/agentic-ai/nemotron/dynamo-vllm-efa"
       # NGC login ONLY if a key is supplied; public -efa tags pull anonymously.
       - |
+        . ./select-recipe.sh
         if [ -n "${NGC_API_KEY:-}" ]; then
           echo "[ngc] logging in to nvcr.io"
           echo "${NGC_API_KEY}" | docker login nvcr.io -u '$oauthtoken' --password-stdin
@@ -65,11 +80,17 @@ phases:
 
   build:
     commands:
-      - cd "${CODEBUILD_SRC_DIR}/Container-Root/eks/deployment/inference/agentic-ai/nemotron/dynamo-vllm-efa"
-      # build (BASE + DOCKER_BUILD_ARGS forwarded as --build-arg) -> syft SBOM -> trivy CVE gate.
+      # select-recipe.sh: RECIPE unset -> RECIPE_DIR=. and the env above untouched (the default, 1.5.0-patched);
+      # RECIPE=1.4.0-patched -> RECIPE_DIR=./1.4.0-patched + that folder's recipe.env. Then
+      # build (RECIPE_DIR as the docker context, BASE + DOCKER_BUILD_ARGS forwarded as --build-arg) -> syft SBOM -> trivy CVE gate,
+      # with OUTDIR pinned to THIS folder's sbom/ so the artifacts + the PASS record land in one place for either recipe.
       # build-sbom-scan.sh exits NONZERO on any CRITICAL, on HIGH > MAX_HIGH, or on a missing scan,
       # which fails this phase (no false-pass - see the script's fail-loud guard).
-      - REGISTRY="${REGISTRY}" IMAGE="${IMAGE}" BASE="${BASE}" DOCKER_BUILD_ARGS="${DOCKER_BUILD_ARGS}" GATE_SEVERITY="${GATE_SEVERITY}" MAX_HIGH="${MAX_HIGH}" ./build-sbom-scan.sh
+      - |
+        set -eu
+        cd "${CODEBUILD_SRC_DIR}/Container-Root/eks/deployment/inference/agentic-ai/nemotron/dynamo-vllm-efa"
+        . ./select-recipe.sh
+        CONTEXT="${RECIPE_DIR}" OUTDIR="${PWD}/sbom" REGISTRY="${REGISTRY}" IMAGE="${IMAGE}" BASE="${BASE}" DOCKER_BUILD_ARGS="${DOCKER_BUILD_ARGS}" GATE_SEVERITY="${GATE_SEVERITY}" MAX_HIGH="${MAX_HIGH}" ./build-sbom-scan.sh
 
   post_build:
     commands:
@@ -79,10 +100,11 @@ phases:
       # pushed a 3-CRITICAL image anyway). The condition is the gate's own PASS record (sbom/<image>.gate-pass.txt, written by
       # build-sbom-scan.sh ONLY after every check passed, removed at the start of each run) for the exact image id about to be
       # pushed, plus CODEBUILD_BUILD_SUCCEEDING. Any failed check exits nonzero, so a run that did not push is RED, never a
-      # quiet success.
+      # quiet success. select-recipe.sh resolves IMAGE for the recipe this run built (RECIPE), as in the build phase.
       - |
         set -eu
         cd "${CODEBUILD_SRC_DIR}/Container-Root/eks/deployment/inference/agentic-ai/nemotron/dynamo-vllm-efa"
+        . ./select-recipe.sh
         IMAGE_URI="${REGISTRY}${IMAGE}"
         GATE_PASS="sbom/$(echo "${IMAGE}" | tr '/:' '__').gate-pass.txt"
         if [ "${CODEBUILD_BUILD_SUCCEEDING:-0}" != "1" ]; then
@@ -107,6 +129,7 @@ phases:
 
 artifacts:
   # Ship the SBOM + gate summary + gate PASS record as build artifacts (provenance record): SPDX + CycloneDX SBOMs, trivy json + table.
+  # Both recipes write here (OUTDIR is pinned in the build phase), the files are named by image tag.
   base-directory: Container-Root/eks/deployment/inference/agentic-ai/nemotron/dynamo-vllm-efa/sbom
   files:
     - "*.json"
