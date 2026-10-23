@@ -1,8 +1,13 @@
 # ==========================================================================================
-# Nemotron 3.5 Super VL 120B-A12B — E + PD split (dedicated vision-encode worker)
+# Nemotron 3.5 Super VL 120B-A12B — deployment-e-pd: E + PD split (dedicated vision-encode worker)
 # ==========================================================================================
 #
 # Author: Anton Alexander
+#
+# MANIFEST_TYPE=deployment-e-pd. Named `epd` until 2026-10-22: renamed because it is a plain-Deployment type
+# like `deployment` (not LWS, not DGD) and `-e-pd` spells its two GPU roles — Encode + one aggregated
+# Prefill/Decode worker. Nothing else changed: same manifests, same DYN_NAMESPACE dynamo-epd, and the
+# measured rows ../test/RESULTS.md ¹⁰¹/¹⁰⁵/¹¹²/¹¹⁴ (launched as MANIFEST_TYPE=epd) are this template's.
 #
 # The multimodal Encode-from-PD split, mirroring dynamo v1.5.0's
 # examples/backends/vllm/launch/disagg_multimodal_e_pd.sh:
@@ -32,6 +37,8 @@
 # MEASURED 2026-10-20 with the `../../dynamo-vllm-efa/Dockerfile --build-arg DYNAMO_EPD_NEMOTRON_PATCH=1` image (then `../dynamo-vllm-efa/Dockerfile.ray`, preserved in git history)
 # (adds this family to the encode worker: vLLM encoder-only load of the RADIO tower + mlp1, per-image embeddings over NIXL;
 # ../test/RESULTS.md footnotes BF16 ¹⁰¹, NVFP4 ¹⁰⁵).
+# 2026-10-22: DYN_SYSTEM_USE_ENDPOINT_HEALTH_STATUS added to the encode container (see its env) — the encode pod never passed its
+# startupProbe before (0/1 in every epd cell, restart due at 60 min); the measured rows ran without it.
 # ==========================================================================================
 ---
 apiVersion: apps/v1
@@ -88,6 +95,12 @@ spec:
             - { name: NATS_SERVER, value: "${NATS_URL}" }
             - { name: DYN_SYSTEM_ENABLED, value: "true" }
             - { name: DYN_SYSTEM_PORT, value: "9093" }
+            # The encode worker registers no health-check payload, so the dynamo system /health (the startupProbe below) stays
+            # 503 "notready" although its generate endpoint is ready, and the probe would restart the container at
+            # failureThreshold x periodSeconds = 60 min. This knob makes /health follow the generate endpoint (200 within ~2 min of
+            # start, measured 2026-10-22). Dynamo 1.5.0 logs it as deprecated but honors it (runtime config line
+            # use_endpoint_health_status=["generate"]); every epd cell before this fix ran with the pod 0/1 for its < 60 min life.
+            - { name: DYN_SYSTEM_USE_ENDPOINT_HEALTH_STATUS, value: '["generate"]' }
             - { name: HF_HOME, value: /tmp/hf_cache }
             - { name: HF_MODULES_CACHE, value: /tmp/hf_cache/modules }
             - { name: VLLM_LOGGING_LEVEL, value: INFO }
