@@ -4,7 +4,7 @@
 #
 # Author: Anton Alexander
 #
-# This is dgd.yaml-template ported to the v1beta1 API, nothing else — the agg
+# This is dgd-v1alpha1.yaml-template ported to the v1beta1 API, nothing else — the agg
 # counterpart of ../disagg/dgd-v1beta1.yaml-template, which carries the full
 # v1alpha1 -> v1beta1 mapping table and the operator-health checks. Every value
 # (image, flags, env, resources, probes, node placement) is byte-identical to the

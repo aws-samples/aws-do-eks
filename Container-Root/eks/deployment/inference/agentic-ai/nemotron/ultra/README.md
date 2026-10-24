@@ -93,7 +93,7 @@ The folder decides whether prefill and decode are split; `MANIFEST_TYPE` decides
 | `agg/` | `deployment` | one worker, TP8/PP1 | 1 | no |
 | `agg/` | `lws` | one worker, TP8/PP2 across 2 nodes | 2 | no |
 | `agg/` | `lws-ep` | wide expert parallelism, DP`EP_DP_SIZE` x TP8 (EP16 by default) | 2 | no |
-| `agg/` | `dgd` | `DynamoGraphDeployment`, one worker (needs the Dynamo operator) | 1 | no |
+| `agg/` | `dgd-v1alpha1` | `DynamoGraphDeployment`, one worker (needs the Dynamo operator) | 1 | no |
 | `agg/` | `dgd-v1beta1` | the same deployment on the `nvidia.com/v1beta1` API instead of the deprecated `v1alpha1` | 1 | no |
 | `agg/` | `dgd-grove` | the `lws` engine shape (one engine, TP8 x PP`NODE_COUNT_PER_WORKER`) as a `v1beta1` DGD with `multinode.nodeCount`, Grove-rendered and gang-scheduled (needs Dynamo >= 1.4.0 + Grove/KAI) | `NODE_COUNT_PER_WORKER` (2) | no |
 | `agg/` | `dgd-grove-ep` | the `lws-ep` shape (wide EP, DP`EP_DP_SIZE` x TP8) as a Grove-rendered DGD; the operator injects the DP coordination — proven live 2026-08-24, see the template header | `EP_DP_SIZE` (2) | no |
@@ -101,17 +101,17 @@ The folder decides whether prefill and decode are split; `MANIFEST_TYPE` decides
 | `disagg/` | `lws-2pp` | prefill TP8/PP2 + 2x decode TP8/PP1 | 4 | yes |
 | `disagg/` | `lws-pp2` | symmetrical PP2: prefill AND decode each TP8/PP2 | 4 | yes |
 | `disagg/` | `lws-ep` | wide expert parallelism **per role**: prefill DP`EP_DP_SIZE` x TP8 + decode DP`EP_DP_SIZE` x TP8 (EP16 each by default) | 2 x `EP_DP_SIZE` (4) | yes |
-| `disagg/` | `dgd` | `DynamoGraphDeployment` prefill + decode (needs the Dynamo operator) | 2 | yes |
+| `disagg/` | `dgd-v1alpha1` | `DynamoGraphDeployment` prefill + decode (needs the Dynamo operator) | 2 | yes |
 | `disagg/` | `dgd-v1beta1` | the same deployment on the `nvidia.com/v1beta1` API instead of the deprecated `v1alpha1` | 2 | yes |
 | `disagg/` | `dgd-grove` | the `dgd-v1beta1` topology Grove-rendered and gang-scheduled as one PodGang (needs Dynamo >= 1.4.0 + Grove/KAI) | 2 | yes |
 | `disagg/` | `dgd-grove-pp2` | the `lws-pp2` shape (symmetric PP2 per role) as a Grove-rendered DGD, both workers `multinode.nodeCount` — requires a patched image: `:1.4.0-patched` (the default) or `:1.5.0-patched` (`NIXL_PP_PATCH=1`; this template measured on it on CGK 2026-10-21, test/RESULTS.md ²⁴: warm 367.72 / 53.08 / 18.84 / 185.29) — stock vLLM refuses PP>1 + hybrid-KV; proven live 2026-08-24 through the operator path, see the template header | 2 x `NODE_COUNT_PER_WORKER` (4) | yes |
 | `disagg/` | `dgd-grove-ep` | the `lws-ep` shape (EP16 per role) as a Grove-rendered DGD; the operator injects the DP coordination — proven live 2026-08-24, see the template header | 2 x `EP_DP_SIZE` (4) | yes |
 
-`MANIFEST_TYPE` names the template file directly. For example, if MANIFEST_TYPE=dgd, then `run.sh` replaces all variables in dgd.yaml-template with values from .env, producing `dgd.yaml`, then executes `kubectl apply -f ./dgd.yaml`. The `./stop.sh` script executes `kubectl delete -f ./dgd.yaml` correspondingly. 
+`MANIFEST_TYPE` names the template file directly. For example, if MANIFEST_TYPE=dgd-v1alpha1, then `run.sh` replaces all variables in dgd-v1alpha1.yaml-template with values from .env, producing `dgd-v1alpha1.yaml`, then executes `kubectl apply -f ./dgd-v1alpha1.yaml`. The `./stop.sh` script executes `kubectl delete -f ./dgd-v1alpha1.yaml` correspondingly. 
 
 #### The `DynamoGraphDeployment` deprecation warning
 
-Applying either `dgd` template on a Dynamo platform 1.3.x operator prints:
+Applying either `dgd-v1alpha1` template on a Dynamo platform 1.3.x operator prints:
 
 ```
 Warning: nvidia.com/v1alpha1 DynamoGraphDeployment is deprecated; use nvidia.com/v1beta1 DynamoGraphDeployment
@@ -124,9 +124,9 @@ kubectl get crd dynamographdeployments.nvidia.com \
   -o jsonpath='{range .spec.versions[*]}{.name}{" served="}{.served}{" storage="}{.storage}{"\n"}{end}'
 ```
 
-`agg/dgd-v1beta1` and `disagg/dgd-v1beta1` are the same two deployments expressed on the new API, for when you want the warning gone or want to be ready for the release that flips the storage version. Each is a pure API port -- image, flags, env, resources, probes, node placement and (for disagg) `--kv-transfer-config` are byte-identical to its `dgd` sibling. What the new schema changes: `spec.services{}` becomes `spec.components[]`, `spec.envs` becomes `spec.env`, `componentType: worker` + `subComponentType: prefill|decode` becomes `type: prefill|decode`, `extraPodSpec.mainContainer` becomes a normal pod template whose container is named `main`, and `spec.pvcs` is gone in favour of an ordinary `persistentVolumeClaim` volume.
+`agg/dgd-v1beta1` and `disagg/dgd-v1beta1` are the same two deployments expressed on the new API, for when you want the warning gone or want to be ready for the release that flips the storage version. Each is a pure API port -- image, flags, env, resources, probes, node placement and (for disagg) `--kv-transfer-config` are byte-identical to its `dgd-v1alpha1` sibling. What the new schema changes: `spec.services{}` becomes `spec.components[]`, `spec.envs` becomes `spec.env`, `componentType: worker` + `subComponentType: prefill|decode` becomes `type: prefill|decode`, `extraPodSpec.mainContainer` becomes a normal pod template whose container is named `main`, and `spec.pvcs` is gone in favour of an ordinary `persistentVolumeClaim` volume.
 
-The `dgd` templates are the default and stay on `v1alpha1` deliberately: nothing about the warning requires action. If you'd like to switch,deploy `dgd-v1beta1` once, confirm the pods come up, then flip your default.
+The `dgd-v1alpha1` templates are the default and stay on `v1alpha1` deliberately: nothing about the warning requires action. If you'd like to switch,deploy `dgd-v1beta1` once, confirm the pods come up, then flip your default.
 
 Both API versions depend on the operator pod being healthy. The `DynamoGraphDeployment` admission webhooks are registered with `failurePolicy: Fail` and the CRD's conversion strategy is `Webhook`: with the controller-manager not Ready, a `v1alpha1` apply is rejected by admission, and a `v1beta1` apply or even `kubectl get dgd` additionally fails conversion with `conversion webhook ... no endpoints available`.
 
@@ -226,6 +226,6 @@ script is for reading the class that recurs mid-run, which a warmup cannot remov
 Run `./kv-lease-check.sh` after any disagg benchmark. In vLLM's NixlConnector the prefill side holds
 each request's KV blocks under a lease and frees them when it elapses; a later read by the decode
 worker is then only logged, never failed, so the request still returns 200 on blocks that are gone.
-A live 3-Pod `disagg/dgd` run on 2026-08-16 did exactly that on 8 of 42 completed requests, 21-32s
+A live 3-Pod `disagg/dgd-v1alpha1` run on 2026-08-16 did exactly that on 8 of 42 completed requests, 21-32s
 after the stock 30s lease expired with zero reads. `KV_LEASE_DURATION` in `disagg/.env` raises the
 lease (default 300s here) and the script exits non-zero when a lease expires unread..

@@ -111,7 +111,7 @@ spec:
           # request. Those counts were chosen when this template ran OSL 128; at the OSL 512 the
           # table uses, every request generates 4x the tokens, so each phase costs ~4x the wall
           # clock it used to. Order-of-magnitude, from ITL measured on Nemotron-3 Ultra at c=10
-          # (../../ultra/test/RESULTS.md: BF16 agg/dgd 91.95 ms p50, disagg rows 88-115 ms; no
+          # (../../ultra/test/RESULTS.md: BF16 agg/dgd-v1alpha1 91.95 ms p50, disagg rows 88-115 ms; no
           # Super cell is measured yet): a wave is ~0.5 s TTFT + 512 x ITL,
           # i.e. ~47 s at 92 ms and worse as ITL degrades under load. 20 waves x 6 phases puts the
           # low-concurrency phases near 16 min each and makes c=64 the long pole. Budget hours,

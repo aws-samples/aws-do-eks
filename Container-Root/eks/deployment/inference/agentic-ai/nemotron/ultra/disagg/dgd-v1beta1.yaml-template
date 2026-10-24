@@ -4,7 +4,7 @@
 #
 # Author: Anton Alexander
 #
-# This is dgd.yaml-template ported to the v1beta1 API. Every value
+# This is dgd-v1alpha1.yaml-template ported to the v1beta1 API. Every value
 # (image, flags, env, resources, probes, node placement, KV transfer config) is
 # byte-identical to the v1alpha1 file; the only differences are the ones the new
 # schema forces, plus the one documented /dev/shm correction below.
@@ -50,10 +50,10 @@
 #   kubectl -n dynamo-system get endpoints dynamo-platform-dynamo-operator-webhook-service
 #
 # /dev/shm — the operator owns this mount, so the `dshm` emptyDir that
-# dgd.yaml-template declares is NOT carried over, and sharedMemorySize is left
+# dgd-v1alpha1.yaml-template declares is NOT carried over, and sharedMemorySize is left
 # unset.
 #
-# Topology, unchanged from dgd.yaml-template: 1 prefill node + 1 decode node,
+# Topology, unchanged from dgd-v1alpha1.yaml-template: 1 prefill node + 1 decode node,
 # TP=${GPU_PER_WORKER}/PP=1 each. KV moves prefill->decode over EFA RDMA via NIXL
 # LIBFABRIC.
 # =============================================================================

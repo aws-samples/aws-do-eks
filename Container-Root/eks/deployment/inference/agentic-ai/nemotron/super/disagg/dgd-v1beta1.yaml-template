@@ -4,7 +4,7 @@
 #
 # Author: Anton Alexander
 #
-# This is dgd.yaml-template ported to the v1beta1 API, nothing else. Every value
+# This is dgd-v1alpha1.yaml-template ported to the v1beta1 API, nothing else. Every value
 # (image, flags, env, resources, probes, node placement) is byte-identical to the
 # v1alpha1 file; the only differences are the ones the new schema forces:
 #   spec.services{}             -> spec.components[]
