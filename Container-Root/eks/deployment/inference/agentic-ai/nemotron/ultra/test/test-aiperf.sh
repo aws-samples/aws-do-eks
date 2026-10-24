@@ -101,7 +101,7 @@ eval "${CMD}"
 #                  and prints a warning on every call.
 #   dyn_namespace  that Pod's DYN_NAMESPACE. It identifies a deployment independently of this
 #                  folder and is the same label aiperf writes into server_metrics_export.json.
-#                  It is NOT sufficient alone: agg/dgd, agg/dgd-v1beta1, agg/lws-ep, disagg/dgd
+#                  It is NOT sufficient alone: agg/dgd-v1alpha1, agg/dgd-v1beta1, agg/lws-ep, disagg/dgd-v1alpha1
 #                  and disagg/dgd-v1beta1 set no DYN_NAMESPACE, and dynamo defaults it to the
 #                  literal "dynamo" (dynamo/common/utils/namespace.py), so an observed "dynamo"
 #                  cannot by itself distinguish agg/lws from agg/lws-ep.
@@ -140,7 +140,7 @@ if [ ! -f "${_TPL}" ]; then
 elif [ "${_EXP_NS}" == "" ]; then
   # Single quotes around the values, not double: _CHECK lands inside a JSON string in the
   # heredoc below, and a literal double quote there makes the whole run-meta.json unparsable.
-  # Both 2026-08-17 dgd runs shipped malformed run-meta.json through this branch.
+  # Both 2026-08-17 dgd-v1alpha1 runs shipped malformed run-meta.json through this branch.
   _CHECK="not discriminating: ${MANIFEST_TYPE}.yaml-template sets no DYN_NAMESPACE, dynamo defaults it to 'dynamo', observed '${_OBS_NS}' -- use the workloads field to identify this run"
 elif [ "${_EXP_NS}" == "${_OBS_NS}" ]; then
   _CHECK="consistent: ${MANIFEST_TYPE} sets DYN_NAMESPACE=${_EXP_NS} and the serving frontend reports ${_OBS_NS}"

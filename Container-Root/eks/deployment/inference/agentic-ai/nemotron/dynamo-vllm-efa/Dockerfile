@@ -20,8 +20,8 @@
 #
 # MEASURED (node-recorded image digests; ../super/test/RESULTS.md footnotes). Every layer below was exercised on these builds:
 #   no build args                   sha256:bb36e7449c2f…  every non-PP Super cell on the p5e EKS Auto Mode cluster, 2026-10-19/20
-#                                                         (BF16 + NVFP4 agg/deployment, lws, lws-ep, dgd, dgd-v1beta1, dgd-grove,
-#                                                         dgd-grove-ep; disagg/deployment, lws-ep, dgd, dgd-v1beta1, dgd-grove,
+#                                                         (BF16 + NVFP4 agg/deployment, lws, lws-ep, dgd-v1alpha1, dgd-v1beta1, dgd-grove,
+#                                                         dgd-grove-ep; disagg/deployment, lws-ep, dgd-v1alpha1, dgd-v1beta1, dgd-grove,
 #                                                         dgd-grove-ep) and the CGK p5en Dynamo 1.5.1 spot-check rows.
 #   NIXL_PP_PATCH=1                 sha256:43561d30cf85…  every PP>1 disagg cell: p5e footnotes 56-61 (an earlier cut of the same patch,
 #                                                         947ff0caa1b0, carried 56/57), CGK 102-104, 106, 108, 109 — temperature-0 output

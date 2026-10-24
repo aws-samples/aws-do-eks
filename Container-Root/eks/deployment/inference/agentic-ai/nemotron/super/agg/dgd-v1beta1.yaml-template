@@ -4,7 +4,7 @@
 #
 # Author: Anton Alexander
 #
-# This is dgd.yaml-template ported to the v1beta1 API, nothing else. Every value
+# This is dgd-v1alpha1.yaml-template ported to the v1beta1 API, nothing else. Every value
 # (image, flags, env, resources, probes, node placement) is byte-identical to the
 # v1alpha1 file; the only differences are the ones the new schema forces:
 #   spec.services{}            -> spec.components[]
@@ -17,8 +17,8 @@
 #   MANIFEST_TYPE=dgd-v1beta1 ./run.sh
 #
 # WHY: on a Dynamo 1.5.0 platform v1beta1 is the CRD's STORAGE version (v1.5.0
-# release notes), so this template is the storage-native form there; dgd
-# (v1alpha1) still applies with a deprecation warning for older platforms.
+# release notes), so this template is the storage-native form there; dgd-v1alpha1
+# still applies with a deprecation warning for older platforms.
 #
 # LIVE-VALIDATED 2026-10-19 on H200 (p5en.48xlarge, Dynamo 1.4.0 platform): served and measured at BF16 and NVFP4 with
 # ../test/test-aiperf.sh as shipped — ../test/RESULTS.md footnotes 18 (BF16) and 29 (NVFP4).

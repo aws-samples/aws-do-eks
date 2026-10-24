@@ -7,11 +7,11 @@
 # Requires the Dynamo platform (operator + etcd + NATS) from
 # eks/deployment/nvidia-dynamo. The operator turns this single resource into
 # the frontend + worker deployments and owns their lifecycle, so
-# `kubectl delete -f dgd.yaml` (or ./stop.sh) removes everything it created.
+# `kubectl delete -f dgd-v1alpha1.yaml` (or ./stop.sh) removes everything it created.
 #
 # Aggregated (prefill+decode co-located) single-node worker: TP=${GPU_PER_WORKER}/PP=1,
 # intra-node NVLink. NO P/D disaggregation, so NO NIXL / KV-transfer / EFA needed
-# for the model itself (contrast ../disagg/dgd.yaml-template). This is the DGD
+# for the model itself (contrast ../disagg/dgd-v1alpha1.yaml-template). This is the DGD
 # equivalent of ../agg/deployment.yaml-template — same serving shape, same
 # multimodal flags (--enable-multimodal + DYN_REQUEST_PLANE=tcp, from dynamo
 # v1.5.0 launch/agg_multimodal.sh), managed by the operator as one CRD.
