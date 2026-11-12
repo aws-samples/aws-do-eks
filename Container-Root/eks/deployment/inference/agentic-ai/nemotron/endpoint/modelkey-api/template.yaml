@@ -1,0 +1,228 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  nemotron/endpoint modelkey-api - a standalone PRIVATE REST API with one method, POST /modelkey (IAM-authorized), that
+  returns the current model key of a Nemotron endpoint from its own Secrets Manager secret. Reachable only through
+  execute-api interface VPC endpoints. No dependency on any other stack.
+
+Parameters:
+  SecretName:
+    Type: String
+    Default: nemotron/modelkey
+    Description: Name of the Secrets Manager secret this stack creates and the gateway's secret-sync.sh reads.
+  EndpointUrl:
+    Type: String
+    Default: https://nemotron.example.com/v1
+    Description: The OpenAI-compatible base URL attendees use (the key gateway's public name + /v1); returned with the key.
+  ModelId:
+    Type: String
+    Default: nvidia/NVIDIA-Nemotron-3.5-Super-VL-120B-A12B-BF16
+    Description: The served model name (MODEL_NAME of the serving .env); returned with the key.
+  StageName:
+    Type: String
+    Default: dev
+  PrincipalOrgId:
+    Type: String
+    Default: ''
+    Description: Optional o-xxxxxxxxxx - only principals of this AWS Organization may invoke. Empty = any account that reaches the API through a VPC endpoint.
+  SourceVpceIds:
+    Type: String
+    Default: ''
+    Description: Optional comma-separated execute-api VPC endpoint ids allowed to invoke. Empty = any endpoint.
+
+Conditions:
+  HasOrgId: !Not [!Equals [!Ref PrincipalOrgId, '']]
+  HasVpce: !Not [!Equals [!Ref SourceVpceIds, '']]
+
+Resources:
+  ModelKeySecret:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Name: !Ref SecretName
+      Description: Current bearer key of the Nemotron endpoint key gateway (rotate with rotate.sh, then run the gateway's secret-sync.sh)
+      GenerateSecretString:
+        SecretStringTemplate: !Sub '{"endpoint": "${EndpointUrl}", "model": "${ModelId}"}'
+        GenerateStringKey: api_key
+        PasswordLength: 48
+        ExcludePunctuation: true
+        ExcludeUppercase: true
+
+  ModelKeyFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: {Service: lambda.amazonaws.com}
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: read-the-one-secret
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: secretsmanager:GetSecretValue
+                Resource: !Ref ModelKeySecret
+
+  ModelKeyFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: Returns the current Nemotron endpoint model key from Secrets Manager (nemotron/endpoint modelkey-api)
+      Runtime: python3.12
+      Handler: index.handler
+      Role: !GetAtt ModelKeyFunctionRole.Arn
+      Timeout: 10
+      MemorySize: 128
+      Environment:
+        Variables:
+          SECRET_ARN: !Ref ModelKeySecret
+      Code:
+        # Identical to lambda/model_key/lambda_function.py (test/check_template.py asserts it).
+        ZipFile: |
+          """POST /modelkey: hands the current model key to IAM-authenticated callers of the private REST API.
+
+          The key lives in ONE Secrets Manager secret, a JSON document {"endpoint": ..., "model": ..., "api_key": ...} that the
+          CloudFormation template generates; this function reads it and returns it. It never logs the key: each log line carries
+          the caller identity and the outcome only. Answers: 200 {"endpoint", "model", "api_key"}; 404 {"status": "unavailable"}
+          when the secret is missing, scheduled for deletion or has no api_key (the event is over or the endpoint is down);
+          502 {"status": "error"} on any other failure. The deployed copy is the ZipFile of ../../template.yaml (index.handler);
+          test/check_template.py proves the two are identical and test/test_lambda_offline.py exercises this file with a stubbed
+          boto3.
+          """
+          import json
+          import logging
+          import os
+
+          import boto3
+
+          log = logging.getLogger()
+          log.setLevel(logging.INFO)
+          SECRET_ARN = os.environ.get("SECRET_ARN", "")
+          _client = None
+
+
+          def _secrets():
+              global _client
+              if _client is None:
+                  _client = boto3.client("secretsmanager")
+              return _client
+
+
+          def _error_code(exc):
+              return ((getattr(exc, "response", None) or {}).get("Error") or {}).get("Code", "")
+
+
+          def _reply(status, body):
+              return {"statusCode": status,
+                      "headers": {"Content-Type": "application/json", "Cache-Control": "no-store"},
+                      "body": json.dumps(body)}
+
+
+          def handler(event, context):
+              ident = ((event or {}).get("requestContext") or {}).get("identity") or {}
+              who = {"caller": ident.get("userArn") or ident.get("caller"), "account": ident.get("accountId"),
+                     "vpce": ident.get("vpceId"), "source_ip": ident.get("sourceIp")}
+              try:
+                  secret = _secrets().get_secret_value(SecretId=SECRET_ARN)
+                  data = json.loads(secret.get("SecretString") or "{}")
+              except Exception as exc:  # every failure mode maps to a status below; nothing else is raised to API Gateway
+                  code = _error_code(exc)
+                  if code in ("ResourceNotFoundException", "InvalidRequestException"):
+                      log.info(json.dumps({"outcome": "unavailable", "error": code, **who}))
+                      return _reply(404, {"status": "unavailable"})
+                  log.error(json.dumps({"outcome": "error", "error": code or type(exc).__name__, **who}))
+                  return _reply(502, {"status": "error"})
+              key = data.get("api_key") if isinstance(data, dict) else None
+              if not key:
+                  log.info(json.dumps({"outcome": "unavailable", "error": "no api_key in secret", **who}))
+                  return _reply(404, {"status": "unavailable"})
+              log.info(json.dumps({"outcome": "issued", **who}))
+              return _reply(200, {"endpoint": data.get("endpoint"), "model": data.get("model"), "api_key": key})
+
+  ModelKeyApi:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: !Ref AWS::StackName
+      Description: Private REST API handing out the Nemotron endpoint model key (nemotron/endpoint modelkey-api)
+      EndpointConfiguration:
+        Types: [PRIVATE]
+      Policy:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action: execute-api:Invoke
+            Resource: !Sub execute-api:/${StageName}/POST/modelkey
+            Condition: !If
+              - HasOrgId
+              - !If
+                - HasVpce
+                - StringEquals:
+                    aws:PrincipalOrgID: !Ref PrincipalOrgId
+                    aws:SourceVpce: !Split [',', !Ref SourceVpceIds]
+                - StringEquals:
+                    aws:PrincipalOrgID: !Ref PrincipalOrgId
+              - !If
+                - HasVpce
+                - StringEquals:
+                    aws:SourceVpce: !Split [',', !Ref SourceVpceIds]
+                - !Ref AWS::NoValue
+
+  ModelKeyResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref ModelKeyApi
+      ParentId: !GetAtt ModelKeyApi.RootResourceId
+      PathPart: modelkey
+
+  ModelKeyMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      RestApiId: !Ref ModelKeyApi
+      ResourceId: !Ref ModelKeyResource
+      HttpMethod: POST
+      AuthorizationType: AWS_IAM
+      Integration:
+        Type: AWS_PROXY
+        IntegrationHttpMethod: POST
+        Uri: !Sub arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${ModelKeyFunction.Arn}/invocations
+
+  ModelKeyInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ModelKeyFunction
+      Action: lambda:InvokeFunction
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${ModelKeyApi}/*/POST/modelkey
+
+  ModelKeyDeployment:
+    Type: AWS::ApiGateway::Deployment
+    DependsOn: ModelKeyMethod
+    Properties:
+      RestApiId: !Ref ModelKeyApi
+      Description: nemotron/endpoint modelkey-api v1
+
+  ModelKeyStage:
+    Type: AWS::ApiGateway::Stage
+    Properties:
+      RestApiId: !Ref ModelKeyApi
+      DeploymentId: !Ref ModelKeyDeployment
+      StageName: !Ref StageName
+
+Outputs:
+  ApiId:
+    Description: REST API id (callers need it for the execute-api:Invoke resource ARN and the URL)
+    Value: !Ref ModelKeyApi
+  InvokeUrl:
+    Description: POST here with SigV4 from inside a VPC that has an execute-api interface endpoint
+    Value: !Sub https://${ModelKeyApi}.execute-api.${AWS::Region}.${AWS::URLSuffix}/${StageName}/modelkey
+  InvokeArn:
+    Description: Resource for the caller's execute-api:Invoke statement
+    Value: !Sub arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${ModelKeyApi}/${StageName}/POST/modelkey
+  SecretArn:
+    Description: The secret that holds the key (the gateway's secret-sync.sh reads it by SecretName)
+    Value: !Ref ModelKeySecret
+  FunctionName:
+    Value: !Ref ModelKeyFunction

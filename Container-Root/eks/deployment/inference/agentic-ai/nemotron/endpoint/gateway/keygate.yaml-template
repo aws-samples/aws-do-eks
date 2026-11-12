@@ -1,0 +1,170 @@
+# Key gateway for a Nemotron frontend: ConfigMap (nginx config) + Deployment + Service + Ingress.
+# Rendered by run.sh through envsubst from .env. The DOLLAR variable (a literal dollar sign) protects the nginx
+# variables (http_authorization, host, binary_remote_addr, ...) and the MODEL_KEY placeholder, which the nginx image's
+# own entrypoint fills from the environment at pod start (NGINX_ENVSUBST_FILTER limits that second substitution to
+# MODEL_KEY). The key comes from the Secret named by GATEWAY_SECRET_NAME, created by secret-sync.sh - no manifest in
+# this folder ever carries it.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ${GATEWAY_NAME}-nginx
+  namespace: ${NAMESPACE}
+  labels:
+    app.kubernetes.io/name: ${GATEWAY_NAME}
+    app.kubernetes.io/component: key-gateway
+    app.kubernetes.io/part-of: ${GATEWAY_NAME}
+data:
+  default.conf.template: |
+    limit_req_zone ${DOLLAR}binary_remote_addr zone=keygate:10m rate=${RATE_LIMIT_RPS}r/s;
+    server {
+      listen 8080;
+      server_tokens off;
+      location = /healthz {
+        access_log off;
+        return 200 "ok\n";
+      }
+      location / {
+        limit_req zone=keygate burst=${RATE_LIMIT_BURST} nodelay;
+        if (${DOLLAR}http_authorization != "Bearer ${DOLLAR}{MODEL_KEY}") {
+          add_header Content-Type application/json always;
+          return 403 '{"error":{"message":"missing or invalid bearer key","type":"forbidden"}}';
+        }
+        proxy_pass http://${TARGET_SERVICE}.${NAMESPACE}.svc.cluster.local:${TARGET_PORT};
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Authorization "";
+        proxy_set_header Host ${DOLLAR}host;
+        proxy_set_header X-Forwarded-For ${DOLLAR}proxy_add_x_forwarded_for;
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_request_buffering off;
+        proxy_read_timeout ${PROXY_TIMEOUT}s;
+        proxy_send_timeout ${PROXY_TIMEOUT}s;
+        client_max_body_size ${MAX_BODY_SIZE};
+      }
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ${GATEWAY_NAME}
+  namespace: ${NAMESPACE}
+  labels:
+    app.kubernetes.io/name: ${GATEWAY_NAME}
+    app.kubernetes.io/component: key-gateway
+    app.kubernetes.io/part-of: ${GATEWAY_NAME}
+spec:
+  replicas: ${GATEWAY_REPLICAS}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ${GATEWAY_NAME}
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: ${GATEWAY_NAME}
+        app.kubernetes.io/component: key-gateway
+        app.kubernetes.io/part-of: ${GATEWAY_NAME}
+      annotations:
+        karpenter.sh/do-not-disrupt: "true"
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 101
+        runAsGroup: 101
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: nginx
+        image: ${GATEWAY_IMAGE}
+        imagePullPolicy: IfNotPresent
+        ports:
+        - name: http
+          containerPort: 8080
+        env:
+        - name: NGINX_ENVSUBST_FILTER
+          value: "^MODEL_KEY$"
+        - name: MODEL_KEY
+          valueFrom:
+            secretKeyRef:
+              name: ${GATEWAY_SECRET_NAME}
+              key: MODEL_KEY
+        volumeMounts:
+        - name: nginx-template
+          mountPath: /etc/nginx/templates
+          readOnly: true
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: http
+          periodSeconds: 10
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            memory: 256Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop: ["ALL"]
+      volumes:
+      - name: nginx-template
+        configMap:
+          name: ${GATEWAY_NAME}-nginx
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ${GATEWAY_NAME}
+  namespace: ${NAMESPACE}
+  labels:
+    app.kubernetes.io/name: ${GATEWAY_NAME}
+    app.kubernetes.io/component: key-gateway
+    app.kubernetes.io/part-of: ${GATEWAY_NAME}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: ${GATEWAY_NAME}
+  ports:
+  - name: http
+    port: 8080
+    targetPort: http
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ${GATEWAY_NAME}
+  namespace: ${NAMESPACE}
+  labels:
+    app.kubernetes.io/name: ${GATEWAY_NAME}
+    app.kubernetes.io/component: key-gateway
+    app.kubernetes.io/part-of: ${GATEWAY_NAME}
+  annotations:
+    cert-manager.io/cluster-issuer: ${CLUSTER_ISSUER}
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "${PROXY_TIMEOUT}"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "${PROXY_TIMEOUT}"
+    nginx.ingress.kubernetes.io/proxy-body-size: "${MAX_BODY_SIZE}"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+spec:
+  ingressClassName: ${INGRESS_CLASS}
+  tls:
+  - hosts:
+    - ${ENDPOINT_HOST}
+    secretName: ${GATEWAY_NAME}-tls
+  rules:
+  - host: ${ENDPOINT_HOST}
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: ${GATEWAY_NAME}
+            port:
+              number: 8080
